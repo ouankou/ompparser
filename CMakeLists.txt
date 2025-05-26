@@ -1,20 +1,20 @@
 #******************************************************************************************************************#
-# Copyright (c) 2018-2020, High Performance Computing Architecture and System
+# Copyright (c) 2018-2025, High Performance Computing Architecture and System
 # research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
 # and Lawrence Livermore National Security, LLC.
 #
 # SPDX-License-Identifier: (BSD-3-Clause)
 #*****************************************************************************************************************#
 
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.10)
 project(ompparser)
 
-# set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_BUILD_TYPE Debug)
 
 set(OMPPARSER_VERSION_MAJOR 0)
-set(OMPPARSER_VERSION_MINOR 1)
+set(OMPPARSER_VERSION_MINOR 2)
 set(OMPPARSER_VERSION ${OMPPARSER_VERSION_MAJOR}.${OMPPARSER_VERSION_MINOR})
 
 find_package(BISON)
