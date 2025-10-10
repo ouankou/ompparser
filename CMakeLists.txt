@@ -9,6 +9,9 @@
 cmake_minimum_required(VERSION 3.10)
 project(ompparser)
 
+include(CTest)
+
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_BUILD_TYPE Debug)
@@ -73,6 +76,20 @@ set(executable_targets
     main
     ompp
     tester)
+
+if(BUILD_TESTING)
+  file(GLOB TEST_SUITE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.txt")
+  list(SORT TEST_SUITE_FILES)
+  foreach(TEST_FILE IN LISTS TEST_SUITE_FILES)
+    get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
+    add_test(NAME ompparser_${TEST_NAME}
+             COMMAND $<TARGET_FILE:tester> "${TEST_FILE}")
+  endforeach()
+
+  add_custom_target(check
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    DEPENDS tester)
+endif()
 
 # Install headers and libraries
 install(FILES
