@@ -18,7 +18,9 @@
 
 #include "OpenMPIR.h"
 
+#include <algorithm>
 #include <assert.h>
+#include <cstring>
 #include <iostream>
 #include <regex>
 #include <stdio.h>
@@ -3535,49 +3537,54 @@ int yywrap()
 OpenMPDirective* parseOpenMP(const char* _input, void * _exprParse(const char*)) {
     OpenMPBaseLang base_lang = Lang_C;
     current_directive = NULL;
-    std::string input_string;
+    std::string input_string;  // Must persist until after start_lexer()
     const char *input = _input;
-    std::regex fortran_regex ("[!c*][$][Oo][Mm][Pp]");
-    input_string = std::string(input, 5);
+    std::regex fortran_regex ("[!cC*][$][Oo][Mm][Pp]");
+    
+    // Check input length to avoid undefined behavior
+    size_t input_len = strlen(input);
+    size_t check_len = (input_len < 5) ? input_len : 5;
+    std::string prefix_check(input, check_len);
+    
     if (user_set_lang == Lang_unknown){
         auto_lang = Lang_C;
         exprParse = _exprParse;
-        if (std::regex_match(input_string, fortran_regex)) {
+        if (std::regex_search(prefix_check, fortran_regex)) {
             base_lang = Lang_Fortran;
             auto_lang = Lang_Fortran;
             input_string = std::string(input);
             std::transform(input_string.begin(), input_string.end(), input_string.begin(), ::tolower);
             input = input_string.c_str();
-        };
+        }
     } else {
         base_lang = user_set_lang;
         exprParse = _exprParse;
-    /* Ensure auto_lang reflects the explicitly set language to avoid
-       stale auto-detection state from previous parses. */
-    auto_lang = user_set_lang;
-    if (std::regex_match(input_string, fortran_regex)) {
-      /* Input appears to be Fortran-style (e.g. starts with !$OMP or !C$OMP)
-         Normalize to lowercase so the lexer rules that expect lowercase
-         "omp" match correctly, then check for language mismatch. */
-      input_string = std::string(input);
-      std::transform(input_string.begin(), input_string.end(), input_string.begin(), ::tolower);
-      input = input_string.c_str();
-      if (user_set_lang != Lang_Fortran){
-        yyerror("The language is set to C/C++, but the input is Fortran.");
-        return NULL;
-      }
-    } else {
-      if (user_set_lang == Lang_Fortran){
-        yyerror("The language is set to Fortran, but the input is C/C++.");
-        return NULL;
-      }
-    };
+        /* Ensure auto_lang reflects the explicitly set language to avoid
+           stale auto-detection state from previous parses. */
+        auto_lang = user_set_lang;
+        if (std::regex_search(prefix_check, fortran_regex)) {
+            /* Input appears to be Fortran-style (e.g. starts with !$OMP or !C$OMP)
+               Normalize to lowercase so the lexer rules that expect lowercase
+               "omp" match correctly, then check for language mismatch. */
+            input_string = std::string(input);
+            std::transform(input_string.begin(), input_string.end(), input_string.begin(), ::tolower);
+            input = input_string.c_str();
+            if (user_set_lang != Lang_Fortran){
+                yyerror("The language is set to C/C++, but the input is Fortran.");
+                return NULL;
+            }
+        } else {
+            if (user_set_lang == Lang_Fortran){
+                yyerror("The language is set to Fortran, but the input is C/C++.");
+                return NULL;
+            }
+        }
     }
     start_lexer(input);
     yyparse();
     end_lexer();
     if (current_directive) {
         current_directive->setBaseLang(base_lang);
-    };
+    }
     return current_directive;
 }

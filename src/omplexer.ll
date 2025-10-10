@@ -126,7 +126,7 @@ extern bool b_within_variable_list; /* = false; */
       result = 0;                                                                  \
     else {                                                                         \
       strncpy(buf, ompparserinput, max_size);                                      \
-      buf[max_size] = 0;                                                           \
+      buf[(max_size) - 1] = '\0'; /* Ensure null termination within bounds */     \
       result = strlen(buf);                                                        \
       ompparserinput += result;                                                    \
     }                                                                              \

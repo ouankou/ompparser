@@ -91,7 +91,7 @@ int main(int argc, const char *argv[]) {
 
   char current_char = input_file.peek();
   std::string current_line;
-  std::regex fortran_regex("^![$][Oo][Mm][Pp]", std::regex::icase);
+  std::regex fortran_regex("^[!cC*][$][Oo][Mm][Pp]");
   const std::string invalid_marker = "invalid test without paired validation.";
   bool expect_invalid_next = false;
   bool expect_invalid_block = false;
