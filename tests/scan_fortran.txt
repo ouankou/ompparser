@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2025, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -21,6 +21,7 @@ PASS: !$omp scan exclusive (a, b, c)
 
 
 // invalid test without paired validation.
+EXPECT: invalid
 
 !$omp scan inclusive(a,b,c) exclusive(a,b,c)
 

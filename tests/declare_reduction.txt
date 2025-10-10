@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2025, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -22,6 +22,7 @@ PASS: #pragma omp declare reduction ( && : const,int : a ) initializer (omp_priv
 #pragma omp declare reduction(^ : const, int : a) initializer(omp_priv=test)
 PASS: #pragma omp declare reduction ( ^ : const,int : a ) initializer (omp_priv=test)
 // invalid test without paired validation.
+EXPECT: invalid
 
 #pragma omp declare reduction(max : const, int : a) initializer(omp_priv=foo(c,a,d))
 

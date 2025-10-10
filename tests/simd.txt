@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2025, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -59,6 +59,7 @@ PASS: #pragma omp simd collapse (a)
 PASS: #pragma omp simd order (concurrent)
 
 // invalid test without paired validation.
+EXPECT: invalid
 
 #pragma omp simd lastprivate(userde:a,b,c)
 

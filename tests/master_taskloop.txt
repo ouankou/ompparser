@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2025, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -71,6 +71,7 @@ PASS: #pragma omp master taskloop nogroup
 PASS: #pragma omp master taskloop allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
 
 // invalid test without paired validation.
+EXPECT: invalid
 
 #pragma omp master taskloop if (a) if (simd : b)
 

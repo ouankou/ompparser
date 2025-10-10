@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2025, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -36,6 +36,7 @@ PASS: #pragma omp allocate (z,x) align (3) allocator (omp_default_mem_alloc)
 
 
 // invalid test without paired validation.
+EXPECT: invalid
 
 #pragma omp allocate allocator(omp_default_mem_alloc:a,b,c)
 
