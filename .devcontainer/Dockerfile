@@ -5,6 +5,9 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # Install prerequisites
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    cmake \
+    flex \
+    bison \
     ca-certificates \
     curl \
     gnupg \
