@@ -1,0 +1,43 @@
+{
+  "name": "ompparser - Dev Container (LLVM 21)",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "ms-vscode.cmake-tools"
+      ]
+      ,
+      "settings": {
+        "clangd.path": "/usr/lib/llvm-21/bin/clangd-21",
+        "clangd.arguments": [
+          "--background-index",
+          "--clang-tidy",
+          "--cross-file-rename",
+          "--header-insertion=never"
+        ],
+        "clangd.semanticHighlighting": true,
+        "C_Cpp.intelliSenseEngine": "Disabled",
+        "cmake.configureOnOpen": true,
+        "cmake.configureSettings": {
+          "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        }
+      }
+    }
+  },
+  "containerEnv": {
+    "PATH": "/usr/lib/llvm-21/bin:${PATH}",
+    "LD_LIBRARY_PATH": "/usr/lib/llvm-21/lib:${LD_LIBRARY_PATH:-}",
+    "LIBRARY_PATH": "/usr/lib/llvm-21/lib:${LIBRARY_PATH:-}"
+  },
+  "features": {},
+  "postCreateCommand": "bash .devcontainer/verify-llvm.sh || true",
+  "forwardPorts": [],
+  "workspaceFolder": "/workspaces/ompparser",
+  "shutdownAction": "stopContainer"
+}
