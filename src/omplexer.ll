@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2025, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -76,9 +76,9 @@
 
 %{
 
-/* DQ (12/10/2016): This is a technique to suppress warnings in generated code that we want to be an error elsewhere in ROSE. 
-   See https://gcc.gnu.org/onlinedocs/gcc/Diagnostic-Pragmas.html for more detail.
- */
+/* DQ (12/10/2016): This is a technique to suppress warnings in generated code
+   that we want to be an error elsewhere in ROSE. See
+   https://gcc.gnu.org/onlinedocs/gcc/Diagnostic-Pragmas.html for more detail. */
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 8)
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #endif
@@ -87,45 +87,50 @@
 extern "C" int openmp_wrap() { return 1; }
 
 extern int openmp_lex();
-extern void * (*exprParse)(const char*);
+extern void *(*exprParse)(const char *);
 
+#include "ompparser.hh"
+#include <iostream>
 #include <stdio.h>
 #include <string>
 #include <string.h>
-#include "ompparser.hh"
-#include <iostream>
 
-/* Moved from Makefile.am to the source file to work with --with-pch 
-Liao 12/10/2009 */
+/* Moved from Makefile.am to the source file to work with --with-pch Liao
+   12/10/2009 */
 #define YY_NO_TOP_STATE
 #define YY_NO_POP_STATE
 
-static const char* ompparserinput = NULL;
+static const char *ompparserinput = NULL;
 static std::string current_string;
-static int parenthesis_local_count=0, parenthesis_global_count = 1, bracket_count;
+static int parenthesis_local_count = 0;
+static int parenthesis_global_count = 1;
+static int bracket_count;
 static int brace_count = 0;
 static char current_char;
 
-/* Liao 6/11/2010,
-OpenMP does not preclude the use of clause names as regular variable names.
-For example, num_threads could be a clause name or a variable in the variable list.
+/* Liao 6/11/2010, OpenMP does not preclude the use of clause names as regular
+   variable names. For example, num_threads could be a clause name or a
+   variable in the variable list.
 
-We introduce a flag to indicate the context: within a variable list like (a,y,y) or outside of it
-  We check '(' or ')' to set it to true or false as parsing proceed */
-extern bool b_within_variable_list ; /* = false; */
+   We introduce a flag to indicate the context: within a variable list like
+   (a,y,y) or outside of it We check '(' or ')' to set it to true or false as
+   parsing proceed */
+extern bool b_within_variable_list; /* = false; */
 
-/* pass user specified string to buf, indicate the size using 'result', 
-   and shift the current position pointer of user input afterwards 
-   to prepare next round of token recognition!!
-*/
-#define YY_INPUT(buf, result, max_size) { \
-                if (*ompparserinput == '\0') result = 0; \
-                else { strncpy(buf, ompparserinput, max_size); \
-                        buf[max_size] = 0; \
-                        result = strlen(buf); \
-                        ompparserinput += result; \
-                } \
-                }
+/* pass user specified string to buf, indicate the size using 'result', and
+   shift the current position pointer of user input afterwards to prepare next
+   round of token recognition!! */
+#define YY_INPUT(buf, result, max_size)                                            \
+  {                                                                                \
+    if (*ompparserinput == '\0')                                                  \
+      result = 0;                                                                  \
+    else {                                                                         \
+      strncpy(buf, ompparserinput, max_size);                                      \
+      buf[(max_size) - 1] = '\0'; /* Ensure null termination within bounds */     \
+      result = strlen(buf);                                                        \
+      ompparserinput += result;                                                    \
+    }                                                                              \
+  }
 
 %}
 
@@ -1091,29 +1096,25 @@ expr            {return (EXPRESSION); }
 
 
 /* yy_push_state can't be called outside of this file, provide a wrapper */
-extern void openmp_parse_expr() {
-        yy_push_state(EXPR_STATE);
-}
+extern void openmp_parse_expr() { yy_push_state(EXPR_STATE); }
 
 /* entry point invoked by callers to start scanning for a string */
-extern void openmp_lexer_init(const char* str) {
+extern void openmp_lexer_init(const char *str) {
   ompparserinput = str;
   /* We have openmp_ suffix for all flex functions */
   openmp_restart(openmp_in);
 }
 
-
 /* Standalone ompparser */
-void start_lexer(const char* input) {
-    yy_scan_string(input);
-}
+void start_lexer(const char *input) { yy_scan_string(input); }
 
 void end_lexer(void) {
-    // If the lexer exited due to some error, the condition stack could be nonempty.
-    // In this case, it has to be reset to the initial state manually, where yy_start_stack_ptr == 0.
-    while (yy_start_stack_ptr > 0) {
-        yy_pop_state();
-    };
-    yy_delete_buffer(YY_CURRENT_BUFFER);
+  // If the lexer exited due to some error, the condition stack could be nonempty.
+  // In this case, it has to be reset to the initial state manually, where
+  // yy_start_stack_ptr == 0.
+  while (yy_start_stack_ptr > 0) {
+    yy_pop_state();
+  };
+  yy_delete_buffer(YY_CURRENT_BUFFER);
 }
 

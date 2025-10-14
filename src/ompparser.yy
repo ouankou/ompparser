@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2025, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -16,46 +16,55 @@
 /* DQ (2/10/2014): IF is conflicting with Boost template IF. */
 #undef IF
 
-#include <stdio.h>
-#include <assert.h>
-#include <iostream>
 #include "OpenMPIR.h"
-#include <string.h>
-#include <regex>
+
+#include <algorithm>
 #include <assert.h>
+#include <cstring>
+#include <iostream>
+#include <regex>
+#include <stdio.h>
+#include <string>
+#include <string.h>
+#include <vector>
 
 /*the scanner function*/
 extern int openmp_lex(); 
 
 /*A customized initialization function for the scanner, str is the string to be scanned.*/
-extern void openmp_lexer_init(const char* str);
+extern void openmp_lexer_init(const char *str);
 
 /* Standalone ompparser */
 extern void start_lexer(const char* input);
 extern void end_lexer(void);
 
 //The directive/clause that are being parsed
-static OpenMPDirective* current_directive = NULL;
-static OpenMPClause* current_clause = NULL;
-static OpenMPDirective* current_parent_directive = NULL;
-static OpenMPClause* current_parent_clause = NULL;
+static OpenMPDirective *current_directive = NULL;
+static OpenMPClause *current_clause = NULL;
+static OpenMPDirective *current_parent_directive = NULL;
+static OpenMPClause *current_parent_clause = NULL;
 static int firstParameter = 0;
 static int secondParameter = 0;
 static int thirdParameter = 0;
 static OpenMPUsesAllocatorsClauseAllocator usesAllocator;
-static const char* firstStringParameter = "";
-static const char* secondStringParameter = "";
-static std::vector<const char*>* iterator_definition = new std::vector<const char*>();
-static std::vector<const char*>* depend_iterator_definition = new std::vector<const char*>();
-static std::vector<std::vector<const char*>* >* depend_iterators_definition_class;
-//std::vector<std::vector<const char*>* >* depend_iterators_definition_class;
-static const char* trait_score = "";
+static const char *firstStringParameter = "";
+static const char *secondStringParameter = "";
+static std::vector<const char *> *iterator_definition =
+    new std::vector<const char *>();
+static std::vector<const char *> *depend_iterator_definition =
+    new std::vector<const char *>();
+static std::vector<std::vector<const char *> *> *
+    depend_iterators_definition_class;
+// std::vector<std::vector<const char*>* >* depend_iterators_definition_class;
+static const char *trait_score = "";
 /* Treat the entire expression as a string for now */
 extern void openmp_parse_expr();
-static int openmp_error(const char*);
-void * (*exprParse)(const char*) = NULL;
+static int openmp_error(const char *);
+void *(*exprParse)(const char *) = NULL;
 
-bool b_within_variable_list  = false;  // a flag to indicate if the program is now processing a list of variables
+bool b_within_variable_list =
+    false; // a flag to indicate if the program is now processing a list of
+           // variables
 
 /* used for language setting and detecting*/
 OpenMPBaseLang user_set_lang = Lang_unknown;
@@ -3529,24 +3538,38 @@ int yywrap()
 OpenMPDirective* parseOpenMP(const char* _input, void * _exprParse(const char*)) {
     OpenMPBaseLang base_lang = Lang_C;
     current_directive = NULL;
-    std::string input_string;
+    std::string input_string;  // Must persist until after start_lexer()
     const char *input = _input;
-    std::regex fortran_regex ("[!c*][$][Oo][Mm][Pp]");
-    input_string = std::string(input, 5);
+    std::regex fortran_regex ("[!cC*][$][Oo][Mm][Pp]");
+    
+    // Check input length to avoid undefined behavior
+    size_t input_len = strlen(input);
+    size_t check_len = (input_len < 5) ? input_len : 5;
+    std::string prefix_check(input, check_len);
+    
     if (user_set_lang == Lang_unknown){
         auto_lang = Lang_C;
         exprParse = _exprParse;
-        if (std::regex_match(input_string, fortran_regex)) {
+        if (std::regex_search(prefix_check, fortran_regex)) {
             base_lang = Lang_Fortran;
             auto_lang = Lang_Fortran;
             input_string = std::string(input);
             std::transform(input_string.begin(), input_string.end(), input_string.begin(), ::tolower);
             input = input_string.c_str();
-        };
+        }
     } else {
         base_lang = user_set_lang;
         exprParse = _exprParse;
-        if (std::regex_match(input_string, fortran_regex)) {
+        /* Ensure auto_lang reflects the explicitly set language to avoid
+           stale auto-detection state from previous parses. */
+        auto_lang = user_set_lang;
+        if (std::regex_search(prefix_check, fortran_regex)) {
+            /* Input appears to be Fortran-style (e.g. starts with !$OMP or !C$OMP)
+               Normalize to lowercase so the lexer rules that expect lowercase
+               "omp" match correctly, then check for language mismatch. */
+            input_string = std::string(input);
+            std::transform(input_string.begin(), input_string.end(), input_string.begin(), ::tolower);
+            input = input_string.c_str();
             if (user_set_lang != Lang_Fortran){
                 yyerror("The language is set to C/C++, but the input is Fortran.");
                 return NULL;
@@ -3556,13 +3579,13 @@ OpenMPDirective* parseOpenMP(const char* _input, void * _exprParse(const char*))
                 yyerror("The language is set to Fortran, but the input is C/C++.");
                 return NULL;
             }
-        };
+        }
     }
     start_lexer(input);
     yyparse();
     end_lexer();
     if (current_directive) {
         current_directive->setBaseLang(base_lang);
-    };
+    }
     return current_directive;
 }
