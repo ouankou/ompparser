@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2025, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -77,6 +77,7 @@ PASS: !$omp distribute parallel do dist_schedule (static)
 PASS: !$omp end distribute parallel do 
 
 // invalid test without paired validation.
+EXPECT: invalid
 
 !$omp distribute parallel do private (a[foo(x, goo(x, y)):100], b[1:30], c) num_threads (3*5+4/(7+10)) allocate (omp_user_defined_mem_alloc : m, n[1:5]) allocate (no, allo, cator)
 
