@@ -9,6 +9,7 @@
 %option prefix="openmp_"
 %option stack
 %option noyy_top_state
+%option noinput
 
 %x AFFINITY_EXPR_STATE
 %x AFFINITY_ITERATOR_STATE
