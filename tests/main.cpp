@@ -112,12 +112,6 @@ int main(int argc, const char *argv[]) {
         }
         current_pragma_line_no = line_no;
         input_pragma = current_line;
-        /*
-        if (is_fortran) {
-            std::transform(current_line.begin(), current_line.end(),
-        current_line.begin(), ::tolower);
-        };
-        */
         OpenMPDirective *openMPAST = parseOpenMP(current_line.c_str(), NULL);
         output_pragma = test(openMPAST);
         is_fortran = false;

@@ -15,9 +15,6 @@ std::vector<std::string> *preProcessC(std::ifstream &);
 std::vector<std::string> *preProcessC(std::ifstream &input_file) {
 
   std::string input_pragma;
-  int total_amount = 0;
-  int line_no = 0;
-  int current_pragma_line_no = 1;
   std::vector<std::string> *omp_pragmas = new std::vector<std::string>();
 
   char current_char = input_file.peek();
@@ -28,7 +25,6 @@ std::vector<std::string> *preProcessC(std::ifstream &input_file) {
   std::regex continue_regex("([\\\\]+[[:blank:]]*$)");
 
   while (!input_file.eof()) {
-    line_no += 1;
     switch (current_char) {
     case '\n':
       input_file.seekg(1, std::ios_base::cur);
@@ -51,9 +47,6 @@ std::vector<std::string> *preProcessC(std::ifstream &input_file) {
           current_line = std::regex_replace(current_line, comment_regex, "");
         };
         input_pragma += current_line;
-        total_amount += 1;
-        current_pragma_line_no = line_no;
-        // std::cout << input_pragma << std::endl;
         omp_pragmas->push_back(input_pragma);
       }
     };
