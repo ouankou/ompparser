@@ -6,15 +6,19 @@
 # SPDX-License-Identifier: (BSD-3-Clause)
 #*****************************************************************************************************************#
 
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.20)
 project(ompparser)
 
 include(CTest)
 
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_VERBOSE_MAKEFILE ON)
-set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_VERBOSE_MAKEFILE OFF)
+
+# Set default build type to Release if not specified
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build (Debug or Release)" FORCE)
+endif()
 
 set(OMPPARSER_VERSION_MAJOR 0)
 set(OMPPARSER_VERSION_MINOR 2)
@@ -42,7 +46,7 @@ set(OMPIR_SOURCE_FILES
 
 # tools based on omparser
 set(OMPP_TOOLS
-    preprocess_c.cpp)
+    utils/preprocess_c.cpp)
 
 BISON_TARGET(OMPBISONParser src/ompparser.yy ${CMAKE_CURRENT_BINARY_DIR}/ompparser.cc)
 FLEX_TARGET(OMPFLEXScanner src/omplexer.ll ${CMAKE_CURRENT_BINARY_DIR}/omplexer.cc)
@@ -57,17 +61,17 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_library(ompparser SHARED ${BISON_OMPBISONParser_OUTPUTS} ${FLEX_OMPFLEXScanner_OUTPUTS} ${OMPIR_SOURCE_FILES})
 
 # The temporary test file
-add_executable(main EXCLUDE_FROM_ALL main.cpp)
+add_executable(main EXCLUDE_FROM_ALL tests/main.cpp)
 add_dependencies(main ompparser)
 target_link_libraries(main ompparser)
 
 # The temporary test file
-add_executable(tester EXCLUDE_FROM_ALL tester.cpp)
+add_executable(tester EXCLUDE_FROM_ALL tests/tester.cpp)
 add_dependencies(tester ompparser)
 target_link_libraries(tester ompparser)
 
 # The standalone ompparser executable
-add_executable(ompp EXCLUDE_FROM_ALL ${OMPP_TOOLS} ompparser.cpp)
+add_executable(ompp EXCLUDE_FROM_ALL ${OMPP_TOOLS} utils/ompparser.cpp)
 add_dependencies(ompp ompparser)
 target_link_libraries(ompp ompparser)
 
