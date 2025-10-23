@@ -90,7 +90,6 @@ extern int openmp_lex();
 extern void *(*exprParse)(const char *);
 
 #include "ompparser.hh"
-#include <iostream>
 #include <stdio.h>
 #include <string>
 #include <string.h>
@@ -122,13 +121,21 @@ extern bool b_within_variable_list; /* = false; */
    round of token recognition!! */
 #define YY_INPUT(buf, result, max_size)                                            \
   {                                                                                \
-    if (*ompparserinput == '\0')                                                  \
+    if ((max_size) <= 0) {                                                         \
       result = 0;                                                                  \
-    else {                                                                         \
-      strncpy(buf, ompparserinput, max_size);                                      \
-      buf[(max_size) - 1] = '\0'; /* Ensure null termination within bounds */     \
-      result = strlen(buf);                                                        \
-      ompparserinput += result;                                                    \
+    } else if (*ompparserinput == '\0') {                                         \
+      buf[0] = '\0';                                                              \
+      result = 0;                                                                  \
+    } else {                                                                       \
+      size_t remaining = strlen(ompparserinput);                                   \
+      size_t capacity = static_cast<size_t>(max_size);                              \
+      size_t chunk = (capacity > 1 && remaining < (capacity - 1))                   \
+                          ? remaining                                              \
+                          : ((capacity > 1) ? (capacity - 1) : 0);                  \
+      memcpy(buf, ompparserinput, chunk);                                          \
+      buf[chunk] = '\0';                                                          \
+      result = static_cast<int>(chunk);                                            \
+      ompparserinput += chunk;                                                     \
     }                                                                              \
   }
 
@@ -498,14 +505,14 @@ sizes                     { return SIZES; }
 <BIND_STATE>{blank}*                        { ; }
 <BIND_STATE>.                               { return -1; }
 
-<ALLOCATOR_STATE>omp_default_mem_aloc       { return DEFAULT_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_large_cap_mem_lloc     { return LARGE_CAP_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_const_mem_allo         { return CONST_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_high_bw_mem_aloc       { return HIGH_BW_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_low_lat_mem_aloc       { return LOW_LAT_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_cgroup_mem_allc        { return CGROUP_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_pteam_mem_allo         { return PTEAM_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_thread_mem_allc        { return THREAD_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_default_mem_alloc      { return DEFAULT_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_large_cap_mem_alloc    { return LARGE_CAP_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_const_mem_alloc        { return CONST_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_high_bw_mem_alloc      { return HIGH_BW_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_low_lat_mem_alloc      { return LOW_LAT_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_cgroup_mem_alloc       { return CGROUP_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_pteam_mem_alloc        { return PTEAM_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_thread_mem_alloc       { return THREAD_MEM_ALLOC; }
 <ALLOCATOR_STATE>{blank}*                   { ; }
 <ALLOCATOR_STATE>"("                        { return '('; }
 <ALLOCATOR_STATE>")"                        { yy_pop_state(); return ')'; }

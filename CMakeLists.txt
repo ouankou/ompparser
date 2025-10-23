@@ -66,6 +66,12 @@ add_executable(tester EXCLUDE_FROM_ALL tester.cpp)
 add_dependencies(tester ompparser)
 target_link_libraries(tester ompparser)
 
+# Regression executable to ensure allocator tokens are classified correctly.
+add_executable(allocator_clause_token_test EXCLUDE_FROM_ALL
+               tests/allocator_clause_token_test.cpp)
+add_dependencies(allocator_clause_token_test ompparser)
+target_link_libraries(allocator_clause_token_test ompparser)
+
 # The standalone ompparser executable
 add_executable(ompp EXCLUDE_FROM_ALL ${OMPP_TOOLS} ompparser.cpp)
 add_dependencies(ompp ompparser)
@@ -86,9 +92,12 @@ if(BUILD_TESTING)
              COMMAND $<TARGET_FILE:tester> "${TEST_FILE}")
   endforeach()
 
+  add_test(NAME allocator_clause_token
+           COMMAND $<TARGET_FILE:allocator_clause_token_test>)
+
   add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS tester)
+    DEPENDS tester allocator_clause_token_test)
 endif()
 
 # Install headers and libraries
