@@ -91,23 +91,57 @@ extern int openmp_lex();
 extern void *(*exprParse)(const char *);
 
 #include "ompparser.hh"
-#include <iostream>
-#include <stdio.h>
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include <string>
-#include <string.h>
 
 /* Moved from Makefile.am to the source file to work with --with-pch Liao
    12/10/2009 */
 #define YY_NO_TOP_STATE
 #define YY_NO_POP_STATE
 
-static const char *ompparserinput = NULL;
+static const char *ompparserinput = nullptr;
 static std::string current_string;
 static int parenthesis_local_count = 0;
 static int parenthesis_global_count = 1;
 static int bracket_count;
 static int brace_count = 0;
 static char current_char;
+
+/* Helper functions for expression state management */
+static inline void reset_expression_counters() {
+  parenthesis_local_count = 0;
+  parenthesis_global_count = 1;
+  bracket_count = 0;
+  brace_count = 0;
+}
+
+static inline void clear_expression_buffer() {
+  current_string.clear();
+  reset_expression_counters();
+}
+
+static inline void prepare_expression_capture() {
+  clear_expression_buffer();
+}
+
+static inline void prepare_expression_capture(char initial_char) {
+  clear_expression_buffer();
+  current_string.push_back(initial_char);
+}
+
+#define emit_expr_string_and_unput(ch) \
+  (openmp_lval.stype = strdup(current_string.c_str()), \
+   clear_expression_buffer(), \
+   unput(ch), \
+   EXPR_STRING)
+
+static inline int emit_expr_string_no_unput() {
+  openmp_lval.stype = strdup(current_string.c_str());
+  clear_expression_buffer();
+  return EXPR_STRING;
+}
 
 /* Liao 6/11/2010, OpenMP does not preclude the use of clause names as regular
    variable names. For example, num_threads could be a clause name or a
@@ -123,13 +157,20 @@ extern bool b_within_variable_list; /* = false; */
    round of token recognition!! */
 #define YY_INPUT(buf, result, max_size)                                            \
   {                                                                                \
-    if (*ompparserinput == '\0')                                                  \
+    if (ompparserinput == nullptr || *ompparserinput == '\0') {                   \
+      if (buf != nullptr && (max_size) > 0) {                                     \
+        buf[0] = '\0';                                                            \
+      }                                                                            \
       result = 0;                                                                  \
-    else {                                                                         \
-      strncpy(buf, ompparserinput, max_size);                                      \
-      buf[(max_size) - 1] = '\0'; /* Ensure null termination within bounds */     \
-      result = strlen(buf);                                                        \
-      ompparserinput += result;                                                    \
+    } else {                                                                       \
+      const size_t remaining = std::strlen(ompparserinput);                        \
+      const size_t to_copy = std::min(remaining, static_cast<size_t>(max_size));  \
+      std::memcpy(buf, ompparserinput, to_copy);                                   \
+      if (to_copy < static_cast<size_t>(max_size)) {                              \
+        buf[to_copy] = '\0';                                                      \
+      }                                                                            \
+      result = static_cast<int>(to_copy);                                          \
+      ompparserinput += to_copy;                                                   \
     }                                                                              \
   }
 
@@ -317,7 +358,7 @@ sizes                     { return SIZES; }
 <ALLOCATE_STATE>")"                                   { yy_pop_state(); return ')'; }
 <ALLOCATE_STATE>":"                                   { return ':'; }
 <ALLOCATE_STATE>{blank}*                              { ; }
-<ALLOCATE_STATE>.                                     { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<ALLOCATE_STATE>.                                     { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <IF_STATE>parallel{blank}*/:                { return PARALLEL; }
 <IF_STATE>simd{blank}*/:                    { return SIMD; }
@@ -333,7 +374,7 @@ sizes                     { return SIZES; }
 <IF_STATE>")"                               { yy_pop_state(); return ')'; }
 <IF_STATE>":"                               { return ':'; }
 <IF_STATE>{blank}*                          { ; }
-<IF_STATE>.                                 { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<IF_STATE>.                                 { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 
 <PROC_BIND_STATE>master                     { return MASTER; }
@@ -377,7 +418,7 @@ sizes                     { return SIZES; }
 <REDUCTION_STATE>min/{blank}*:              { return MIN; }
 <REDUCTION_STATE>max/{blank}*:              { return MAX; }
 <REDUCTION_STATE>{blank}*                   { ; }
-<REDUCTION_STATE>.                          { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<REDUCTION_STATE>.                          { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <SIMD_STATE>"("                             { yy_push_state(EXPR_STATE); return '('; }
 <SIMD_STATE>")"                             { yy_pop_state(); return ')'; }
@@ -390,34 +431,34 @@ sizes                     { return SIZES; }
 <PRIVATE_STATE>"("                          { return '('; }
 <PRIVATE_STATE>")"                          { yy_pop_state(); return ')'; }
 <PRIVATE_STATE>{blank}*                     { ; }
-<PRIVATE_STATE>.                            { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<PRIVATE_STATE>.                            { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <FIRSTPRIVATE_STATE>"("                     { return '('; }
 <FIRSTPRIVATE_STATE>")"                     { yy_pop_state(); return ')'; }
 <FIRSTPRIVATE_STATE>{blank}*                { ; }
-<FIRSTPRIVATE_STATE>.                       { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<FIRSTPRIVATE_STATE>.                       { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <SHARED_STATE>"("                           { return '('; }
 <SHARED_STATE>")"                           { yy_pop_state(); return ')'; }
 <SHARED_STATE>{blank}*                      { ; }
-<SHARED_STATE>.                             { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<SHARED_STATE>.                             { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <COPYPRIVATE_STATE>"("                      { return '('; }
 <COPYPRIVATE_STATE>")"                      { yy_pop_state(); return ')'; }
 <COPYPRIVATE_STATE>{blank}*                 { ; }
-<COPYPRIVATE_STATE>.                        { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<COPYPRIVATE_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <COPYIN_STATE>"("                           { return '('; }
 <COPYIN_STATE>")"                           { yy_pop_state(); return ')'; }
 <COPYIN_STATE>{blank}*                      { ; }
-<COPYIN_STATE>.                             { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<COPYIN_STATE>.                             { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <LASTPRIVATE_STATE>conditional/{blank}*:    { return MODIFIER_CONDITIONAL; }
 <LASTPRIVATE_STATE>"("                      { return '('; }
 <LASTPRIVATE_STATE>")"                      { yy_pop_state(); return ')'; }
 <LASTPRIVATE_STATE>":"                      { return ':'; }
 <LASTPRIVATE_STATE>{blank}*                 { ; }
-<LASTPRIVATE_STATE>.                        { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<LASTPRIVATE_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <LINEAR_STATE>"("                           { return '('; }
 <LINEAR_STATE>")"                           { yy_pop_state(); return ')'; }
@@ -426,7 +467,7 @@ sizes                     { return SIZES; }
 <LINEAR_STATE>uval/{blank}*                 { return MODOFIER_UVAL; }
 <LINEAR_STATE>":"                           { return ':'; }
 <LINEAR_STATE>{blank}*                      { ; }
-<LINEAR_STATE>.                             { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<LINEAR_STATE>.                             { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 
 <SCHEDULE_STATE>monotonic                   { return MODIFIER_MONOTONIC; }
@@ -442,12 +483,12 @@ sizes                     { return SIZES; }
 <SCHEDULE_STATE>"("                         { return '('; }
 <SCHEDULE_STATE>")"                         { yy_pop_state(); return ')'; }
 <SCHEDULE_STATE>{blank}*                    { ; }
-<SCHEDULE_STATE>.                           { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<SCHEDULE_STATE>.                           { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <COLLAPSE_STATE>"("                         { return '('; }
 <COLLAPSE_STATE>")"                         { yy_pop_state(); return ')'; }
 <COLLAPSE_STATE>{blank}*                    { ; }
-<COLLAPSE_STATE>.                           { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<COLLAPSE_STATE>.                           { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ORDERED_STATE>"("                          { yy_push_state(EXPR_STATE); return '('; }
 <ORDERED_STATE>")"                          { yy_pop_state(); return ')'; }
@@ -456,40 +497,40 @@ sizes                     { return SIZES; }
 <SIMDLEN_STATE>"("                          { return '('; }
 <SIMDLEN_STATE>")"                          { yy_pop_state(); return ')'; }
 <SIMDLEN_STATE>{blank}*                     { ; }
-<SIMDLEN_STATE>.                            { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<SIMDLEN_STATE>.                            { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <SAFELEN_STATE>"("                          { return '('; }
 <SAFELEN_STATE>")"                          { yy_pop_state(); return ')'; }
 <SAFELEN_STATE>{blank}*                     { ; }
-<SAFELEN_STATE>.                            { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<SAFELEN_STATE>.                            { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <NONTEMPORAL_STATE>"("                      { return '('; }
 <NONTEMPORAL_STATE>")"                      { yy_pop_state(); return ')'; }
 <NONTEMPORAL_STATE>{blank}*                 { ; }
-<NONTEMPORAL_STATE>.                        { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<NONTEMPORAL_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <NUM_TEAMS_STATE>"("                        { return '('; }
 <NUM_TEAMS_STATE>")"                        { yy_pop_state(); return ')'; }
 <NUM_TEAMS_STATE>{blank}*                   { ; }
-<NUM_TEAMS_STATE>.                          { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<NUM_TEAMS_STATE>.                          { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <NUM_THREADS_STATE>"("                      { return '('; }
 <NUM_THREADS_STATE>")"                      { yy_pop_state(); return ')'; }
 <NUM_THREADS_STATE>{blank}*                 { ; }
-<NUM_THREADS_STATE>.                        { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<NUM_THREADS_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ALIGNED_STATE>"("                          { return '('; }
 <ALIGNED_STATE>":"                          { return ':'; }
 <ALIGNED_STATE>")"                          { yy_pop_state(); return ')'; }
 <ALIGNED_STATE>{blank}*                     { ; }
-<ALIGNED_STATE>.                            { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<ALIGNED_STATE>.                            { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <DIST_SCHEDULE_STATE>static/{blank}*        {return STATIC; }
 <DIST_SCHEDULE_STATE>"("                    { return '('; }
 <DIST_SCHEDULE_STATE>","                    { return ','; }
 <DIST_SCHEDULE_STATE>")"                    { yy_pop_state(); return ')'; }
 <DIST_SCHEDULE_STATE>{blank}*               { ; }
-<DIST_SCHEDULE_STATE>.                      { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<DIST_SCHEDULE_STATE>.                      { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <BIND_STATE>teams                           { return TEAMS; }
 <BIND_STATE>parallel                        { return PARALLEL; }
@@ -499,25 +540,25 @@ sizes                     { return SIZES; }
 <BIND_STATE>{blank}*                        { ; }
 <BIND_STATE>.                               { return -1; }
 
-<ALLOCATOR_STATE>omp_default_mem_aloc       { return DEFAULT_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_large_cap_mem_lloc     { return LARGE_CAP_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_const_mem_allo         { return CONST_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_high_bw_mem_aloc       { return HIGH_BW_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_low_lat_mem_aloc       { return LOW_LAT_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_cgroup_mem_allc        { return CGROUP_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_pteam_mem_allo         { return PTEAM_MEM_ALLOC; }
-<ALLOCATOR_STATE>omp_thread_mem_allc        { return THREAD_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_default_mem_alloc      { return DEFAULT_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_large_cap_mem_alloc    { return LARGE_CAP_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_const_mem_alloc        { return CONST_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_high_bw_mem_alloc      { return HIGH_BW_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_low_lat_mem_alloc      { return LOW_LAT_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_cgroup_mem_alloc       { return CGROUP_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_pteam_mem_alloc        { return PTEAM_MEM_ALLOC; }
+<ALLOCATOR_STATE>omp_thread_mem_alloc       { return THREAD_MEM_ALLOC; }
 <ALLOCATOR_STATE>{blank}*                   { ; }
 <ALLOCATOR_STATE>"("                        { return '('; }
 <ALLOCATOR_STATE>")"                        { yy_pop_state(); return ')'; }
-<ALLOCATOR_STATE>.                          { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<ALLOCATOR_STATE>.                          { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <INITIALIZER_STATE>omp_priv                 { return OMP_PRIV; }
 <INITIALIZER_STATE>"="                      { return '='; }
 <INITIALIZER_STATE>{blank}*                 { ; }
 <INITIALIZER_STATE>"("                      { return '('; }
 <INITIALIZER_STATE>")"                      { yy_pop_state(); return ')'; }
-<INITIALIZER_STATE>.                        { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<INITIALIZER_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <MAPPER_STATE>default                       { return IDENTIFIER_DEFAULT; }
 <MAPPER_STATE>"::"                          { return DOUBLE_COLON; }
@@ -525,14 +566,14 @@ sizes                     { return SIZES; }
 <MAPPER_STATE>{blank}*                      { ; }
 <MAPPER_STATE>"("                           { return '('; }
 <MAPPER_STATE>")"                           { yy_pop_state(); return ')'; }
-<MAPPER_STATE>.                             { yy_push_state(ID_EXPR_STATE); current_string = yytext[0]; }
+<MAPPER_STATE>.                             { yy_push_state(ID_EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <TYPE_STR_STATE>.                           { current_char = yytext[0];
                                             switch (current_char) {
                                                 case '(': {
                                                     parenthesis_local_count++;
                                                     parenthesis_global_count++;
-                                                    current_string.append(1, current_char);
+                                                    current_string.push_back(current_char);
                                                     break;
                                                 }
                                                 case ')': {
@@ -540,32 +581,23 @@ sizes                     { return SIZES; }
                                                     parenthesis_global_count--;
                                                     if (parenthesis_global_count == 0) {
                                                         yy_pop_state();
-                                                        if (current_string.size() != 0) {
-                                                            openmp_lval.stype = strdup(current_string.c_str());
-                                                            current_string.clear();
-                                                            unput(')');
-                                                            parenthesis_local_count = 0;
-                                                            parenthesis_global_count = 1;
-                                                            bracket_count = 0;
-                                                            return EXPR_STRING;
+                                                        if (!current_string.empty()) {
+                                                            return emit_expr_string_and_unput(')');
                                                         }
-                                                        else {
-                                                            break;
-                                                        };
+                                                    } else {
+                                                        current_string.push_back(current_char);
                                                     }
-                                                    else {
-                                                        current_string.append(1, current_char);
-                                                    };
                                                     break;
                                                 }
                                                 case ' ': {
-                                                    current_string.append(1, current_char);
+                                                    current_string.push_back(current_char);
                                                     break;
                                                 }
                                                 default: {
                                                     if (current_char != ' ' || parenthesis_local_count != 0) {
-                                                        current_string.append(1, current_char);
+                                                        current_string.push_back(current_char);
                                                     }
+                                                    break;
                                                 }
                                             }
                                         }
@@ -582,7 +614,7 @@ sizes                     { return SIZES; }
 <WHEN_STATE>device                          { return DEVICE; }
 <WHEN_STATE>implementation                  { yy_push_state(IMPLEMENTATION_STATE); return IMPLEMENTATION; }
 <WHEN_STATE>{blank}*                        { ; }
-<WHEN_STATE>.                               { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<WHEN_STATE>.                               { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <IMPLEMENTATION_STATE>"("                            { return '('; }
 <IMPLEMENTATION_STATE>","                            { return ','; }
@@ -593,7 +625,7 @@ sizes                     { return SIZES; }
 <IMPLEMENTATION_STATE>vendor/{blank}*\(              { yy_push_state(VENDOR_STATE); return VENDOR; }
 <IMPLEMENTATION_STATE>extension/{blank}*\(           { yy_push_state(EXTENSION_STATE); return EXTENSION; }
 <IMPLEMENTATION_STATE>{blank}*                       { ; }
-<IMPLEMENTATION_STATE>.                              { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<IMPLEMENTATION_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <MATCH_STATE>"("                            { return '('; }
 <MATCH_STATE>":"                            { yy_push_state(INITIAL); return ':'; }
@@ -606,21 +638,21 @@ sizes                     { return SIZES; }
 <MATCH_STATE>device                         { return DEVICE; }
 <MATCH_STATE>implementation                 { yy_push_state(IMPLEMENTATION_STATE); return IMPLEMENTATION; }
 <MATCH_STATE>{blank}*                       { ; }
-<MATCH_STATE>.                              { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<MATCH_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ISA_STATE>"("/score{blank}*\(              { return '('; }
 <ISA_STATE>"("                              { parenthesis_global_count = 1; return '('; }
 <ISA_STATE>")"                              { yy_pop_state(); return ')'; }
 <ISA_STATE>{blank}*                         { ; }
 <ISA_STATE>score/{blank}*\(                 { yy_push_state(SCORE_STATE); return SCORE; }
-<ISA_STATE>.                                { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<ISA_STATE>.                                { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ARCH_STATE>"("/score{blank}*\(             { return '('; }
 <ARCH_STATE>"("                             { parenthesis_global_count = 1; return '('; }
 <ARCH_STATE>")"                             { yy_pop_state(); return ')'; }
 <ARCH_STATE>{blank}*                        { ; }
 <ARCH_STATE>score/{blank}*\(                { yy_push_state(SCORE_STATE); return SCORE; }
-<ARCH_STATE>.                               { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<ARCH_STATE>.                               { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <SCORE_STATE>"("{blank}*                    { yy_push_state(EXPR_STATE); parenthesis_global_count = 1; return '('; }
 <SCORE_STATE>")"                            { return ')'; }
@@ -632,7 +664,7 @@ sizes                     { return SIZES; }
 <CONDITION_STATE>")"                        { yy_pop_state(); return ')'; }
 <CONDITION_STATE>{blank}*                   { ; }
 <CONDITION_STATE>score/{blank}*\(           { yy_push_state(SCORE_STATE); return SCORE; }
-<CONDITION_STATE>.                          { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<CONDITION_STATE>.                          { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <VENDOR_STATE>"("                           { return '('; }
 <VENDOR_STATE>")"                           { yy_pop_state(); return ')'; }
@@ -654,7 +686,7 @@ sizes                     { return SIZES; }
 <EXTENSION_STATE>"("                        { return '('; }
 <EXTENSION_STATE>")"                        { yy_pop_state(); return ')'; }
 <EXTENSION_STATE>{blank}*                   { ; }
-<EXTENSION_STATE>.                          { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<EXTENSION_STATE>.                          { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <IN_REDUCTION_STATE>"("                     { return '('; }
 <IN_REDUCTION_STATE>")"                     { yy_pop_state(); return ')'; }
@@ -671,14 +703,14 @@ sizes                     { return SIZES; }
 <IN_REDUCTION_STATE>min/{blank}*:           { return MIN; }
 <IN_REDUCTION_STATE>max/{blank}*:           { return MAX; }
 <IN_REDUCTION_STATE>{blank}*                { ; }
-<IN_REDUCTION_STATE>.                       { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<IN_REDUCTION_STATE>.                       { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <DEPEND_STATE>"("                           { return '('; }
 <DEPEND_STATE>")"                           { yy_pop_state(); return ')'; }
 <DEPEND_STATE>","                           { return ','; }
 <DEPEND_STATE>"="                           { return '='; }
 <DEPEND_STATE>":"                           { yy_push_state(EXPR_STATE); return ':'; }
-<DEPEND_STATE>iterator/{blank}*"("          { current_string.clear(); yy_push_state(DEPEND_ITERATOR_STATE);return MODIFIER_ITERATOR; }
+<DEPEND_STATE>iterator/{blank}*"("          { prepare_expression_capture(); yy_push_state(DEPEND_ITERATOR_STATE);return MODIFIER_ITERATOR; }
 
 <DEPEND_STATE>in                            { return IN; }
 <DEPEND_STATE>out                           { return OUT; }
@@ -699,28 +731,28 @@ sizes                     { return SIZES; }
 <DEPEND_ITERATOR_STATE>.                    { yy_push_state(DEPEND_EXPR_STATE); unput(yytext[0]); }
 
 <DEPEND_EXPR_STATE>"("{blank}*              { return '('; }
-<DEPEND_EXPR_STATE>{blank}*")"              { yy_pop_state(); openmp_lval.stype = strdup(current_string.c_str()); current_string.clear(); unput(')'); return EXPR_STRING; }
-<DEPEND_EXPR_STATE>","                      { yy_pop_state(); openmp_lval.stype = strdup(current_string.c_str()); current_string.clear(); unput(','); return EXPR_STRING; } 
-<DEPEND_EXPR_STATE>{blank}                  { yy_pop_state(); openmp_lval.stype = strdup(current_string.c_str()); current_string.clear(); return EXPR_STRING; }
-<DEPEND_EXPR_STATE>"="                      { yy_pop_state(); openmp_lval.stype = strdup(current_string.c_str()); current_string.clear(); unput('='); return EXPR_STRING; }   
-<DEPEND_EXPR_STATE>":"                      { yy_pop_state(); openmp_lval.stype = strdup(current_string.c_str()); current_string.clear(); unput(':'); return EXPR_STRING; }
-<DEPEND_EXPR_STATE>.                        { current_string += yytext[0]; }
+<DEPEND_EXPR_STATE>{blank}*")"              { yy_pop_state(); return emit_expr_string_and_unput(')'); }
+<DEPEND_EXPR_STATE>","                      { yy_pop_state(); return emit_expr_string_and_unput(','); }
+<DEPEND_EXPR_STATE>{blank}                  { yy_pop_state(); return emit_expr_string_no_unput(); }
+<DEPEND_EXPR_STATE>"="                      { yy_pop_state(); return emit_expr_string_and_unput('='); }
+<DEPEND_EXPR_STATE>":"                      { yy_pop_state(); return emit_expr_string_and_unput(':'); }
+<DEPEND_EXPR_STATE>.                        { current_string.push_back(yytext[0]); }
 
 <AFFINITY_STATE>"("                         { return '('; }
 <AFFINITY_STATE>")"                         { yy_pop_state(); return ')'; }
 <AFFINITY_STATE>","                         { return ','; }
 <AFFINITY_STATE>":"                         { return ':'; }
-<AFFINITY_STATE>iterator/{blank}*"("        { current_string.clear(); yy_push_state(AFFINITY_ITERATOR_STATE);return MODIFIER_ITERATOR; }
+<AFFINITY_STATE>iterator/{blank}*"("        { prepare_expression_capture(); yy_push_state(AFFINITY_ITERATOR_STATE);return MODIFIER_ITERATOR; }
 <AFFINITY_STATE>{blank}*                    { ; }
 <AFFINITY_STATE>.                           { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
 <AFFINITY_EXPR_STATE>"("{blank}*            { return '('; }
-<AFFINITY_EXPR_STATE>{blank}*")"            { yy_pop_state(); openmp_lval.stype = strdup(current_string.c_str()); current_string.clear(); unput(')'); return EXPR_STRING; }
-<AFFINITY_EXPR_STATE>{blank}                { yy_pop_state(); openmp_lval.stype = strdup(current_string.c_str()); current_string.clear(); return EXPR_STRING; }
-<AFFINITY_EXPR_STATE>","                    { yy_pop_state(); openmp_lval.stype = strdup(current_string.c_str()); current_string.clear(); unput(','); return EXPR_STRING; }
-<AFFINITY_EXPR_STATE>"="                    { yy_pop_state(); openmp_lval.stype = strdup(current_string.c_str()); current_string.clear(); unput('='); return EXPR_STRING; } 
-<AFFINITY_EXPR_STATE>":"                    { yy_pop_state(); openmp_lval.stype = strdup(current_string.c_str()); current_string.clear(); unput(':'); return EXPR_STRING; }
-<AFFINITY_EXPR_STATE>.                      { current_string += yytext[0]; }
+<AFFINITY_EXPR_STATE>{blank}*")"            { yy_pop_state(); return emit_expr_string_and_unput(')'); }
+<AFFINITY_EXPR_STATE>{blank}                { yy_pop_state(); return emit_expr_string_no_unput(); }
+<AFFINITY_EXPR_STATE>","                    { yy_pop_state(); return emit_expr_string_and_unput(','); }
+<AFFINITY_EXPR_STATE>"="                    { yy_pop_state(); return emit_expr_string_and_unput('='); }
+<AFFINITY_EXPR_STATE>":"                    { yy_pop_state(); return emit_expr_string_and_unput(':'); }
+<AFFINITY_EXPR_STATE>.                      { current_string.push_back(yytext[0]); }
 
 <AFFINITY_ITERATOR_STATE>"("                { return '('; }
 <AFFINITY_ITERATOR_STATE>"="                { return '='; }
@@ -733,7 +765,7 @@ sizes                     { return SIZES; }
 <FINAL_STATE>"("                            { return '('; }
 <FINAL_STATE>")"                            { yy_pop_state(); return ')'; }
 <FINAL_STATE>{blank}*                       { ; }
-<FINAL_STATE>.                              { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<FINAL_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>seq_cst     { return SEQ_CST; }
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>acq_rel     { return ACQ_REL; }
@@ -748,7 +780,7 @@ sizes                     { return SIZES; }
 <DEVICE_STATE>")"                           { yy_pop_state(); return ')'; }
 <DEVICE_STATE>":"                           { return ':'; }
 <DEVICE_STATE>{blank}*                      { ; }
-<DEVICE_STATE>.                             { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<DEVICE_STATE>.                             { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <DEFAULTMAP_STATE>alloc/{blank}*            { return BEHAVIOR_ALLOC; }
 <DEFAULTMAP_STATE>to/{blank}*               { return BEHAVIOR_TO; }
@@ -770,7 +802,7 @@ sizes                     { return SIZES; }
 <TO_STATE>")"                               { yy_pop_state(); return ')'; }
 <TO_STATE>","                               { return ','; }
 <TO_STATE>":"                               { return ':'; }
-<TO_STATE>mapper/{blank}*"("                { current_string.clear(); yy_push_state(TO_MAPPER_STATE);return TO_MAPPER; }
+<TO_STATE>mapper/{blank}*"("                { prepare_expression_capture(); yy_push_state(TO_MAPPER_STATE);return TO_MAPPER; }
 <TO_STATE>{blank}*                          { ; }
 <TO_STATE>.                                 { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
@@ -783,7 +815,7 @@ sizes                     { return SIZES; }
 <FROM_STATE>")"                             { yy_pop_state(); return ')'; }
 <FROM_STATE>","                             { return ','; }
 <FROM_STATE>":"                             { return ':'; }
-<FROM_STATE>mapper/{blank}*"("              { current_string.clear(); yy_push_state(FROM_MAPPER_STATE);return FROM_MAPPER; }
+<FROM_STATE>mapper/{blank}*"("              { prepare_expression_capture(); yy_push_state(FROM_MAPPER_STATE);return FROM_MAPPER; }
 <FROM_STATE>{blank}*                        { ; }
 <FROM_STATE>.                               { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
@@ -795,20 +827,20 @@ sizes                     { return SIZES; }
 <USES_ALLOCATORS_STATE>","                                     { return ','; }
 <USES_ALLOCATORS_STATE>")"/{blank}*")"                         { yy_pop_state(); return ')'; }
 <USES_ALLOCATORS_STATE>")"                                     { return ')'; }
-<USES_ALLOCATORS_STATE>omp_default_mem_alloc/{blank}*"("       { current_string.clear(); yy_push_state(ALLOC_EXPR_STATE);return DEFAULT_MEM_ALLOC; }
-<USES_ALLOCATORS_STATE>omp_large_cap_mem_alloc/{blank}*"("     { current_string.clear(); yy_push_state(ALLOC_EXPR_STATE);return LARGE_CAP_MEM_ALLOC; }
-<USES_ALLOCATORS_STATE>omp_const_mem_alloc/{blank}*"("         { current_string.clear(); yy_push_state(ALLOC_EXPR_STATE);return CONST_MEM_ALLOC; }
-<USES_ALLOCATORS_STATE>omp_high_bw_mem_alloc/{blank}*"("       { current_string.clear(); yy_push_state(ALLOC_EXPR_STATE);return HIGH_BW_MEM_ALLOC; }
-<USES_ALLOCATORS_STATE>omp_low_lat_mem_alloc/{blank}*"("       { current_string.clear(); yy_push_state(ALLOC_EXPR_STATE);return LOW_LAT_MEM_ALLOC; }
-<USES_ALLOCATORS_STATE>omp_cgroup_mem_alloc/{blank}*"("        { current_string.clear(); yy_push_state(ALLOC_EXPR_STATE);return CGROUP_MEM_ALLOC; }
-<USES_ALLOCATORS_STATE>omp_pteam_mem_alloc/{blank}*"("         { current_string.clear(); yy_push_state(ALLOC_EXPR_STATE);return PTEAM_MEM_ALLOC; }
-<USES_ALLOCATORS_STATE>omp_thread_mem_alloc/{blank}*"("        { current_string.clear(); yy_push_state(ALLOC_EXPR_STATE);return THREAD_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_default_mem_alloc/{blank}*"("       { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return DEFAULT_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_large_cap_mem_alloc/{blank}*"("     { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return LARGE_CAP_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_const_mem_alloc/{blank}*"("         { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return CONST_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_high_bw_mem_alloc/{blank}*"("       { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return HIGH_BW_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_low_lat_mem_alloc/{blank}*"("       { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return LOW_LAT_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_cgroup_mem_alloc/{blank}*"("        { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return CGROUP_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_pteam_mem_alloc/{blank}*"("         { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return PTEAM_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_thread_mem_alloc/{blank}*"("        { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return THREAD_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>{blank}*                                { ; }
 <USES_ALLOCATORS_STATE>.                                       { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
 <ALLOC_EXPR_STATE>"("                        { return '('; }
-<ALLOC_EXPR_STATE>")"                        { yy_pop_state(); openmp_lval.stype = strdup(current_string.c_str()); current_string.clear(); unput(')'); return EXPR_STRING; }
-<ALLOC_EXPR_STATE>.                          { current_string += yytext[0]; }
+<ALLOC_EXPR_STATE>")"                        { yy_pop_state(); return emit_expr_string_and_unput(')'); }
+<ALLOC_EXPR_STATE>.                          { current_string.push_back(yytext[0]); }
 
 
 <DEVICE_TYPE_STATE>host                      { return HOST; }
@@ -821,7 +853,7 @@ sizes                     { return SIZES; }
 
 <MAP_STATE>always/{blank}*,                  { return MAP_MODIFIER_ALWAYS; }
 <MAP_STATE>close/{blank}*,                   { return MAP_MODIFIER_CLOSE; }
-<MAP_STATE>mapper/{blank}*"("                { current_string.clear(); yy_push_state(MAP_MAPPER_STATE);return MAP_MODIFIER_MAPPER; }
+<MAP_STATE>mapper/{blank}*"("                { prepare_expression_capture(); yy_push_state(MAP_MAPPER_STATE);return MAP_MODIFIER_MAPPER; }
 <MAP_STATE>"("                               { return '('; }
 <MAP_STATE>")"                               { yy_pop_state(); return ')'; }
 <MAP_STATE>","                               { return ','; }
@@ -833,7 +865,7 @@ sizes                     { return SIZES; }
 <MAP_STATE>release/{blank}*:                 { return MAP_TYPE_RELEASE; }
 <MAP_STATE>delete                            { return MAP_TYPE_DELETE; }
 <MAP_STATE>{blank}*                          { ; }
-<MAP_STATE>.                                 { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<MAP_STATE>.                                 { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <MAP_MAPPER_STATE>"("                        { return '('; }
 <MAP_MAPPER_STATE>")"                        { yy_pop_state(); return ')'; }
@@ -854,7 +886,7 @@ sizes                     { return SIZES; }
 <TASK_REDUCTION_STATE>min/{blank}*:           { return MIN; }
 <TASK_REDUCTION_STATE>max/{blank}*:           { return MAX; }
 <TASK_REDUCTION_STATE>{blank}*                { ; }
-<TASK_REDUCTION_STATE>.                       { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+<TASK_REDUCTION_STATE>.                       { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <UPDATE_STATE>"("                             { return '('; }
 <UPDATE_STATE>")"                             { yy_pop_state(); return ')'; }
@@ -876,7 +908,7 @@ sizes                     { return SIZES; }
                                                 case '(': {
                                                     parenthesis_local_count++;
                                                     parenthesis_global_count++;
-                                                    current_string.append(1, current_char);
+                                                    current_string.push_back(current_char);
                                                     break;
                                                 }
                                                 case ')': {
@@ -884,118 +916,78 @@ sizes                     { return SIZES; }
                                                     parenthesis_global_count--;
                                                     if (parenthesis_global_count == 0) {
                                                         yy_pop_state();
-                                                        if (current_string.size() != 0) {
-                                                            openmp_lval.stype = strdup(current_string.c_str());
-                                                            current_string.clear();
-                                                            unput(')');
-                                                            parenthesis_local_count = 0;
-                                                            parenthesis_global_count = 1;
-                                                            bracket_count = 0;
-                                                            return EXPR_STRING;
+                                                        if (!current_string.empty()) {
+                                                            return emit_expr_string_and_unput(')');
                                                         }
-                                                        else {
-                                                            break;
-                                                        };
+                                                    } else {
+                                                        current_string.push_back(current_char);
                                                     }
-                                                    else {
-                                                        current_string.append(1, current_char);
-                                                    };
                                                     break;
                                                 }
                                                 case ',': {
-                                                    if (current_string.size() == 0) {
-                                                        parenthesis_local_count = 0;
-                                                        parenthesis_global_count = 1;
-                                                        bracket_count = 0;
+                                                    if (current_string.empty()) {
+                                                        clear_expression_buffer();
                                                         return ',';
+                                                    } else if (parenthesis_local_count == 0) {
+                                                        return emit_expr_string_and_unput(',');
+                                                    } else {
+                                                        current_string.push_back(current_char);
                                                     }
-                                                    else if (parenthesis_local_count == 0) {
-                                                        openmp_lval.stype = strdup(current_string.c_str());
-                                                        current_string.clear();
-                                                        unput(',');
-                                                        parenthesis_local_count = 0;
-                                                        parenthesis_global_count = 1;
-                                                        bracket_count = 0;
-                                                        return EXPR_STRING;
-                                                    }
-                                                    else {
-                                                        current_string.append(1, current_char);
-                                                    };
                                                     break;
                                                 }
                                                 case '[': {
                                                     bracket_count++;
-                                                    current_string.append(1, current_char);
+                                                    current_string.push_back(current_char);
                                                     break;
                                                 }
                                                 case ']': {
                                                     bracket_count--;
-                                                    current_string.append(1, current_char);
+                                                    current_string.push_back(current_char);
                                                     break;
                                                 }
                                                 case '{': {
                                                     brace_count++;
-                                                    current_string.append(1, current_char);
+                                                    current_string.push_back(current_char);
                                                     break;
                                                 }
                                                 case '}': {
                                                     brace_count--;
                                                     if (brace_count == 0) {
                                                         yy_pop_state();
-                                                        if (current_string.size() != 0) {
-                                                            openmp_lval.stype = strdup(current_string.c_str());
-                                                            current_string.clear();
+                                                        if (!current_string.empty()) {
+                                                            return emit_expr_string_and_unput('}');
+                                                        } else {
                                                             unput('}');
-                                                            return EXPR_STRING;
                                                         }
-                                                        else {
-                                                            unput('}');
-                                                            break;
-                                                        };
+                                                    } else {
+                                                        current_string.push_back(current_char);
                                                     }
-                                                    else {
-                                                        current_string.append(1, current_char);
-                                                    };
                                                     break;
                                                 }
                                                 case ':': {
-                                                    if (current_string.size() == 0) {
-                                                        parenthesis_local_count = 0;
-                                                        parenthesis_global_count = 1;
-                                                        bracket_count = 0;
+                                                    if (current_string.empty()) {
+                                                        clear_expression_buffer();
                                                         return ':';
-                                                    }
-                                                    else if (bracket_count == 0) {
+                                                    } else if (bracket_count == 0) {
                                                         yy_pop_state();
-                                                        openmp_lval.stype = strdup(current_string.c_str());
-                                                        current_string.clear();
-                                                        unput(':');
-                                                        parenthesis_local_count = 0;
-                                                        parenthesis_global_count = 1;
-                                                        bracket_count = 0;
-                                                        return EXPR_STRING;
-                                                    }
-                                                    else {
-                                                        current_string.append(1, current_char);
+                                                        return emit_expr_string_and_unput(':');
+                                                    } else {
+                                                        current_string.push_back(current_char);
                                                     }
                                                     break;
                                                 }
                                                 case ' ': {
                                                     if (parenthesis_global_count == 0) {
                                                         yy_pop_state();
-                                                        openmp_lval.stype = strdup(current_string.c_str());
-                                                        current_string.clear();
-                                                        parenthesis_local_count = 0;
-                                                        parenthesis_global_count = 1;
-                                                        bracket_count = 0;
-                                                        return EXPR_STRING;
-                                                    };
+                                                        return emit_expr_string_no_unput();
+                                                    }
                                                     break;
                                                 }
                                                 default: {
                                                     if (current_char != ' ' || parenthesis_local_count != 0) {
-                                                        current_string.append(1, current_char);
+                                                        current_string.push_back(current_char);
                                                     }
+                                                    break;
                                                 }
                                             }
                                         }
@@ -1004,7 +996,7 @@ sizes                     { return SIZES; }
                                                 case '(': {
                                                     parenthesis_local_count++;
                                                     parenthesis_global_count++;
-                                                    current_string.append(1, current_char);
+                                                    current_string.push_back(current_char);
                                                     break;
                                                 }
                                                 case ')': {
@@ -1012,43 +1004,23 @@ sizes                     { return SIZES; }
                                                     parenthesis_global_count--;
                                                     if (parenthesis_global_count == 0) {
                                                         yy_pop_state();
-                                                        if (current_string.size() != 0) {
-                                                            openmp_lval.stype = strdup(current_string.c_str());
-                                                            current_string.clear();
-                                                            unput(')');
-                                                            parenthesis_local_count = 0;
-                                                            parenthesis_global_count = 1;
-                                                            bracket_count = 0;
-                                                            return EXPR_STRING;
+                                                        if (!current_string.empty()) {
+                                                            return emit_expr_string_and_unput(')');
                                                         }
-                                                        else {
-                                                            break;
-                                                        };
+                                                    } else {
+                                                        current_string.push_back(current_char);
                                                     }
-                                                    else {
-                                                        current_string.append(1, current_char);
-                                                    };
                                                     break;
                                                 }
                                                 case ':': {
-                                                    if (current_string.size() == 0) {
-                                                        parenthesis_local_count = 0;
-                                                        parenthesis_global_count = 1;
-                                                        bracket_count = 0;
+                                                    if (current_string.empty()) {
+                                                        clear_expression_buffer();
                                                         return ':';
-                                                    }
-                                                    else if (bracket_count == 0) {
+                                                    } else if (bracket_count == 0) {
                                                         yy_pop_state();
-                                                        openmp_lval.stype = strdup(current_string.c_str());
-                                                        current_string.clear();
-                                                        unput(':');
-                                                        parenthesis_local_count = 0;
-                                                        parenthesis_global_count = 1;
-                                                        bracket_count = 0;
-                                                        return EXPR_STRING;
-                                                    }
-                                                    else {
-                                                        current_string.append(1, current_char);
+                                                        return emit_expr_string_and_unput(':');
+                                                    } else {
+                                                        current_string.push_back(current_char);
                                                     }
                                                     break;
                                                 }
@@ -1063,35 +1035,30 @@ sizes                     { return SIZES; }
                                                         return EXPR_STRING;
                                                     }
                                                     else {
-                                                        current_string.append(1, current_char);
+                                                        current_string.push_back(current_char);
                                                     }
                                                     break;
                                                 }
                                                 default: {
                                                     if (current_char != ' ' || parenthesis_local_count != 0) {
-                                                        current_string.append(1, current_char);
+                                                        current_string.push_back(current_char);
                                                     }
+                                                    break;
                                                 }
                                             }
                                         }
 
-<<EOF>>         { if (current_string.size() != 0) {
-                      openmp_lval.stype = strdup(current_string.c_str());
-                      current_string.clear();
-                      parenthesis_local_count = 0;
-                      parenthesis_global_count = 1;
-                      bracket_count = 0;
-                      return EXPR_STRING;
-                  }
-                  else {
+<<EOF>>         {
+                      if (!current_string.empty()) {
+                        return emit_expr_string_no_unput();
+                      }
                       return 0;
-                  };
                 }
 
 expr            {return (EXPRESSION); }
 
 {blank}*        ;
-.               { yy_push_state(EXPR_STATE); current_string = yytext[0]; }
+.               { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 %%
 
