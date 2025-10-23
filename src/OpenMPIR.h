@@ -15,6 +15,7 @@
 #include "OpenMPKinds.h"
 #include <cassert>
 #include <map>
+#include <memory>
 #include <stdio.h>
 #include <string.h>
 #include <string>
@@ -62,6 +63,7 @@ protected:
    * record for an expression and its location
    */
   std::vector<const char *> expressions;
+  std::vector<std::unique_ptr<char[]>> owned_expressions;
   std::vector<const void *> expressionNodes;
 
   std::vector<SourceLocation> locations;
@@ -110,8 +112,8 @@ protected:
    * the first one. Then the second one will be eliminated and not stored
    * anywhere.
    */
-  std::vector<OpenMPClause *> *clauses_in_original_order =
-      new std::vector<OpenMPClause *>();
+  std::vector<OpenMPClause *> clauses_in_original_order;
+  std::vector<std::unique_ptr<OpenMPClause>> clause_storage;
 
   /* the map to store clauses of the directive, for each clause, we store a
    * vector of OpenMPClause objects since there could be multiple clause objects
@@ -125,7 +127,7 @@ protected:
    * should only have one OpenMPClause object for each instance of kind and full
    * parameters
    */
-  map<OpenMPClauseKind, vector<OpenMPClause *> *> clauses;
+  map<OpenMPClauseKind, std::unique_ptr<std::vector<OpenMPClause *>>> clauses;
   /**
    *
    * This method searches the clauses map to see whether one or more
@@ -175,16 +177,27 @@ public:
 
   OpenMPDirectiveKind getKind() { return kind; };
 
-  map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *getAllClauses() {
+  map<OpenMPClauseKind, std::unique_ptr<std::vector<OpenMPClause *>>> *
+  getAllClauses() {
     return &clauses;
   };
 
   std::vector<OpenMPClause *> *getClauses(OpenMPClauseKind kind) {
-    return clauses[kind];
+    auto it = clauses.find(kind);
+    if (it == clauses.end()) {
+      auto inserted =
+          clauses.emplace(kind, std::make_unique<std::vector<OpenMPClause *>>());
+      it = inserted.first;
+    }
+    return it->second.get();
   };
   std::vector<OpenMPClause *> *getClausesInOriginalOrder() {
-    return clauses_in_original_order;
+    return &clauses_in_original_order;
   };
+
+  OpenMPClause *registerClause(std::unique_ptr<OpenMPClause> clause);
+
+public:
 
   std::string toString();
 
@@ -203,22 +216,38 @@ public:
 // atomic directive
 class OpenMPAtomicDirective : public OpenMPDirective {
 protected:
-  map<OpenMPClauseKind, vector<OpenMPClause *> *> clauses_atomic_after;
-  map<OpenMPClauseKind, vector<OpenMPClause *> *> clauses_atomic_clauses;
+  map<OpenMPClauseKind, std::unique_ptr<std::vector<OpenMPClause *>>>
+      clauses_atomic_after;
+  map<OpenMPClauseKind, std::unique_ptr<std::vector<OpenMPClause *>>>
+      clauses_atomic_clauses;
+
+  std::vector<OpenMPClause *> *getClauseVector(
+      map<OpenMPClauseKind, std::unique_ptr<std::vector<OpenMPClause *>>>
+          &container,
+      OpenMPClauseKind kind) {
+    auto it = container.find(kind);
+    if (it == container.end()) {
+      auto inserted =
+          container.emplace(kind, std::make_unique<std::vector<OpenMPClause *>>());
+      it = inserted.first;
+    }
+    return it->second.get();
+  }
 
 public:
   OpenMPAtomicDirective() : OpenMPDirective(OMPD_atomic) {};
   std::vector<OpenMPClause *> *getClausesAtomicAfter(OpenMPClauseKind kind) {
-    return clauses_atomic_after[kind];
+    return getClauseVector(clauses_atomic_after, kind);
   };
   std::vector<OpenMPClause *> *getAtomicClauses(OpenMPClauseKind kind) {
-    return clauses_atomic_clauses[kind];
+    return getClauseVector(clauses_atomic_clauses, kind);
   };
-  map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *
+  map<OpenMPClauseKind, std::unique_ptr<std::vector<OpenMPClause *>>> *
   getAllClausesAtomicAfter() {
     return &clauses_atomic_after;
   };
-  map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *getAllAtomicClauses() {
+  map<OpenMPClauseKind, std::unique_ptr<std::vector<OpenMPClause *>>> *
+  getAllAtomicClauses() {
     return &clauses_atomic_clauses;
   };
 };

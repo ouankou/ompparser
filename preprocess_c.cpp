@@ -8,17 +8,20 @@
 
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <regex>
 
+std::unique_ptr<std::vector<std::string>> preProcessCManaged(std::ifstream &);
 std::vector<std::string> *preProcessC(std::ifstream &);
 
-std::vector<std::string> *preProcessC(std::ifstream &input_file) {
+std::unique_ptr<std::vector<std::string>>
+preProcessCManaged(std::ifstream &input_file) {
 
   std::string input_pragma;
   int total_amount = 0;
   int line_no = 0;
   int current_pragma_line_no = 1;
-  std::vector<std::string> *omp_pragmas = new std::vector<std::string>();
+  auto omp_pragmas = std::make_unique<std::vector<std::string>>();
 
   char current_char = input_file.peek();
   std::string current_line;
@@ -61,4 +64,8 @@ std::vector<std::string> *preProcessC(std::ifstream &input_file) {
   };
 
   return omp_pragmas;
+}
+
+std::vector<std::string> *preProcessC(std::ifstream &input_file) {
+  return preProcessCManaged(input_file).release();
 }
