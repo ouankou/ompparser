@@ -9,11 +9,14 @@
 #include <OpenMPIR.h>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <regex>
 
 void output(std::vector<OpenMPDirective *> *);
 void savePragmaList(std::vector<OpenMPDirective *> *, const char *);
 int openFile(std::ifstream &, const char *);
+extern std::unique_ptr<std::vector<std::string>> preProcessCManaged(
+    std::ifstream &);
 extern std::vector<std::string> *preProcessC(std::ifstream &);
 extern OpenMPDirective *parseOpenMP(const char *,
                                     void *_exprParse(const char *));
@@ -67,10 +70,9 @@ int main(int argc, const char *argv[]) {
   const char *filename = NULL;
   int result;
   unsigned int i;
-  std::vector<OpenMPDirective *> *omp_ast_list =
-      new std::vector<OpenMPDirective *>();
+  auto omp_ast_list = std::make_unique<std::vector<OpenMPDirective *>>();
   OpenMPDirective *omp_ast = NULL;
-  std::vector<std::string> *omp_directive_list = new std::vector<std::string>();
+  auto omp_directive_list = std::make_unique<std::vector<std::string>>();
   if (argc > 1) {
     filename = argv[1];
   };
@@ -87,7 +89,8 @@ int main(int argc, const char *argv[]) {
     return -1;
   };
 
-  std::vector<std::string> *omp_pragmas = preProcessC(input_file);
+  std::unique_ptr<std::vector<std::string>> omp_pragmas =
+      preProcessCManaged(input_file);
 
   // parse the preprocessed inputs
   for (i = 0; i < omp_pragmas->size(); i++) {
@@ -103,9 +106,9 @@ int main(int argc, const char *argv[]) {
   std::cout << "=================== SUMMARY ===================\n";
   std::cout << "TOTAL OPENMP PRAGMAS: " << omp_pragmas->size() << "\n";
 
-  output(omp_ast_list);
+  output(omp_ast_list.get());
 
-  savePragmaList(omp_ast_list, filename);
+  savePragmaList(omp_ast_list.get(), filename);
 
   return 0;
 }
