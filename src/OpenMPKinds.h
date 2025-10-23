@@ -113,6 +113,49 @@ enum OpenMPDirectiveKind {
     OPENMP_DIRECTIVE(target_parallel_do_simd)
     OPENMP_DIRECTIVE(target_teams_distribute_parallel_do)
     OPENMP_DIRECTIVE(target_teams_distribute_parallel_do_simd)
+    // OpenMP 5.1 directives
+    OPENMP_DIRECTIVE(error)
+    OPENMP_DIRECTIVE(nothing)
+    OPENMP_DIRECTIVE(masked)
+    OPENMP_DIRECTIVE(scope)
+    OPENMP_DIRECTIVE(masked_taskloop)
+    OPENMP_DIRECTIVE(masked_taskloop_simd)
+    OPENMP_DIRECTIVE(parallel_masked)
+    OPENMP_DIRECTIVE(parallel_masked_taskloop)
+    OPENMP_DIRECTIVE(parallel_masked_taskloop_simd)
+    OPENMP_DIRECTIVE(interop)
+    // OpenMP 5.2 directives
+    OPENMP_DIRECTIVE(assume)
+    OPENMP_DIRECTIVE(assumes)
+    OPENMP_DIRECTIVE(begin_assumes)
+    OPENMP_DIRECTIVE(end_assumes)
+    // OpenMP 6.0 directives
+    OPENMP_DIRECTIVE(allocators)
+    OPENMP_DIRECTIVE(taskgraph)
+    OPENMP_DIRECTIVE(task_iteration)
+    OPENMP_DIRECTIVE(dispatch)
+    OPENMP_DIRECTIVE(groupprivate)
+    OPENMP_DIRECTIVE(workdistribute)
+    OPENMP_DIRECTIVE(fuse)
+    OPENMP_DIRECTIVE(interchange)
+    OPENMP_DIRECTIVE(reverse)
+    OPENMP_DIRECTIVE(split)
+    OPENMP_DIRECTIVE(stripe)
+    OPENMP_DIRECTIVE(declare_induction)
+    OPENMP_DIRECTIVE(begin_metadirective)
+    // Missing *_loop and *_loop_simd combinations
+    OPENMP_DIRECTIVE(parallel_loop_simd)
+    OPENMP_DIRECTIVE(teams_loop_simd)
+    OPENMP_DIRECTIVE(target_loop)
+    OPENMP_DIRECTIVE(target_loop_simd)
+    OPENMP_DIRECTIVE(target_parallel_loop_simd)
+    OPENMP_DIRECTIVE(target_teams_loop_simd)
+    OPENMP_DIRECTIVE(distribute_parallel_loop)
+    OPENMP_DIRECTIVE(distribute_parallel_loop_simd)
+    OPENMP_DIRECTIVE(teams_distribute_parallel_loop)
+    OPENMP_DIRECTIVE(teams_distribute_parallel_loop_simd)
+    OPENMP_DIRECTIVE(target_teams_distribute_parallel_loop)
+    OPENMP_DIRECTIVE(target_teams_distribute_parallel_loop_simd)
     OPENMP_DIRECTIVE(unknown)
 #undef OPENMP_DIRECTIVE
 #undef OPENMP_DIRECTIVE_EXT
@@ -228,6 +271,54 @@ enum OpenMPClauseKind {
     OPENMP_CLAUSE(depobj_update, OMPDepobjUpdateClause)
     OPENMP_CLAUSE(threads, OMPThreadsClause)
     OPENMP_CLAUSE(simd, OMPSimdClause)
+
+    // OpenMP 5.1 clauses
+    OPENMP_CLAUSE(filter, OMPFilterClause)
+    OPENMP_CLAUSE(compare, OMPCompareClause)
+    OPENMP_CLAUSE(fail, OMPFailClause)
+    OPENMP_CLAUSE(weak, OMPWeakClause)
+    OPENMP_CLAUSE(at, OMPAtClause)
+    OPENMP_CLAUSE(severity, OMPSeverityClause)
+    OPENMP_CLAUSE(message, OMPMessageClause)
+
+    // OpenMP 5.2 clauses
+    OPENMP_CLAUSE(doacross, OMPDoacrossClause)
+    OPENMP_CLAUSE(absent, OMPAbsentClause)
+    OPENMP_CLAUSE(contains, OMPContainsClause)
+    OPENMP_CLAUSE(holds, OMPHoldsClause)
+    OPENMP_CLAUSE(otherwise, OMPOtherwiseClause)
+
+    // OpenMP 6.0 clauses
+    OPENMP_CLAUSE(graph_id, OMPGraphIdClause)
+    OPENMP_CLAUSE(graph_reset, OMPGraphResetClause)
+    OPENMP_CLAUSE(transparent, OMPTransparentClause)
+    OPENMP_CLAUSE(replayable, OMPReplayableClause)
+    OPENMP_CLAUSE(threadset, OMPThreadsetClause)
+    OPENMP_CLAUSE(indirect, OMPIndirectClause)
+    OPENMP_CLAUSE(local, OMPLocalClause)
+    OPENMP_CLAUSE(init, OMPInitClause)
+    OPENMP_CLAUSE(init_complete, OMPInitCompleteClause)
+    OPENMP_CLAUSE(safesync, OMPSafesyncClause)
+    OPENMP_CLAUSE(device_safesync, OMPDeviceSafesyncClause)
+    OPENMP_CLAUSE(memscope, OMPMemscopeClause)
+    OPENMP_CLAUSE(looprange, OMPLooprangeClause)
+    OPENMP_CLAUSE(permutation, OMPPermutationClause)
+    OPENMP_CLAUSE(counts, OMPCountsClause)
+    OPENMP_CLAUSE(induction, OMPInductionClause)
+    OPENMP_CLAUSE(inductor, OMPInductorClause)
+    OPENMP_CLAUSE(collector, OMPCollectorClause)
+    OPENMP_CLAUSE(combiner, OMPCombinerClause)
+    OPENMP_CLAUSE(adjust_args, OMPAdjustArgsClause)
+    OPENMP_CLAUSE(append_args, OMPAppendArgsClause)
+    OPENMP_CLAUSE(apply, OMPApplyClause)
+    OPENMP_CLAUSE(no_openmp, OMPNoOpenmpClause)
+    OPENMP_CLAUSE(no_openmp_constructs, OMPNoOpenmpConstructsClause)
+    OPENMP_CLAUSE(no_openmp_routines, OMPNoOpenmpRoutinesClause)
+    OPENMP_CLAUSE(no_parallelism, OMPNoParallelismClause)
+    OPENMP_CLAUSE(nocontext, OMPNocontextClause)
+    OPENMP_CLAUSE(novariants, OMPNovariantsClause)
+    OPENMP_CLAUSE(enter, OMPEnterClause)
+    OPENMP_CLAUSE(use, OMPUseClause)
 
     OPENMP_CLAUSE(unknown, OMPUnknownClause)
 #undef OPENMP_CLAUSE
@@ -635,6 +726,55 @@ enum OpenMPDepobjUpdateClauseDependeceType {
                           OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(source)
                               OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(unknown)
 #undef OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE
+};
+
+/// OpenMP attributes for 'doacross' clause (OpenMP 5.2)
+enum OpenMPDoacrossClauseType {
+#define OPENMP_DOACROSS_TYPE(Name) OMPC_DOACROSS_TYPE_##Name,
+  OPENMP_DOACROSS_TYPE(source)
+  OPENMP_DOACROSS_TYPE(sink)
+  OPENMP_DOACROSS_TYPE(unknown)
+#undef OPENMP_DOACROSS_TYPE
+};
+
+/// OpenMP attributes for 'at' clause (OpenMP 5.1 - error directive)
+enum OpenMPAtClauseKind {
+#define OPENMP_AT_KIND(Name) OMPC_AT_##Name,
+  OPENMP_AT_KIND(compilation)
+  OPENMP_AT_KIND(execution)
+  OPENMP_AT_KIND(unknown)
+#undef OPENMP_AT_KIND
+};
+
+/// OpenMP attributes for 'severity' clause (OpenMP 5.1 - error directive)
+enum OpenMPSeverityClauseKind {
+#define OPENMP_SEVERITY_KIND(Name) OMPC_SEVERITY_##Name,
+  OPENMP_SEVERITY_KIND(fatal)
+  OPENMP_SEVERITY_KIND(warning)
+  OPENMP_SEVERITY_KIND(unknown)
+#undef OPENMP_SEVERITY_KIND
+};
+
+/// OpenMP attributes for 'fail' clause (OpenMP 5.1 - atomic)
+enum OpenMPFailClauseMemoryOrder {
+#define OPENMP_FAIL_MEMORY_ORDER(Name) OMPC_FAIL_##Name,
+  OPENMP_FAIL_MEMORY_ORDER(seq_cst)
+  OPENMP_FAIL_MEMORY_ORDER(acquire)
+  OPENMP_FAIL_MEMORY_ORDER(relaxed)
+  OPENMP_FAIL_MEMORY_ORDER(unknown)
+#undef OPENMP_FAIL_MEMORY_ORDER
+};
+
+/// OpenMP attributes for 'memscope' clause (OpenMP 6.0)
+enum OpenMPMemscopeClauseKind {
+#define OPENMP_MEMSCOPE_KIND(Name) OMPC_MEMSCOPE_##Name,
+  OPENMP_MEMSCOPE_KIND(system)
+  OPENMP_MEMSCOPE_KIND(device)
+  OPENMP_MEMSCOPE_KIND(warp)
+  OPENMP_MEMSCOPE_KIND(wavefront)
+  OPENMP_MEMSCOPE_KIND(block)
+  OPENMP_MEMSCOPE_KIND(unknown)
+#undef OPENMP_MEMSCOPE_KIND
 };
 
 #endif
