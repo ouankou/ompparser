@@ -8,6 +8,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <regex>
 
 std::vector<std::string> *preProcessC(std::ifstream &);
@@ -18,7 +19,7 @@ std::vector<std::string> *preProcessC(std::ifstream &input_file) {
   int total_amount = 0;
   int line_no = 0;
   int current_pragma_line_no = 1;
-  std::vector<std::string> *omp_pragmas = new std::vector<std::string>();
+  auto omp_pragmas = std::make_unique<std::vector<std::string>>();
 
   char current_char = input_file.peek();
   std::string current_line;
@@ -60,5 +61,10 @@ std::vector<std::string> *preProcessC(std::ifstream &input_file) {
     current_char = input_file.peek();
   };
 
-  return omp_pragmas;
+  static auto &storage = []() -> std::vector<std::unique_ptr<std::vector<std::string>>> & {
+    static std::vector<std::unique_ptr<std::vector<std::string>>> instance;
+    return instance;
+  }();
+  storage.push_back(std::move(omp_pragmas));
+  return storage.back().get();
 }

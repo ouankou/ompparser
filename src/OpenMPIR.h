@@ -15,9 +15,11 @@
 #include "OpenMPKinds.h"
 #include <cassert>
 #include <map>
+#include <memory>
 #include <stdio.h>
 #include <string.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace std;
@@ -110,8 +112,8 @@ protected:
    * the first one. Then the second one will be eliminated and not stored
    * anywhere.
    */
-  std::vector<OpenMPClause *> *clauses_in_original_order =
-      new std::vector<OpenMPClause *>();
+  std::unique_ptr<std::vector<OpenMPClause *>> clauses_in_original_order =
+      std::make_unique<std::vector<OpenMPClause *>>();
 
   /* the map to store clauses of the directive, for each clause, we store a
    * vector of OpenMPClause objects since there could be multiple clause objects
@@ -126,6 +128,8 @@ protected:
    * parameters
    */
   map<OpenMPClauseKind, vector<OpenMPClause *> *> clauses;
+  std::vector<std::unique_ptr<OpenMPClause>> owned_clauses;
+  std::vector<std::unique_ptr<std::vector<OpenMPClause *>>> clause_vector_storage;
   /**
    *
    * This method searches the clauses map to see whether one or more
@@ -183,7 +187,7 @@ public:
     return clauses[kind];
   };
   std::vector<OpenMPClause *> *getClausesInOriginalOrder() {
-    return clauses_in_original_order;
+    return clauses_in_original_order.get();
   };
 
   std::string toString();
@@ -198,6 +202,15 @@ public:
   OpenMPClause *addOpenMPClause(int, ...);
   void setBaseLang(OpenMPBaseLang _lang) { lang = _lang; };
   OpenMPBaseLang getBaseLang() { return lang; };
+  OpenMPClause *takeOwnership(OpenMPClause *clause) {
+    owned_clauses.emplace_back(clause);
+    return clause;
+  }
+  std::vector<OpenMPClause *> *trackClauseVector(
+      std::vector<OpenMPClause *> *clauses_ptr) {
+    clause_vector_storage.emplace_back(clauses_ptr);
+    return clauses_ptr;
+  }
 };
 
 // atomic directive
@@ -1203,20 +1216,24 @@ public:
 // uses_allocators clause
 class OpenMPUsesAllocatorsClause : public OpenMPClause {
 protected:
-  std::vector<usesAllocatorParameter *> usesAllocatorsAllocatorSequence;
+  std::vector<std::unique_ptr<usesAllocatorParameter>>
+      usesAllocatorsAllocatorSequenceStorage;
+  std::vector<usesAllocatorParameter *> usesAllocatorsAllocatorSequenceView;
 
 public:
   OpenMPUsesAllocatorsClause() : OpenMPClause(OMPC_uses_allocators) {};
   void addUsesAllocatorsAllocatorSequence(
       OpenMPUsesAllocatorsClauseAllocator _allocator,
       std::string _allocator_traits_array, std::string _allocator_user) {
-    usesAllocatorParameter *usesAllocatorsAllocator =
-        new usesAllocatorParameter(_allocator, _allocator_traits_array,
-                                   _allocator_user);
-    usesAllocatorsAllocatorSequence.push_back(usesAllocatorsAllocator);
+    auto usesAllocatorsAllocator = std::make_unique<usesAllocatorParameter>(
+        _allocator, _allocator_traits_array, _allocator_user);
+    usesAllocatorsAllocatorSequenceView.push_back(
+        usesAllocatorsAllocator.get());
+    usesAllocatorsAllocatorSequenceStorage.push_back(
+        std::move(usesAllocatorsAllocator));
   };
   std::vector<usesAllocatorParameter *> *getUsesAllocatorsAllocatorSequence() {
-    return &usesAllocatorsAllocatorSequence;
+    return &usesAllocatorsAllocatorSequenceView;
   };
   static OpenMPClause *addUsesAllocatorsClause(OpenMPDirective *directive);
   std::string toString();

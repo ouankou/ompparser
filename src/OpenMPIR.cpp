@@ -36,7 +36,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   // If not, create an empty vector.
   if (clauses.count(kind) == 0) {
     clauses.insert(std::pair<OpenMPClauseKind, std::vector<OpenMPClause *> *>(
-        kind, new std::vector<OpenMPClause *>));
+        kind, trackClauseVector(new std::vector<OpenMPClause *>())));
   };
   std::vector<OpenMPClause *> *current_clauses = getClauses(kind);
   va_list args;
@@ -106,7 +106,8 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   {
     if (current_clauses->size() == 0) {
       new_clause = new OpenMPClause(kind);
-      current_clauses = new std::vector<OpenMPClause *>();
+      current_clauses =
+          trackClauseVector(new std::vector<OpenMPClause *>());
       current_clauses->push_back(new_clause);
       clauses[kind] = current_clauses;
     } else {
@@ -421,6 +422,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
 
   va_end(args);
   if (new_clause != NULL && new_clause->getClausePosition() == -1) {
+    takeOwnership(new_clause);
     this->getClausesInOriginalOrder()->push_back(new_clause);
     new_clause->setClausePosition(this->getClausesInOriginalOrder()->size() -
                                   1);
@@ -443,7 +445,7 @@ OpenMPClause *OpenMPMapClause::addMapClause(OpenMPDirective *directive,
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPMapClause(modifier1, modifier2, modifier3, type,
                                      mapper_identifier);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_map] = current_clauses;
   } else {
@@ -481,7 +483,7 @@ OpenMPClause *OpenMPTaskReductionClause::addTaskReductionClause(
       ((OpenMPTaskReductionClause *)new_clause)
           ->setUserDefinedIdentifier(user_defined_identifier);
     };
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_task_reduction] = current_clauses;
   } else {
@@ -521,7 +523,7 @@ OpenMPClause *OpenMPDefaultmapClause::addDefaultmapClause(
   OpenMPClause *new_clause = NULL;
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPDefaultmapClause(behavior, category);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_defaultmap] = current_clauses;
   } else {
@@ -548,7 +550,7 @@ OpenMPClause *OpenMPDeviceTypeClause::addDeviceTypeClause(
       directive->getClauses(OMPC_device_type);
   OpenMPClause *new_clause = NULL;
   if (current_clauses->size() == 0) {
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     (*all_clauses)[OMPC_device_type] = current_clauses;
   };
   new_clause = new OpenMPDeviceTypeClause(device_type_kind);
@@ -567,7 +569,7 @@ OpenMPClause *OpenMPProcBindClause::addProcBindClause(
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPProcBindClause(proc_bind_kind);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_proc_bind] = current_clauses;
   } else { /* could be an error since if clause may only appear once */
@@ -589,7 +591,7 @@ OpenMPBindClause::addBindClause(OpenMPDirective *directive,
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPBindClause(bind_binding);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_bind] = current_clauses;
   } else { /* could be an error since if clause may only appear once */
@@ -612,7 +614,7 @@ OpenMPLinearClause::addLinearClause(OpenMPDirective *directive,
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPLinearClause(modifier);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_linear] = current_clauses;
   } else {
@@ -634,7 +636,7 @@ OpenMPClause *OpenMPExtImplementationDefinedRequirementClause::
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPExtImplementationDefinedRequirementClause();
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_ext_implementation_defined_requirement] =
         current_clauses;
@@ -728,7 +730,7 @@ OpenMPClause *OpenMPReductionClause::addReductionClause(
       ((OpenMPReductionClause *)new_clause)
           ->setUserDefinedIdentifier(user_defined_identifier);
     };
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_reduction] = current_clauses;
   } else {
@@ -769,7 +771,7 @@ OpenMPClause *OpenMPFromClause::addFromClause(OpenMPDirective *directive,
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPFromClause(from_kind);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_from] = current_clauses;
   } else {
@@ -797,7 +799,7 @@ OpenMPClause *OpenMPToClause::addToClause(OpenMPDirective *directive,
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPToClause(to_kind);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_to] = current_clauses;
   } else {
@@ -827,7 +829,7 @@ OpenMPAffinityClause::addAffinityClause(OpenMPDirective *directive,
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPAffinityClause(modifier);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_affinity] = current_clauses;
   } else {
@@ -858,7 +860,7 @@ OpenMPDependClause::addDependClause(OpenMPDirective *directive,
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPDependClause(modifier, type);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_depend] = current_clauses;
   } else {
@@ -999,7 +1001,7 @@ OpenMPClause *OpenMPDepobjUpdateClause::addDepobjUpdateClause(
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPDepobjUpdateClause(type);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_depobj_update] = current_clauses;
   } else {
@@ -1032,7 +1034,7 @@ OpenMPClause *OpenMPInReductionClause::addInReductionClause(
       ((OpenMPInReductionClause *)new_clause)
           ->setUserDefinedIdentifier(user_defined_identifier);
     };
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_in_reduction] = current_clauses;
   } else {
@@ -1072,7 +1074,7 @@ OpenMPClause *OpenMPAtomicDefaultMemOrderClause::addAtomicDefaultMemOrderClause(
   if (current_clauses->size() == 0) {
     new_clause =
         new OpenMPAtomicDefaultMemOrderClause(atomic_default_mem_order_kind);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_atomic_default_mem_order] = current_clauses;
   } else { /* could be an error since if clause may only appear once */
@@ -1096,7 +1098,7 @@ OpenMPClause *OpenMPAllocatorClause::addAllocatorClause(
     if (allocator == OMPC_ALLOCATOR_ALLOCATOR_user)
       ((OpenMPAllocatorClause *)new_clause)
           ->setUserDefinedAllocator(user_defined_allocator);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_allocator] = current_clauses;
   } else {
@@ -1140,7 +1142,7 @@ OpenMPAllocateClause::addAllocateClause(OpenMPDirective *directive,
     if (allocator == OMPC_ALLOCATE_ALLOCATOR_user)
       ((OpenMPAllocateClause *)new_clause)
           ->setUserDefinedAllocator(user_defined_allocator);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_allocate] = current_clauses;
   } else {
@@ -1184,7 +1186,7 @@ OpenMPInitializerClause::addInitializerClause(OpenMPDirective *directive,
     if (priv == OMPC_INITIALIZER_PRIV_user)
       ((OpenMPInitializerClause *)new_clause)
           ->setUserDefinedPriv(user_defined_priv);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_initializer] = current_clauses;
   } else {
@@ -1222,7 +1224,7 @@ OpenMPDeviceClause::addDeviceClause(OpenMPDirective *directive,
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPDeviceClause(modifier);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_device] = current_clauses;
   } else {
@@ -1255,7 +1257,7 @@ OpenMPClause *OpenMPScheduleClause::addScheduleClause(
     if (schedule_kind == OMPC_SCHEDULE_KIND_user)
       ((OpenMPScheduleClause *)new_clause)
           ->setUserDefinedKind(user_defined_kind);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_schedule] = current_clauses;
   } else {
@@ -1276,7 +1278,7 @@ OpenMPClause *OpenMPDistScheduleClause::addDistScheduleClause(
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPDistScheduleClause(dist_schedule_kind);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_dist_schedule] = current_clauses;
   } else {
@@ -1297,7 +1299,7 @@ OpenMPClause *OpenMPLastprivateClause::addLastprivateClause(
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPLastprivateClause(modifier);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_lastprivate] = current_clauses;
   } else {
@@ -1330,7 +1332,7 @@ OpenMPClause *OpenMPIfClause::addIfClause(OpenMPDirective *directive,
       ((OpenMPIfClause *)new_clause)
           ->setUserDefinedModifier(user_defined_modifier);
     };
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_if] = current_clauses;
   } else {
@@ -1370,7 +1372,7 @@ OpenMPDefaultClause::addDefaultClause(OpenMPDirective *directive,
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPDefaultClause(default_kind);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_default] = current_clauses;
   } else { /* could be an error since if clause may only appear once */
@@ -1393,7 +1395,7 @@ OpenMPOrderClause::addOrderClause(OpenMPDirective *directive,
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPOrderClause(order_kind);
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_order] = current_clauses;
   } else { /* could be an error since if clause may only appear once */
@@ -1415,7 +1417,7 @@ OpenMPAlignedClause::addAlignedClause(OpenMPDirective *directive) {
 
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPAlignedClause();
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_aligned] = current_clauses;
   }
@@ -1432,7 +1434,7 @@ OpenMPClause *OpenMPWhenClause::addWhenClause(OpenMPDirective *directive) {
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     (*all_clauses)[OMPC_when] = current_clauses;
   };
   new_clause = new OpenMPWhenClause();
@@ -1449,7 +1451,7 @@ OpenMPClause *OpenMPMatchClause::addMatchClause(OpenMPDirective *directive) {
   OpenMPClause *new_clause = NULL;
   if (current_clauses->size() == 0) {
     new_clause = new OpenMPMatchClause();
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     current_clauses->push_back(new_clause);
     (*all_clauses)[OMPC_match] = current_clauses;
   } else {
@@ -1468,7 +1470,7 @@ OpenMPClause *OpenMPUsesAllocatorsClause::addUsesAllocatorsClause(
       directive->getClauses(OMPC_uses_allocators);
   OpenMPClause *new_clause = NULL;
   if (current_clauses->size() == 0) {
-    current_clauses = new std::vector<OpenMPClause *>();
+    current_clauses = directive->trackClauseVector(new std::vector<OpenMPClause *>());
     (*all_clauses)[OMPC_uses_allocators] = current_clauses;
   };
   new_clause = new OpenMPUsesAllocatorsClause();
