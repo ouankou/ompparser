@@ -39,10 +39,10 @@ extern void start_lexer(const char* input);
 extern void end_lexer(void);
 
 //The directive/clause that are being parsed
-static OpenMPDirective *current_directive = NULL;
-static OpenMPClause *current_clause = NULL;
-static OpenMPDirective *current_parent_directive = NULL;
-static OpenMPClause *current_parent_clause = NULL;
+static OpenMPDirective *current_directive = nullptr;
+static OpenMPClause *current_clause = nullptr;
+static OpenMPDirective *current_parent_directive = nullptr;
+static OpenMPClause *current_parent_clause = nullptr;
 static int firstParameter = 0;
 static int secondParameter = 0;
 static int thirdParameter = 0;
@@ -60,7 +60,7 @@ static const char *trait_score = "";
 /* Treat the entire expression as a string for now */
 extern void openmp_parse_expr();
 static int openmp_error(const char *);
-void *(*exprParse)(const char *) = NULL;
+void *(*exprParse)(const char *) = nullptr;
 
 bool b_within_variable_list =
     false; // a flag to indicate if the program is now processing a list of
@@ -307,8 +307,8 @@ end_directive : END { current_directive = new OpenMPEndDirective();
                 ((OpenMPEndDirective*)current_parent_directive)->setPairedDirective(current_directive);
                 current_directive = current_parent_directive;
                 current_clause = current_parent_clause;
-                current_parent_directive = NULL;
-                current_parent_clause = NULL;
+                current_parent_directive = nullptr;
+                current_parent_clause = nullptr;
               }
               ;
 
@@ -339,8 +339,8 @@ when_clause : WHEN { current_clause = current_directive->addOpenMPClause(OMPC_wh
                 } when_variant_directive {
                 current_directive = current_parent_directive;
                 current_clause = current_parent_clause;
-                current_parent_directive = NULL;
-                current_parent_clause = NULL;
+                current_parent_directive = nullptr;
+                current_parent_clause = nullptr;
                 } ')'
             ;
 
@@ -357,8 +357,8 @@ trait_set_selector : trait_set_selector_name { } '=' '{' trait_selector_list {
                         if (current_parent_clause) {
                             current_directive = current_parent_directive;
                             current_clause = current_parent_clause;
-                            current_parent_directive = NULL;
-                            current_parent_clause = NULL;
+                            current_parent_directive = nullptr;
+                            current_parent_clause = nullptr;
                         };
                      } '}'
                    ;
@@ -1139,9 +1139,9 @@ uses_allocators_parameter : allocators_list
                           | allocators_list ',' uses_allocators_parameter
                           ;
 
-allocators_list : allocators_list_parameter_enum { firstStringParameter = NULL; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
+allocators_list : allocators_list_parameter_enum { firstStringParameter = nullptr; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
                 | allocators_list_parameter_enum '(' EXPR_STRING ')' { firstStringParameter = $3; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
-                | allocators_list_parameter_user { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_user; firstStringParameter = NULL; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
+                | allocators_list_parameter_user { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_user; firstStringParameter = nullptr; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
                 | allocators_list_parameter_user '(' EXPR_STRING ')' { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_user; firstStringParameter = $3; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
                 ;
 
@@ -3280,8 +3280,8 @@ default_variant_directive : { current_clause = current_directive->addOpenMPClaus
                             ((OpenMPDefaultClause*)current_parent_clause)->setVariantDirective(current_directive);
                             current_directive = current_parent_directive;
                             current_clause = current_parent_clause;
-                            current_parent_directive = NULL;
-                            current_parent_clause = NULL;
+                            current_parent_directive = nullptr;
+                            current_parent_clause = nullptr;
                             std::cout << "A construct directive has been added to DEFAULT clause.\n";
                             }
                           ;
@@ -3469,11 +3469,11 @@ schedule_enum_modifier : MODIFIER_MONOTONIC { firstParameter = OMPC_SCHEDULE_MOD
                        | MODIFIER_SIMD { firstParameter = OMPC_SCHEDULE_MODIFIER_simd; }
                        ;
 
-schedule_enum_kind : STATIC { if (current_directive!= NULL)current_clause = current_directive->addOpenMPClause(OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_static); }
-                   | DYNAMIC { if (current_directive!= NULL)current_clause = current_directive->addOpenMPClause(OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_dynamic); }
-                   | GUIDED { if (current_directive!= NULL)current_clause = current_directive->addOpenMPClause(OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_guided); }
-                   | AUTO { if (current_directive!= NULL)current_clause = current_directive->addOpenMPClause(OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_auto); }
-                   | RUNTIME { if (current_directive!= NULL)current_clause = current_directive->addOpenMPClause(OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_runtime); }
+schedule_enum_kind : STATIC { if (current_directive!= nullptr)current_clause = current_directive->addOpenMPClause(OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_static); }
+                   | DYNAMIC { if (current_directive!= nullptr)current_clause = current_directive->addOpenMPClause(OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_dynamic); }
+                   | GUIDED { if (current_directive!= nullptr)current_clause = current_directive->addOpenMPClause(OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_guided); }
+                   | AUTO { if (current_directive!= nullptr)current_clause = current_directive->addOpenMPClause(OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_auto); }
+                   | RUNTIME { if (current_directive!= nullptr)current_clause = current_directive->addOpenMPClause(OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_runtime); }
                    ;  
 shared_clause : SHARED {
                 current_clause = current_directive->addOpenMPClause(OMPC_shared);
@@ -3525,7 +3525,7 @@ reduction_default_only_modifier : MODIFIER_DEFAULT { firstParameter = OMPC_REDUC
 int yyerror(const char *s) {
     // printf(" %s!\n", s);
     fprintf(stderr,"error: %s\n",s);
-    current_directive = NULL;
+    current_directive = nullptr;
     return 0;
 }
  
@@ -3537,7 +3537,7 @@ int yywrap()
 // Standalone ompparser
 OpenMPDirective* parseOpenMP(const char* _input, void * _exprParse(const char*)) {
     OpenMPBaseLang base_lang = Lang_C;
-    current_directive = NULL;
+    current_directive = nullptr;
     std::string input_string;  // Must persist until after start_lexer()
     const char *input = _input;
     std::regex fortran_regex ("[!cC*][$][Oo][Mm][Pp]");
@@ -3572,12 +3572,12 @@ OpenMPDirective* parseOpenMP(const char* _input, void * _exprParse(const char*))
             input = input_string.c_str();
             if (user_set_lang != Lang_Fortran){
                 yyerror("The language is set to C/C++, but the input is Fortran.");
-                return NULL;
+                return nullptr;
             }
         } else {
             if (user_set_lang == Lang_Fortran){
                 yyerror("The language is set to Fortran, but the input is C/C++.");
-                return NULL;
+                return nullptr;
             }
         }
     }
