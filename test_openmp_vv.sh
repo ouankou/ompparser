@@ -233,7 +233,7 @@ process_file() {
 }
 
 export -f process_file
-export CLANG CLANG_FORMAT OMPPARSER_BIN
+export CLANG CLANG_FORMAT OMPPARSER_BIN REPO_PATH
 
 echo "Processing files in parallel (using $PARALLEL_JOBS jobs)..."
 echo -e "${BLUE}This may take several minutes...${NC}"
