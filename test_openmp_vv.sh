@@ -51,11 +51,16 @@ total_pragmas=0
 passed=0
 failed=0
 parse_errors=0
+skipped_files=0
 
 # Arrays for failure details
 declare -a failure_files=()
 declare -a failure_pragmas=()
 declare -a failure_reasons=()
+
+# Arrays for skipped file details
+declare -a skipped_file_paths=()
+declare -a skipped_file_reasons=()
 
 echo "========================================="
 echo "  ompparser OpenMP_VV Validation"
@@ -140,7 +145,26 @@ process_file() {
     local result_file="$temp_dir/result_$file_id"
 
     # Preprocess with clang
-    local preprocessed=$("$CLANG" -E -P -CC -fopenmp -I"$(dirname "$file")" "$file" 2>/dev/null || true)
+    # Include both the file's directory and OpenMP_VV's ompvv/ directory for headers
+    local preprocess_errors
+    preprocess_errors=$(mktemp)
+    local preprocessed
+    preprocessed=$("$CLANG" -E -P -CC -fopenmp \
+        -I"$(dirname "$file")" \
+        -I"$REPO_PATH/ompvv" \
+        "$file" 2>"$preprocess_errors" || true)
+
+    # Check if preprocessing failed
+    if [ ! -s "$preprocess_errors" ]; then
+        rm -f "$preprocess_errors"
+    else
+        # Preprocessing had errors - treat as skipped file and record it
+        local error_msg=$(head -1 "$preprocess_errors")
+        echo "$file|PREPROCESS_SKIP|Preprocessing failed: $error_msg" >> "$temp_dir/skipped_files"
+        rm -f "$preprocess_errors"
+        echo "0 0 0 0" > "$result_file"
+        return
+    fi
 
     if [ -z "$preprocessed" ]; then
         echo "0 0 0 0" > "$result_file"
@@ -265,6 +289,15 @@ for failure_file in "$temp_dir"/failures_*; do
         failure_reasons+=("$reason")
     done < "$failure_file"
 done
+
+# Read skipped file details
+if [ -f "$temp_dir/skipped_files" ]; then
+    while IFS='|' read -r file marker reason; do
+        skipped_files=$((skipped_files + 1))
+        skipped_file_paths+=("$file")
+        skipped_file_reasons+=("$reason")
+    done < "$temp_dir/skipped_files"
+fi
 shopt -u nullglob
 
 echo ""
@@ -273,6 +306,9 @@ echo "  Results"
 echo "========================================="
 echo ""
 echo "Files processed:        $total_files"
+if [ $skipped_files -gt 0 ]; then
+    echo -e "${YELLOW}Files skipped:${NC}          $skipped_files (preprocessing failed)"
+fi
 echo "Files with pragmas:     $files_with_pragmas"
 echo "Total pragmas:          $total_pragmas"
 echo ""
@@ -291,6 +327,29 @@ echo "  Mismatches:           $((failed - parse_errors))"
 echo ""
 echo "Success rate:           ${pass_rate}%"
 echo ""
+
+# Show skipped file details
+if [ $skipped_files -gt 0 ]; then
+    echo "========================================="
+    echo "  Skipped Files (showing first $MAX_DISPLAY_FAILURES)"
+    echo "========================================="
+    echo ""
+
+    display_count=0
+    for i in "${!skipped_file_paths[@]}"; do
+        if [ $display_count -ge $MAX_DISPLAY_FAILURES ]; then
+            remaining=$((skipped_files - MAX_DISPLAY_FAILURES))
+            echo "... and $remaining more skipped files"
+            break
+        fi
+
+        echo -e "${YELLOW}[$((i + 1))]${NC} ${skipped_file_paths[$i]}"
+        echo "    Reason:  ${skipped_file_reasons[$i]}"
+        echo ""
+
+        display_count=$((display_count + 1))
+    done
+fi
 
 # Show failure details
 if [ $failed -gt 0 ]; then
