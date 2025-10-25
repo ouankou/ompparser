@@ -781,7 +781,7 @@ std::string OpenMPInReductionClause::toString() {
 
 std::string OpenMPDependClause::toString() {
   OpenMPDependClauseModifier modifier = this->getModifier();
-  std::vector<vector<const char *> *> *depend_iterators_definition_class;
+  std::vector<vector<const char *> *> *depend_iterators_definition_class = nullptr;
   if (modifier == OMPC_DEPEND_MODIFIER_iterator) {
     depend_iterators_definition_class =
         this->getDependIteratorsDefinitionClass();
