@@ -2069,7 +2069,22 @@ std::string OpenMPDefaultClause::toString() {
 std::string OpenMPOrderClause::toString() {
 
   std::string result = "order (";
+  std::string modifier_string;
   std::string parameter_string;
+
+  OpenMPOrderClauseModifier order_modifier = this->getOrderClauseModifier();
+  switch (order_modifier) {
+  case OMPC_ORDER_MODIFIER_reproducible:
+    modifier_string = "reproducible:";
+    break;
+  case OMPC_ORDER_MODIFIER_unconstrained:
+    modifier_string = "unconstrained:";
+    break;
+  case OMPC_ORDER_MODIFIER_unspecified:
+    // No modifier
+    break;
+  };
+
   OpenMPOrderClauseKind order_kind = this->getOrderClauseKind();
   switch (order_kind) {
   case OMPC_ORDER_concurrent:
@@ -2080,7 +2095,7 @@ std::string OpenMPOrderClause::toString() {
   };
 
   if (parameter_string.size() > 0) {
-    result += parameter_string + ") ";
+    result += modifier_string + parameter_string + ") ";
   } else {
     result = result.substr(0, result.size() - 2);
   }

@@ -108,7 +108,7 @@ corresponding C type is union name defaults to YYSTYPE.
         USE_DEVICE_PTR USE_DEVICE_ADDR TARGET DATA ENTER EXIT ANCESTOR DEVICE_NUM IS_DEVICE_PTR HAS_DEVICE_ADDR SIZES
         DEFAULTMAP BEHAVIOR_ALLOC BEHAVIOR_TO BEHAVIOR_FROM BEHAVIOR_TOFROM BEHAVIOR_FIRSTPRIVATE BEHAVIOR_NONE BEHAVIOR_DEFAULT CATEGORY_SCALAR CATEGORY_AGGREGATE CATEGORY_POINTER CATEGORY_ALLOCATABLE UPDATE TO FROM TO_MAPPER FROM_MAPPER USES_ALLOCATORS
  LINK DEVICE_TYPE MAP MAP_MODIFIER_ALWAYS MAP_MODIFIER_CLOSE MAP_MODIFIER_MAPPER MAP_TYPE_TO MAP_TYPE_FROM MAP_TYPE_TOFROM MAP_TYPE_ALLOC MAP_TYPE_RELEASE MAP_TYPE_DELETE MAP_TYPE_PRESENT EXT_ BARRIER TASKWAIT FLUSH RELEASE ACQUIRE ATOMIC READ WRITE CAPTURE HINT CRITICAL SOURCE SINK DESTROY THREADS
-        CONCURRENT
+        CONCURRENT REPRODUCIBLE UNCONSTRAINED
         LESSOREQUAL MOREOREQUAL NOTEQUAL
         ERROR_DIR NOTHING MASKED SCOPE INTEROP ASSUME ASSUMES BEGIN_DIR
         ALLOCATORS TASKGRAPH TASK_ITERATION DISPATCH GROUPPRIVATE WORKDISTRIBUTE FUSE INTERCHANGE REVERSE SPLIT STRIPE INDUCTION
@@ -4090,8 +4090,13 @@ full_clause: FULL { current_clause = current_directive->addOpenMPClause(OMPC_ful
 order_clause: ORDER '(' order_parameter ')' { }
             ;
 
-order_parameter : CONCURRENT { current_clause = current_directive->addOpenMPClause(OMPC_order, OMPC_ORDER_concurrent); }
+order_parameter : order_modifier ':' CONCURRENT { current_clause = OpenMPOrderClause::addOrderClause(current_directive, (OpenMPOrderClauseModifier)firstParameter, OMPC_ORDER_concurrent); }
+                | CONCURRENT { current_clause = current_directive->addOpenMPClause(OMPC_order, OMPC_ORDER_concurrent); }
                 ;
+
+order_modifier : REPRODUCIBLE { firstParameter = OMPC_ORDER_MODIFIER_reproducible; }
+               | UNCONSTRAINED { firstParameter = OMPC_ORDER_MODIFIER_unconstrained; }
+               ;
 
 uniform_clause: UNIFORM { current_clause = current_directive->addOpenMPClause(OMPC_uniform); } '(' var_list ')'
               ;

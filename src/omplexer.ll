@@ -176,7 +176,7 @@ comment         [\/\/].*
 
 [!c*]$omp       { ; }
 #pragma         { ; }
-omp             { ; }
+omp/{blank}     { ; }
 parallel        { return PARALLEL; }
 metadirective   { return METADIRECTIVE; }
 task            { return TASK; }
@@ -460,7 +460,10 @@ block                     { return BLOCK; }
 <DEFAULT_STATE>{blank}*                     { ; }
 <DEFAULT_STATE>.                            { yy_push_state(INITIAL); unput(yytext[0]); } /* So far, only for default in metadirective meaning that a new directive is coming up. */
 
+<ORDER_STATE>reproducible                   { return REPRODUCIBLE; }
+<ORDER_STATE>unconstrained                  { return UNCONSTRAINED; }
 <ORDER_STATE>concurrent                     { return CONCURRENT; }
+<ORDER_STATE>":"                            { return ':'; }
 <ORDER_STATE>"("                            { return '('; }
 <ORDER_STATE>")"                            { yy_pop_state(); return ')'; }
 <ORDER_STATE>{blank}*                       { ; }

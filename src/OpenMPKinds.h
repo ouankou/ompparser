@@ -393,6 +393,15 @@ enum OpenMPDefaultClauseKind {
 #undef OPENMP_DEFAULT_KIND
 };
 
+/// modifiers for 'order' clause.
+enum OpenMPOrderClauseModifier {
+#define OPENMP_ORDER_MODIFIER(Name) OMPC_ORDER_MODIFIER_##Name,
+  OPENMP_ORDER_MODIFIER(reproducible)
+  OPENMP_ORDER_MODIFIER(unconstrained)
+  OPENMP_ORDER_MODIFIER(unspecified)
+#undef OPENMP_ORDER_MODIFIER
+};
+
 /// OpenMP attributes for 'order' clause.
 enum OpenMPOrderClauseKind {
 #define OPENMP_ORDER_KIND(Name) OMPC_ORDER_##Name,

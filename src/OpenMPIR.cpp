@@ -1421,6 +1421,31 @@ OpenMPDefaultClause::addDefaultClause(OpenMPDirective *directive,
 
 OpenMPClause *
 OpenMPOrderClause::addOrderClause(OpenMPDirective *directive,
+                                  OpenMPOrderClauseModifier order_modifier,
+                                  OpenMPOrderClauseKind order_kind) {
+
+  std::vector<OpenMPClause *> *current_clauses =
+      directive->getClauses(OMPC_order);
+  OpenMPClause *new_clause = NULL;
+
+  if (current_clauses->size() == 0) {
+    new_clause = directive->registerClause(std::make_unique<OpenMPOrderClause>(order_modifier, order_kind));
+    current_clauses->push_back(new_clause);
+    // Add to clauses_in_original_order
+    if (new_clause != NULL && new_clause->getClausePosition() == -1) {
+      directive->getClausesInOriginalOrder()->push_back(new_clause);
+      new_clause->setClausePosition(directive->getClausesInOriginalOrder()->size() - 1);
+    }
+  } else { /* could be an error since if clause may only appear once */
+    std::cerr << "Cannot have two order clause for the directive "
+              << directive->getKind() << ", ignored\n";
+  };
+
+  return new_clause;
+};
+
+OpenMPClause *
+OpenMPOrderClause::addOrderClause(OpenMPDirective *directive,
                                   OpenMPOrderClauseKind order_kind) {
 
   std::vector<OpenMPClause *> *current_clauses =
@@ -1430,6 +1455,11 @@ OpenMPOrderClause::addOrderClause(OpenMPDirective *directive,
   if (current_clauses->size() == 0) {
     new_clause = directive->registerClause(std::make_unique<OpenMPOrderClause>(order_kind));
     current_clauses->push_back(new_clause);
+    // Add to clauses_in_original_order
+    if (new_clause != NULL && new_clause->getClausePosition() == -1) {
+      directive->getClausesInOriginalOrder()->push_back(new_clause);
+      new_clause->setClausePosition(directive->getClausesInOriginalOrder()->size() - 1);
+    }
   } else { /* could be an error since if clause may only appear once */
     std::cerr << "Cannot have two order clause for the directive "
               << directive->getKind() << ", ignored\n";

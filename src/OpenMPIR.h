@@ -845,14 +845,20 @@ public:
 class OpenMPOrderClause : public OpenMPClause {
 
 protected:
+  OpenMPOrderClauseModifier order_modifier = OMPC_ORDER_MODIFIER_unspecified;
   OpenMPOrderClauseKind order_kind = OMPC_ORDER_unspecified;
 
 public:
+  OpenMPOrderClause(OpenMPOrderClauseModifier _order_modifier, OpenMPOrderClauseKind _order_kind)
+      : OpenMPClause(OMPC_order), order_modifier(_order_modifier), order_kind(_order_kind) {};
+
   OpenMPOrderClause(OpenMPOrderClauseKind _order_kind)
       : OpenMPClause(OMPC_order), order_kind(_order_kind) {};
 
+  OpenMPOrderClauseModifier getOrderClauseModifier() { return order_modifier; };
   OpenMPOrderClauseKind getOrderClauseKind() { return order_kind; };
 
+  static OpenMPClause *addOrderClause(OpenMPDirective *, OpenMPOrderClauseModifier, OpenMPOrderClauseKind);
   static OpenMPClause *addOrderClause(OpenMPDirective *, OpenMPOrderClauseKind);
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
