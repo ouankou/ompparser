@@ -264,6 +264,20 @@ public:
   };
 };
 
+// fail clause for atomic compare (OpenMP 5.1)
+class OpenMPFailClause : public OpenMPClause {
+protected:
+  OpenMPFailClauseMemoryOrder memory_order;
+
+public:
+  OpenMPFailClause(OpenMPFailClauseMemoryOrder _memory_order)
+      : OpenMPClause(OMPC_fail), memory_order(_memory_order) {};
+
+  OpenMPFailClauseMemoryOrder getMemoryOrder() { return memory_order; };
+
+  std::string toString();
+};
+
 class OpenMPEndDirective : public OpenMPDirective {
 protected:
   OpenMPDirective *paired_directive;

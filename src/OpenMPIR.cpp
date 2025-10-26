@@ -112,6 +112,8 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   case OMPC_write:
   case OMPC_update:
   case OMPC_capture:
+  case OMPC_compare:
+  case OMPC_weak:
   case OMPC_hint:
   case OMPC_destroy:
   case OMPC_sizes:
@@ -253,6 +255,17 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
         current_clauses->push_back(new_clause);
       }
+    }
+    break;
+  }
+  case OMPC_fail: {
+    OpenMPFailClauseMemoryOrder memory_order =
+        (OpenMPFailClauseMemoryOrder)va_arg(args, int);
+    if (current_clauses->size() == 0) {
+      new_clause = registerClause(std::make_unique<OpenMPFailClause>(memory_order));
+      current_clauses->push_back(new_clause);
+    } else {
+      std::cerr << "Cannot have two fail clauses for the directive, ignored\n";
     }
     break;
   }

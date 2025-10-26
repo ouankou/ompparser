@@ -2296,3 +2296,25 @@ std::string OpenMPUsesAllocatorsClause::toString() {
   result += " ) ";
   return result;
 };
+
+std::string OpenMPFailClause::toString() {
+  std::string result = "fail (";
+
+  OpenMPFailClauseMemoryOrder memory_order = this->getMemoryOrder();
+  switch (memory_order) {
+  case OMPC_FAIL_seq_cst:
+    result += "seq_cst";
+    break;
+  case OMPC_FAIL_acquire:
+    result += "acquire";
+    break;
+  case OMPC_FAIL_relaxed:
+    result += "relaxed";
+    break;
+  default:
+    result += "unknown";
+  }
+
+  result += ") ";
+  return result;
+};

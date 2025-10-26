@@ -865,18 +865,21 @@ memory_order_clause_seq :
                         | memory_order_clause
                         | hint_clause
                         ;
-memory_order_clause_seq_after : 
+memory_order_clause_seq_after :
                               | memory_order_clause hint_clause
                               | hint_clause memory_order_clause
                               | memory_order_clause ',' hint_clause
                               | hint_clause ',' memory_order_clause
+                              | memory_order_clause fail_clause
                               | memory_order_clause
                               | hint_clause
+                              | fail_clause
                               ;
 atomic_clause : read_clause
               | write_clause
               | update_clause
               | capture_clause
+              | compare_clause
               ;
 
 memory_order_clause : seq_cst_clause
