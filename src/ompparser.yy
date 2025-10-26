@@ -106,6 +106,13 @@ corresponding C type is union name defaults to YYSTYPE.
  LINK DEVICE_TYPE MAP MAP_MODIFIER_ALWAYS MAP_MODIFIER_CLOSE MAP_MODIFIER_MAPPER MAP_TYPE_TO MAP_TYPE_FROM MAP_TYPE_TOFROM MAP_TYPE_ALLOC MAP_TYPE_RELEASE MAP_TYPE_DELETE EXT_ BARRIER TASKWAIT FLUSH RELEASE ACQUIRE ATOMIC READ WRITE CAPTURE HINT CRITICAL SOURCE SINK DESTROY THREADS
         CONCURRENT
         LESSOREQUAL MOREOREQUAL NOTEQUAL
+        ERROR_DIR NOTHING MASKED SCOPE INTEROP ASSUME ASSUMES BEGIN_DIR
+        ALLOCATORS TASKGRAPH TASK_ITERATION DISPATCH GROUPPRIVATE WORKDISTRIBUTE FUSE INTERCHANGE REVERSE SPLIT STRIPE INDUCTION
+        FILTER COMPARE FAIL WEAK AT SEVERITY MESSAGE COMPILATION EXECUTION FATAL WARNING
+        DOACROSS ABSENT CONTAINS HOLDS OTHERWISE
+        GRAPH_ID GRAPH_RESET TRANSPARENT REPLAYABLE THREADSET INDIRECT LOCAL INIT INIT_COMPLETE SAFESYNC DEVICE_SAFESYNC MEMSCOPE
+        LOOPRANGE PERMUTATION COUNTS INDUCTOR COLLECTOR COMBINER ADJUST_ARGS APPEND_ARGS APPLY
+        NO_OPENMP NO_OPENMP_CONSTRUCTS NO_OPENMP_ROUTINES NO_PARALLELISM NOCONTEXT NOVARIANTS USE SYSTEM WARP WAVEFRONT BLOCK
 %token <itype> ICONSTANT
 %token <stype> EXPRESSION ID_EXPRESSION EXPR_STRING VAR_STRING TASK_REDUCTION
 /* associativity and precedence */
@@ -221,6 +228,33 @@ openmp_directive : parallel_directive
                  | target_teams_distribute_parallel_do_simd_directive
                  | unroll_directive
                  | tile_directive
+                 | error_directive
+                 | nothing_directive
+                 | masked_directive
+                 | masked_taskloop_directive
+                 | masked_taskloop_simd_directive
+                 | parallel_masked_directive
+                 | parallel_masked_taskloop_directive
+                 | parallel_masked_taskloop_simd_directive
+                 | scope_directive
+                 | interop_directive
+                 | assume_directive
+                 | assumes_directive
+                 | begin_assumes_directive
+                 | end_assumes_directive
+                 | begin_metadirective_directive
+                 | allocators_directive
+                 | taskgraph_directive
+                 | task_iteration_directive
+                 | dispatch_directive
+                 | groupprivate_directive
+                 | workdistribute_directive
+                 | fuse_directive
+                 | interchange_directive
+                 | reverse_directive
+                 | split_directive
+                 | stripe_directive
+                 | declare_induction_directive
                  ;
 
 variant_directive : parallel_directive
@@ -560,6 +594,142 @@ tile_directive : TILE {
                      }
                       tile_clause_optseq
                    ;
+// OpenMP 5.1 directives
+error_directive : ERROR_DIR {
+                        current_directive = new OpenMPDirective(OMPD_error);
+                     }
+                      error_clause_optseq
+                   ;
+nothing_directive : NOTHING {
+                        current_directive = new OpenMPDirective(OMPD_nothing);
+                     }
+                   ;
+masked_directive : MASKED {
+                        current_directive = new OpenMPDirective(OMPD_masked);
+                     }
+                      masked_clause_optseq
+                   ;
+masked_taskloop_directive : MASKED TASKLOOP {
+                        current_directive = new OpenMPDirective(OMPD_masked_taskloop);
+                     }
+                      masked_taskloop_clause_optseq
+                   ;
+masked_taskloop_simd_directive : MASKED TASKLOOP SIMD {
+                        current_directive = new OpenMPDirective(OMPD_masked_taskloop_simd);
+                     }
+                      masked_taskloop_simd_clause_optseq
+                   ;
+parallel_masked_directive : PARALLEL MASKED {
+                        current_directive = new OpenMPDirective(OMPD_parallel_masked);
+                     }
+                      parallel_masked_clause_optseq
+                   ;
+parallel_masked_taskloop_directive : PARALLEL MASKED TASKLOOP {
+                        current_directive = new OpenMPDirective(OMPD_parallel_masked_taskloop);
+                     }
+                      parallel_masked_taskloop_clause_optseq
+                   ;
+parallel_masked_taskloop_simd_directive : PARALLEL MASKED TASKLOOP SIMD {
+                        current_directive = new OpenMPDirective(OMPD_parallel_masked_taskloop_simd);
+                     }
+                      parallel_masked_taskloop_simd_clause_optseq
+                   ;
+scope_directive : SCOPE {
+                        current_directive = new OpenMPDirective(OMPD_scope);
+                     }
+                      scope_clause_optseq
+                   ;
+interop_directive : INTEROP {
+                        current_directive = new OpenMPDirective(OMPD_interop);
+                     }
+                      interop_clause_optseq
+                   ;
+// OpenMP 5.2 directives
+assume_directive : ASSUME {
+                        current_directive = new OpenMPDirective(OMPD_assume);
+                     }
+                      assume_clause_optseq
+                   ;
+assumes_directive : ASSUMES {
+                        current_directive = new OpenMPDirective(OMPD_assumes);
+                     }
+                      assumes_clause_optseq
+                   ;
+begin_assumes_directive : BEGIN_DIR ASSUMES {
+                        current_directive = new OpenMPDirective(OMPD_begin_assumes);
+                     }
+                      begin_assumes_clause_optseq
+                   ;
+end_assumes_directive : END ASSUMES {
+                        current_directive = new OpenMPDirective(OMPD_end_assumes);
+                     }
+                   ;
+begin_metadirective_directive : BEGIN_DIR METADIRECTIVE {
+                        current_directive = new OpenMPDirective(OMPD_begin_metadirective);
+                     }
+                      begin_metadirective_clause_optseq
+                   ;
+// OpenMP 6.0 directives
+allocators_directive : ALLOCATORS {
+                        current_directive = new OpenMPDirective(OMPD_allocators);
+                     }
+                      allocators_clause_optseq
+                   ;
+taskgraph_directive : TASKGRAPH {
+                        current_directive = new OpenMPDirective(OMPD_taskgraph);
+                     }
+                      taskgraph_clause_optseq
+                   ;
+task_iteration_directive : TASK_ITERATION {
+                        current_directive = new OpenMPDirective(OMPD_task_iteration);
+                     }
+                      task_iteration_clause_optseq
+                   ;
+dispatch_directive : DISPATCH {
+                        current_directive = new OpenMPDirective(OMPD_dispatch);
+                     }
+                      dispatch_clause_optseq
+                   ;
+groupprivate_directive : GROUPPRIVATE {
+                        current_directive = new OpenMPDirective(OMPD_groupprivate);
+                     }
+                      groupprivate_clause_optseq
+                   ;
+workdistribute_directive : WORKDISTRIBUTE {
+                        current_directive = new OpenMPDirective(OMPD_workdistribute);
+                     }
+                      workdistribute_clause_optseq
+                   ;
+fuse_directive : FUSE {
+                        current_directive = new OpenMPDirective(OMPD_fuse);
+                     }
+                      fuse_clause_optseq
+                   ;
+interchange_directive : INTERCHANGE {
+                        current_directive = new OpenMPDirective(OMPD_interchange);
+                     }
+                      interchange_clause_optseq
+                   ;
+reverse_directive : REVERSE {
+                        current_directive = new OpenMPDirective(OMPD_reverse);
+                     }
+                      reverse_clause_optseq
+                   ;
+split_directive : SPLIT {
+                        current_directive = new OpenMPDirective(OMPD_split);
+                     }
+                      split_clause_optseq
+                   ;
+stripe_directive : STRIPE {
+                        current_directive = new OpenMPDirective(OMPD_stripe);
+                     }
+                      stripe_clause_optseq
+                   ;
+declare_induction_directive : DECLARE INDUCTION {
+                        current_directive = new OpenMPDirective(OMPD_declare_induction);
+                     }
+                      declare_induction_clause_optseq
+                   ;
 taskgroup_directive : TASKGROUP {
                         current_directive = new OpenMPDirective(OMPD_taskgroup);
                      }
@@ -734,6 +904,105 @@ acquire_clause : ACQUIRE { current_clause = current_directive->addOpenMPClause(O
 relaxed_clause : RELAXED { current_clause = current_directive->addOpenMPClause(OMPC_relaxed); }
                ;
 
+// OpenMP 5.1 clause implementations
+filter_clause : FILTER { current_clause = current_directive->addOpenMPClause(OMPC_filter); } '(' expression ')'
+              ;
+at_clause : AT '(' at_kind ')'
+          ;
+at_kind : COMPILATION { current_clause = current_directive->addOpenMPClause(OMPC_at, OMPC_AT_compilation); }
+        | EXECUTION { current_clause = current_directive->addOpenMPClause(OMPC_at, OMPC_AT_execution); }
+        ;
+severity_clause : SEVERITY '(' severity_kind ')'
+                ;
+severity_kind : FATAL { current_clause = current_directive->addOpenMPClause(OMPC_severity, OMPC_SEVERITY_fatal); }
+              | WARNING { current_clause = current_directive->addOpenMPClause(OMPC_severity, OMPC_SEVERITY_warning); }
+              ;
+message_clause : MESSAGE '(' expression ')'
+               { current_clause = current_directive->addOpenMPClause(OMPC_message); }
+               ;
+compare_clause : COMPARE { current_clause = current_directive->addOpenMPClause(OMPC_compare); }
+               ;
+fail_clause : FAIL '(' fail_memory_order ')'
+            ;
+fail_memory_order : SEQ_CST { current_clause = current_directive->addOpenMPClause(OMPC_fail, OMPC_FAIL_seq_cst); }
+                  | ACQUIRE { current_clause = current_directive->addOpenMPClause(OMPC_fail, OMPC_FAIL_acquire); }
+                  | RELAXED { current_clause = current_directive->addOpenMPClause(OMPC_fail, OMPC_FAIL_relaxed); }
+                  ;
+weak_clause : WEAK { current_clause = current_directive->addOpenMPClause(OMPC_weak); }
+            ;
+
+// OpenMP 5.2 clause implementations
+doacross_clause : DOACROSS '(' doacross_type ')'
+                ;
+doacross_type : SOURCE { current_clause = current_directive->addOpenMPClause(OMPC_doacross, OMPC_DOACROSS_TYPE_source); }
+              | SINK { current_clause = current_directive->addOpenMPClause(OMPC_doacross, OMPC_DOACROSS_TYPE_sink); }
+              ;
+absent_clause : ABSENT '(' var_list ')'
+              { current_clause = current_directive->addOpenMPClause(OMPC_absent); }
+              ;
+contains_clause : CONTAINS '(' var_list ')'
+                { current_clause = current_directive->addOpenMPClause(OMPC_contains); }
+                ;
+holds_clause : HOLDS '(' expression ')'
+             { current_clause = current_directive->addOpenMPClause(OMPC_holds); }
+             ;
+otherwise_clause : OTHERWISE '(' variant_directive ')'
+                 { current_clause = current_directive->addOpenMPClause(OMPC_otherwise); }
+                 ;
+
+// OpenMP 6.0 clause implementations
+graph_id_clause : GRAPH_ID '(' expression ')'
+                { current_clause = current_directive->addOpenMPClause(OMPC_graph_id); }
+                ;
+graph_reset_clause : GRAPH_RESET { current_clause = current_directive->addOpenMPClause(OMPC_graph_reset); }
+                   ;
+transparent_clause : TRANSPARENT { current_clause = current_directive->addOpenMPClause(OMPC_transparent); }
+                   ;
+replayable_clause : REPLAYABLE { current_clause = current_directive->addOpenMPClause(OMPC_replayable); }
+                  ;
+threadset_clause : THREADSET '(' expression ')'
+                 { current_clause = current_directive->addOpenMPClause(OMPC_threadset); }
+                 ;
+init_clause : INIT '(' expression ')'
+            { current_clause = current_directive->addOpenMPClause(OMPC_init); }
+            ;
+use_clause : USE '(' expression ')'
+           { current_clause = current_directive->addOpenMPClause(OMPC_use); }
+           ;
+novariants_clause : NOVARIANTS '(' expression ')'
+                  { current_clause = current_directive->addOpenMPClause(OMPC_novariants); }
+                  ;
+nocontext_clause : NOCONTEXT '(' expression ')'
+                 { current_clause = current_directive->addOpenMPClause(OMPC_nocontext); }
+                 ;
+looprange_clause : LOOPRANGE '(' expression ')'
+                 { current_clause = current_directive->addOpenMPClause(OMPC_looprange); }
+                 ;
+permutation_clause : PERMUTATION '(' var_list ')'
+                   { current_clause = current_directive->addOpenMPClause(OMPC_permutation); }
+                   ;
+counts_clause : COUNTS '(' var_list ')'
+              { current_clause = current_directive->addOpenMPClause(OMPC_counts); }
+              ;
+induction_clause : INDUCTION '(' var_list ')'
+                 { current_clause = current_directive->addOpenMPClause(OMPC_induction); }
+                 ;
+inductor_clause : INDUCTOR '(' expression ')'
+                { current_clause = current_directive->addOpenMPClause(OMPC_inductor); }
+                ;
+collector_clause : COLLECTOR '(' expression ')'
+                 { current_clause = current_directive->addOpenMPClause(OMPC_collector); }
+                 ;
+combiner_clause : COMBINER '(' expression ')'
+                { current_clause = current_directive->addOpenMPClause(OMPC_combiner); }
+                ;
+no_openmp_clause : NO_OPENMP { current_clause = current_directive->addOpenMPClause(OMPC_no_openmp); }
+                 ;
+no_openmp_routines_clause : NO_OPENMP_ROUTINES { current_clause = current_directive->addOpenMPClause(OMPC_no_openmp_routines); }
+                          ;
+no_parallelism_clause : NO_PARALLELISM { current_clause = current_directive->addOpenMPClause(OMPC_no_parallelism); }
+                      ;
+
 taskwait_clause_optseq : /* empty */
                        | taskwait_clause_seq
                        ;
@@ -742,6 +1011,86 @@ unroll_clause_optseq : /* empty */
                      ;
 tile_clause_optseq : tile_clause_seq
                    ;
+// OpenMP 5.1 clause option sequences
+error_clause_optseq : /* empty */
+                    | error_clause_seq
+                    ;
+masked_clause_optseq : /* empty */
+                     | masked_clause_seq
+                     ;
+masked_taskloop_clause_optseq : /* empty */
+                              | masked_taskloop_clause_seq
+                              ;
+masked_taskloop_simd_clause_optseq : /* empty */
+                                   | masked_taskloop_simd_clause_seq
+                                   ;
+parallel_masked_clause_optseq : /* empty */
+                              | parallel_masked_clause_seq
+                              ;
+parallel_masked_taskloop_clause_optseq : /* empty */
+                                       | parallel_masked_taskloop_clause_seq
+                                       ;
+parallel_masked_taskloop_simd_clause_optseq : /* empty */
+                                            | parallel_masked_taskloop_simd_clause_seq
+                                            ;
+scope_clause_optseq : /* empty */
+                    | scope_clause_seq
+                    ;
+interop_clause_optseq : /* empty */
+                      | interop_clause_seq
+                      ;
+// OpenMP 5.2 clause option sequences
+assume_clause_optseq : /* empty */
+                     | assume_clause_seq
+                     ;
+assumes_clause_optseq : /* empty */
+                      | assumes_clause_seq
+                      ;
+begin_assumes_clause_optseq : /* empty */
+                            | begin_assumes_clause_seq
+                            ;
+begin_metadirective_clause_optseq : /* empty */
+                                  | begin_metadirective_clause_seq
+                                  ;
+// OpenMP 6.0 clause option sequences
+allocators_clause_optseq : /* empty */
+                         | allocators_clause_seq
+                         ;
+taskgraph_clause_optseq : /* empty */
+                        | taskgraph_clause_seq
+                        ;
+task_iteration_clause_optseq : /* empty */
+                             | task_iteration_clause_seq
+                             ;
+dispatch_clause_optseq : /* empty */
+                       | dispatch_clause_seq
+                       ;
+groupprivate_clause_optseq : groupprivate_clause_seq
+                           ;
+workdistribute_clause_optseq : /* empty */
+                             | workdistribute_clause_seq
+                             ;
+fuse_clause_optseq : /* empty */
+                   | fuse_clause_seq
+                   ;
+interchange_clause_optseq : /* empty */
+                          | interchange_clause_seq
+                          ;
+reverse_directive_clause_optseq : /* empty */
+                   | reverse_clause_seq
+                   ;
+reverse_clause_optseq : /* empty */
+                      | reverse_clause_seq
+                      ;
+split_clause_optseq : /* empty */
+                    | split_clause_seq
+                    ;
+stripe_clause_optseq : /* empty */
+                     | stripe_clause_seq
+                     ;
+declare_induction_clause_optseq : /* empty */
+                                | declare_induction_clause_seq
+                                ;
 taskgroup_clause_optseq : /* empty */
                         | taskgroup_clause_seq
                         ;
@@ -795,6 +1144,311 @@ unroll_clause_seq : unroll_clause
                   ;
 tile_clause_seq : tile_clause
                 ;
+// OpenMP 5.1 clause sequences and clauses
+error_clause_seq : error_clause
+                 | error_clause_seq error_clause
+                 | error_clause_seq ',' error_clause
+                 ;
+error_clause : at_clause
+             | severity_clause
+             | message_clause
+             ;
+masked_clause_seq : masked_clause
+                  | masked_clause_seq masked_clause
+                  | masked_clause_seq ',' masked_clause
+                  ;
+masked_clause : filter_clause
+              | private_clause
+              | firstprivate_clause
+              | shared_clause
+              | reduction_clause
+              | allocate_clause
+              ;
+masked_taskloop_clause_seq : masked_taskloop_clause
+                           | masked_taskloop_clause_seq masked_taskloop_clause
+                           | masked_taskloop_clause_seq ',' masked_taskloop_clause
+                           ;
+masked_taskloop_clause : if_taskloop_clause
+                       | shared_clause
+                       | private_clause
+                       | firstprivate_clause
+                       | lastprivate_clause
+                       | reduction_clause
+                       | in_reduction_clause
+                       | default_clause
+                       | grainsize_clause
+                       | num_tasks_clause
+                       | collapse_clause
+                       | final_clause
+                       | priority_clause
+                       | untied_clause
+                       | mergeable_clause
+                       | nogroup_clause
+                       | allocate_clause
+                       | filter_clause
+                       ;
+masked_taskloop_simd_clause_seq : masked_taskloop_simd_clause
+                                | masked_taskloop_simd_clause_seq masked_taskloop_simd_clause
+                                | masked_taskloop_simd_clause_seq ',' masked_taskloop_simd_clause
+                                ;
+masked_taskloop_simd_clause : if_taskloop_simd_clause
+                            | shared_clause
+                            | private_clause
+                            | firstprivate_clause
+                            | lastprivate_clause
+                            | reduction_clause
+                            | in_reduction_clause
+                            | default_clause
+                            | grainsize_clause
+                            | num_tasks_clause
+                            | collapse_clause
+                            | final_clause
+                            | priority_clause
+                            | untied_clause
+                            | mergeable_clause
+                            | nogroup_clause
+                            | safelen_clause
+                            | simdlen_clause
+                            | linear_clause
+                            | aligned_clause
+                            | nontemporal_clause
+                            | order_clause
+                            | allocate_clause
+                            | filter_clause
+                            ;
+parallel_masked_clause_seq : parallel_masked_clause
+                           | parallel_masked_clause_seq parallel_masked_clause
+                           | parallel_masked_clause_seq ',' parallel_masked_clause
+                           ;
+parallel_masked_clause : if_parallel_clause
+                       | num_threads_clause
+                       | default_clause
+                       | private_clause
+                       | firstprivate_clause
+                       | shared_clause
+                       | copyin_clause
+                       | reduction_clause
+                       | proc_bind_clause
+                       | allocate_clause
+                       | filter_clause
+                       ;
+parallel_masked_taskloop_clause_seq : parallel_masked_taskloop_clause
+                                    | parallel_masked_taskloop_clause_seq parallel_masked_taskloop_clause
+                                    | parallel_masked_taskloop_clause_seq ',' parallel_masked_taskloop_clause
+                                    ;
+parallel_masked_taskloop_clause : if_parallel_taskloop_clause
+                                | num_threads_clause
+                                | default_clause
+                                | private_clause
+                                | firstprivate_clause
+                                | shared_clause
+                                | copyin_clause
+                                | reduction_clause
+                                | proc_bind_clause
+                                | allocate_clause
+                                | lastprivate_clause
+                                | nowait_clause
+                                | grainsize_clause
+                                | num_tasks_clause
+                                | collapse_clause
+                                | final_clause
+                                | priority_clause
+                                | untied_clause
+                                | mergeable_clause
+                                | nogroup_clause
+                                | filter_clause
+                                ;
+parallel_masked_taskloop_simd_clause_seq : parallel_masked_taskloop_simd_clause
+                                         | parallel_masked_taskloop_simd_clause_seq parallel_masked_taskloop_simd_clause
+                                         | parallel_masked_taskloop_simd_clause_seq ',' parallel_masked_taskloop_simd_clause
+                                         ;
+parallel_masked_taskloop_simd_clause : if_parallel_taskloop_simd_clause
+                                     | num_threads_clause
+                                     | default_clause
+                                     | private_clause
+                                     | firstprivate_clause
+                                     | shared_clause
+                                     | copyin_clause
+                                     | reduction_clause
+                                     | proc_bind_clause
+                                     | allocate_clause
+                                     | lastprivate_clause
+                                     | nowait_clause
+                                     | grainsize_clause
+                                     | num_tasks_clause
+                                     | collapse_clause
+                                     | final_clause
+                                     | priority_clause
+                                     | untied_clause
+                                     | mergeable_clause
+                                     | nogroup_clause
+                                     | safelen_clause
+                                     | simdlen_clause
+                                     | linear_clause
+                                     | aligned_clause
+                                     | nontemporal_clause
+                                     | order_clause
+                                     | filter_clause
+                                     ;
+scope_clause_seq : scope_clause
+                 | scope_clause_seq scope_clause
+                 | scope_clause_seq ',' scope_clause
+                 ;
+scope_clause : private_clause
+             | firstprivate_clause
+             | reduction_clause
+             | allocate_clause
+             | nowait_clause
+             ;
+interop_clause_seq : interop_clause
+                   | interop_clause_seq interop_clause
+                   | interop_clause_seq ',' interop_clause
+                   ;
+interop_clause : init_clause
+               | use_clause
+               | destroy_clause
+               | depend_with_modifier_clause
+               | nowait_clause
+               ;
+// OpenMP 5.2 clause sequences and clauses
+assume_clause_seq : assume_clause
+                  | assume_clause_seq assume_clause
+                  | assume_clause_seq ',' assume_clause
+                  ;
+assume_clause : holds_clause
+              | absent_clause
+              | contains_clause
+              | no_openmp_clause
+              | no_openmp_routines_clause
+              | no_parallelism_clause
+              ;
+assumes_clause_seq : assumes_clause
+                   | assumes_clause_seq assumes_clause
+                   | assumes_clause_seq ',' assumes_clause
+                   ;
+assumes_clause : holds_clause
+               | absent_clause
+               | contains_clause
+               | no_openmp_clause
+               | no_openmp_routines_clause
+               | no_parallelism_clause
+               ;
+begin_assumes_clause_seq : begin_assumes_clause
+                         | begin_assumes_clause_seq begin_assumes_clause
+                         | begin_assumes_clause_seq ',' begin_assumes_clause
+                         ;
+begin_assumes_clause : holds_clause
+                     | absent_clause
+                     | contains_clause
+                     | no_openmp_clause
+                     | no_openmp_routines_clause
+                     | no_parallelism_clause
+                     ;
+begin_metadirective_clause_seq : begin_metadirective_clause
+                               | begin_metadirective_clause_seq begin_metadirective_clause
+                               | begin_metadirective_clause_seq ',' begin_metadirective_clause
+                               ;
+begin_metadirective_clause : when_clause
+                           | otherwise_clause
+                           ;
+// OpenMP 6.0 clause sequences and clauses
+allocators_clause_seq : allocators_clause
+                      | allocators_clause_seq allocators_clause
+                      | allocators_clause_seq ',' allocators_clause
+                      ;
+allocators_clause : allocate_clause
+                  | uses_allocators_clause
+                  ;
+taskgraph_clause_seq : taskgraph_clause
+                     | taskgraph_clause_seq taskgraph_clause
+                     | taskgraph_clause_seq ',' taskgraph_clause
+                     ;
+taskgraph_clause : graph_id_clause
+                 | graph_reset_clause
+                 | transparent_clause
+                 | replayable_clause
+                 | threadset_clause
+                 ;
+task_iteration_clause_seq : task_iteration_clause
+                          | task_iteration_clause_seq task_iteration_clause
+                          | task_iteration_clause_seq ',' task_iteration_clause
+                          ;
+task_iteration_clause : private_clause
+                      | firstprivate_clause
+                      | shared_clause
+                      | reduction_clause
+                      | in_reduction_clause
+                      | allocate_clause
+                      | depend_with_modifier_clause
+                      ;
+dispatch_clause_seq : dispatch_clause
+                    | dispatch_clause_seq dispatch_clause
+                    | dispatch_clause_seq ',' dispatch_clause
+                    ;
+dispatch_clause : device_clause
+                | is_device_ptr_clause
+                | has_device_addr_clause
+                | nowait_clause
+                | depend_with_modifier_clause
+                | novariants_clause
+                | nocontext_clause
+                ;
+groupprivate_clause_seq : groupprivate_var_list
+                        ;
+groupprivate_var_list : '(' var_list ')'
+                      ;
+workdistribute_clause_seq : workdistribute_clause
+                          | workdistribute_clause_seq workdistribute_clause
+                          | workdistribute_clause_seq ',' workdistribute_clause
+                          ;
+workdistribute_clause : private_clause
+                      | firstprivate_clause
+                      | lastprivate_clause
+                      | reduction_clause
+                      | allocate_clause
+                      | collapse_clause
+                      | order_clause
+                      ;
+fuse_clause_seq : fuse_clause
+                | fuse_clause_seq fuse_clause
+                | fuse_clause_seq ',' fuse_clause
+                ;
+fuse_clause : counts_clause
+            ;
+interchange_clause_seq : interchange_clause
+                       | interchange_clause_seq interchange_clause
+                       | interchange_clause_seq ',' interchange_clause
+                       ;
+interchange_clause : permutation_clause
+                   ;
+reverse_clause_seq : reverse_clause
+                   | reverse_clause_seq reverse_clause
+                   | reverse_clause_seq ',' reverse_clause
+                   ;
+reverse_clause : looprange_clause
+               ;
+split_clause_seq : split_clause
+                 | split_clause_seq split_clause
+                 | split_clause_seq ',' split_clause
+                 ;
+split_clause : looprange_clause
+             ;
+stripe_clause_seq : stripe_clause
+                  | stripe_clause_seq stripe_clause
+                  | stripe_clause_seq ',' stripe_clause
+                  ;
+stripe_clause : counts_clause
+              | looprange_clause
+              ;
+declare_induction_clause_seq : declare_induction_clause
+                             | declare_induction_clause_seq declare_induction_clause
+                             | declare_induction_clause_seq ',' declare_induction_clause
+                             ;
+declare_induction_clause : induction_clause
+                         | inductor_clause
+                         | collector_clause
+                         | combiner_clause
+                         ;
 taskgroup_clause_seq : taskgroup_clause
                      | taskgroup_clause_seq taskgroup_clause
                      | taskgroup_clause_seq ',' taskgroup_clause

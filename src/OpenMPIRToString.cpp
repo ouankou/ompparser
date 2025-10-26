@@ -369,6 +369,87 @@ std::string OpenMPDirective::toString() {
   case OMPD_tile:
     result += "tile ";
     break;
+  case OMPD_error:
+    result += "error ";
+    break;
+  case OMPD_nothing:
+    result += "nothing ";
+    break;
+  case OMPD_masked:
+    result += "masked ";
+    break;
+  case OMPD_masked_taskloop:
+    result += "masked taskloop ";
+    break;
+  case OMPD_masked_taskloop_simd:
+    result += "masked taskloop simd ";
+    break;
+  case OMPD_parallel_masked:
+    result += "parallel masked ";
+    break;
+  case OMPD_parallel_masked_taskloop:
+    result += "parallel masked taskloop ";
+    break;
+  case OMPD_parallel_masked_taskloop_simd:
+    result += "parallel masked taskloop simd ";
+    break;
+  case OMPD_scope:
+    result += "scope ";
+    break;
+  case OMPD_interop:
+    result += "interop ";
+    break;
+  case OMPD_assume:
+    result += "assume ";
+    break;
+  case OMPD_assumes:
+    result += "assumes ";
+    break;
+  case OMPD_begin_assumes:
+    result += "begin assumes ";
+    break;
+  case OMPD_end_assumes:
+    result += "end assumes ";
+    break;
+  case OMPD_begin_metadirective:
+    result += "begin metadirective ";
+    break;
+  case OMPD_allocators:
+    result += "allocators ";
+    break;
+  case OMPD_taskgraph:
+    result += "taskgraph ";
+    break;
+  case OMPD_task_iteration:
+    result += "task_iteration ";
+    break;
+  case OMPD_dispatch:
+    result += "dispatch ";
+    break;
+  case OMPD_groupprivate:
+    result += "groupprivate ";
+    break;
+  case OMPD_workdistribute:
+    result += "workdistribute ";
+    break;
+  case OMPD_fuse:
+    result += "fuse ";
+    break;
+  case OMPD_interchange:
+    result += "interchange ";
+    break;
+  case OMPD_reverse:
+    result += "reverse ";
+    break;
+  case OMPD_split:
+    result += "split ";
+    break;
+  case OMPD_stripe:
+    result += "stripe ";
+    break;
+  case OMPD_declare_induction:
+    result += "declare induction ";
+    break;
   case OMPD_taskgroup:
     result += "taskgroup ";
     break;
@@ -672,6 +753,99 @@ std::string OpenMPClause::toString() {
     break;
   case OMPC_destroy:
     result += "destroy ";
+    break;
+  case OMPC_filter:
+    result += "filter ";
+    break;
+  case OMPC_at:
+    result += "at ";
+    break;
+  case OMPC_severity:
+    result += "severity ";
+    break;
+  case OMPC_message:
+    result += "message ";
+    break;
+  case OMPC_compare:
+    result += "compare ";
+    break;
+  case OMPC_fail:
+    result += "fail ";
+    break;
+  case OMPC_weak:
+    result += "weak ";
+    break;
+  case OMPC_doacross:
+    result += "doacross ";
+    break;
+  case OMPC_absent:
+    result += "absent ";
+    break;
+  case OMPC_contains:
+    result += "contains ";
+    break;
+  case OMPC_holds:
+    result += "holds ";
+    break;
+  case OMPC_otherwise:
+    result += "otherwise ";
+    break;
+  case OMPC_graph_id:
+    result += "graph_id ";
+    break;
+  case OMPC_graph_reset:
+    result += "graph_reset ";
+    break;
+  case OMPC_transparent:
+    result += "transparent ";
+    break;
+  case OMPC_replayable:
+    result += "replayable ";
+    break;
+  case OMPC_threadset:
+    result += "threadset ";
+    break;
+  case OMPC_init:
+    result += "init ";
+    break;
+  case OMPC_use:
+    result += "use ";
+    break;
+  case OMPC_novariants:
+    result += "novariants ";
+    break;
+  case OMPC_nocontext:
+    result += "nocontext ";
+    break;
+  case OMPC_looprange:
+    result += "looprange ";
+    break;
+  case OMPC_permutation:
+    result += "permutation ";
+    break;
+  case OMPC_counts:
+    result += "counts ";
+    break;
+  case OMPC_induction:
+    result += "induction ";
+    break;
+  case OMPC_inductor:
+    result += "inductor ";
+    break;
+  case OMPC_collector:
+    result += "collector ";
+    break;
+  case OMPC_combiner:
+    result += "combiner ";
+    break;
+  case OMPC_no_openmp:
+    result += "no_openmp ";
+    break;
+  case OMPC_no_openmp_routines:
+    result += "no_openmp_routines ";
+    break;
+  case OMPC_no_parallelism:
+    result += "no_parallelism ";
     break;
   default:
     printf("The clause enum is not supported yet.\n");

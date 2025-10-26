@@ -101,6 +101,10 @@ extern void *(*exprParse)(const char *);
 #define YY_NO_TOP_STATE
 #define YY_NO_POP_STATE
 
+/* Forward declaration - actual token values will be available after parser header */
+static inline int emit_expr_string_and_unput(char ch);
+static inline int emit_expr_string_no_unput();
+
 static const char *ompparserinput = nullptr;
 static std::string current_string;
 static int parenthesis_local_count = 0;
@@ -129,18 +133,6 @@ static inline void prepare_expression_capture() {
 static inline void prepare_expression_capture(char initial_char) {
   clear_expression_buffer();
   current_string.push_back(initial_char);
-}
-
-#define emit_expr_string_and_unput(ch) \
-  (openmp_lval.stype = strdup(current_string.c_str()), \
-   clear_expression_buffer(), \
-   unput(ch), \
-   EXPR_STRING)
-
-static inline int emit_expr_string_no_unput() {
-  openmp_lval.stype = strdup(current_string.c_str());
-  clear_expression_buffer();
-  return EXPR_STRING;
 }
 
 /* Liao 6/11/2010, OpenMP does not preclude the use of clause names as regular
@@ -255,6 +247,29 @@ mapper          { yy_push_state(MAPPER_STATE); return MAPPER; }
 unroll          { return UNROLL;}
 tile            { return TILE;}
 
+error           { return ERROR_DIR; }
+nothing         { return NOTHING; }
+masked          { return MASKED; }
+scope           { return SCOPE; }
+interop         { return INTEROP; }
+
+assume          { return ASSUME; }
+assumes         { return ASSUMES; }
+begin           { return BEGIN_DIR; }
+
+allocators      { return ALLOCATORS; }
+taskgraph       { return TASKGRAPH; }
+task_iteration  { return TASK_ITERATION; }
+dispatch        { return DISPATCH; }
+groupprivate    { return GROUPPRIVATE; }
+workdistribute  { return WORKDISTRIBUTE; }
+fuse            { return FUSE; }
+interchange     { return INTERCHANGE; }
+reverse         { return REVERSE; }
+split           { return SPLIT; }
+stripe          { return STRIPE; }
+induction       { return INDUCTION; }
+
 end             { return END; }
 score           { return SCORE; }
 condition       { yy_push_state(CONDITION_STATE); return CONDITION; }
@@ -329,6 +344,57 @@ depobj                    { return DEPOBJ; }
 destroy                   { return DESTROY; }
 threads                   { return THREADS; }
 sizes                     { return SIZES; }
+
+filter                    { return FILTER; }
+compare                   { return COMPARE; }
+fail                      { return FAIL; }
+weak                      { return WEAK; }
+at                        { return AT; }
+severity                  { return SEVERITY; }
+message                   { return MESSAGE; }
+compilation               { return COMPILATION; }
+execution                 { return EXECUTION; }
+fatal                     { return FATAL; }
+warning                   { return WARNING; }
+
+doacross                  { return DOACROSS; }
+absent                    { return ABSENT; }
+contains                  { return CONTAINS; }
+holds                     { return HOLDS; }
+otherwise                 { return OTHERWISE; }
+
+graph_id                  { return GRAPH_ID; }
+graph_reset               { return GRAPH_RESET; }
+transparent               { return TRANSPARENT; }
+replayable                { return REPLAYABLE; }
+threadset                 { return THREADSET; }
+indirect                  { return INDIRECT; }
+local                     { return LOCAL; }
+init                      { return INIT; }
+init_complete             { return INIT_COMPLETE; }
+safesync                  { return SAFESYNC; }
+device_safesync           { return DEVICE_SAFESYNC; }
+memscope                  { return MEMSCOPE; }
+looprange                 { return LOOPRANGE; }
+permutation               { return PERMUTATION; }
+counts                    { return COUNTS; }
+inductor                  { return INDUCTOR; }
+collector                 { return COLLECTOR; }
+combiner                  { return COMBINER; }
+adjust_args               { return ADJUST_ARGS; }
+append_args               { return APPEND_ARGS; }
+apply                     { return APPLY; }
+no_openmp                 { return NO_OPENMP; }
+no_openmp_constructs      { return NO_OPENMP_CONSTRUCTS; }
+no_openmp_routines        { return NO_OPENMP_ROUTINES; }
+no_parallelism            { return NO_PARALLELISM; }
+nocontext                 { return NOCONTEXT; }
+novariants                { return NOVARIANTS; }
+use                       { return USE; }
+system                    { return SYSTEM; }
+warp                      { return WARP; }
+wavefront                 { return WAVEFRONT; }
+block                     { return BLOCK; }
 
 
 "("             { return '('; }
@@ -1062,6 +1128,19 @@ expr            {return (EXPRESSION); }
 
 %%
 
+/* Implementation of inline functions that use parser tokens */
+static inline int emit_expr_string_and_unput(char ch) {
+  openmp_lval.stype = strdup(current_string.c_str());
+  clear_expression_buffer();
+  unput(ch);
+  return EXPR_STRING;
+}
+
+static inline int emit_expr_string_no_unput() {
+  openmp_lval.stype = strdup(current_string.c_str());
+  clear_expression_buffer();
+  return EXPR_STRING;
+}
 
 /* yy_push_state can't be called outside of this file, provide a wrapper */
 extern void openmp_parse_expr() { yy_push_state(EXPR_STATE); }
