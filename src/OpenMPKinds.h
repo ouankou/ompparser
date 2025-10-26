@@ -67,6 +67,8 @@ enum OpenMPDirectiveKind {
     OPENMP_DIRECTIVE(teams)
     OPENMP_DIRECTIVE(metadirective)
     OPENMP_DIRECTIVE(declare_variant)
+    OPENMP_DIRECTIVE(begin_declare_variant)
+    OPENMP_DIRECTIVE(end_declare_variant)
     OPENMP_DIRECTIVE(task)
     OPENMP_DIRECTIVE(taskloop)
     OPENMP_DIRECTIVE(taskloop_simd)

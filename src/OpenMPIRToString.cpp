@@ -319,6 +319,12 @@ std::string OpenMPDirective::toString() {
   case OMPD_declare_variant:
     result += "declare variant ";
     break;
+  case OMPD_begin_declare_variant:
+    result += "begin declare variant ";
+    break;
+  case OMPD_end_declare_variant:
+    result += "end declare variant ";
+    break;
   case OMPD_allocate:
     result += "allocate ";
     break;
@@ -1393,96 +1399,130 @@ std::string OpenMPMapClause::toString() {
   OpenMPMapClauseModifier modifier1 = this->getModifier1();
   OpenMPMapClauseModifier modifier2 = this->getModifier2();
   OpenMPMapClauseModifier modifier3 = this->getModifier3();
+  bool has_content = false;
 
   OpenMPMapClauseType type = this->getType();
   switch (modifier1) {
   case OMPC_MAP_MODIFIER_always:
     clause_string += "always";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_close:
     clause_string += "close";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_present:
     clause_string += "present";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_self:
     clause_string += "self";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_mapper:
     clause_string += "mapper";
     clause_string += "(";
     clause_string += this->getMapperIdentifier();
     clause_string += ")";
+    has_content = true;
     break;
   default:;
   }
   switch (modifier2) {
   case OMPC_MAP_MODIFIER_always:
-    clause_string += " always";
+    if (has_content) clause_string += ", ";
+    clause_string += "always";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_close:
-    clause_string += " close";
+    if (has_content) clause_string += ", ";
+    clause_string += "close";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_present:
-    clause_string += " present";
+    if (has_content) clause_string += ", ";
+    clause_string += "present";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_self:
-    clause_string += " self";
+    if (has_content) clause_string += ", ";
+    clause_string += "self";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_mapper:
-    clause_string += " mapper";
+    if (has_content) clause_string += ", ";
+    clause_string += "mapper";
     clause_string += "(";
     clause_string += this->getMapperIdentifier();
     clause_string += ")";
+    has_content = true;
     break;
   default:;
   }
   switch (modifier3) {
   case OMPC_MAP_MODIFIER_always:
-    clause_string += " always";
+    if (has_content) clause_string += ", ";
+    clause_string += "always";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_close:
-    clause_string += " close";
+    if (has_content) clause_string += ", ";
+    clause_string += "close";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_present:
-    clause_string += " present";
+    if (has_content) clause_string += ", ";
+    clause_string += "present";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_self:
-    clause_string += " self";
+    if (has_content) clause_string += ", ";
+    clause_string += "self";
+    has_content = true;
     break;
   case OMPC_MAP_MODIFIER_mapper:
-    clause_string += " mapper";
+    if (has_content) clause_string += ", ";
+    clause_string += "mapper";
     clause_string += "(";
     clause_string += this->getMapperIdentifier();
     clause_string += ")";
+    has_content = true;
     break;
   default:;
   }
 
   switch (type) {
   case OMPC_MAP_TYPE_to:
-    clause_string += " to";
+    if (has_content) clause_string += ", ";
+    clause_string += "to";
     break;
   case OMPC_MAP_TYPE_from:
-    clause_string += " from";
+    if (has_content) clause_string += ", ";
+    clause_string += "from";
     break;
   case OMPC_MAP_TYPE_tofrom:
-    clause_string += " tofrom";
+    if (has_content) clause_string += ", ";
+    clause_string += "tofrom";
     break;
   case OMPC_MAP_TYPE_alloc:
-    clause_string += " alloc";
+    if (has_content) clause_string += ", ";
+    clause_string += "alloc";
     break;
   case OMPC_MAP_TYPE_release:
-    clause_string += " release";
+    if (has_content) clause_string += ", ";
+    clause_string += "release";
     break;
   case OMPC_MAP_TYPE_delete:
-    clause_string += " delete";
+    if (has_content) clause_string += ", ";
+    clause_string += "delete";
     break;
   case OMPC_MAP_TYPE_present:
-    clause_string += " present";
+    if (has_content) clause_string += ", ";
+    clause_string += "present";
     break;
   case OMPC_MAP_TYPE_self:
-    clause_string += " self";
+    if (has_content) clause_string += ", ";
+    clause_string += "self";
     break;
   default:;
   }

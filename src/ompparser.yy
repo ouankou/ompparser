@@ -180,6 +180,8 @@ var_list : variable
 openmp_directive : parallel_directive
                  | metadirective_directive
                  | declare_variant_directive
+                 | begin_declare_variant_directive
+                 | end_declare_variant_directive
                  | for_directive
                  | do_directive
                  | simd_directive
@@ -518,6 +520,16 @@ declare_variant_directive : DECLARE VARIANT {
                         current_directive = new OpenMPDeclareVariantDirective();
                      } variant_func_id
                      declare_variant_clause_optseq
+                   ;
+
+begin_declare_variant_directive : BEGIN_DIR DECLARE VARIANT {
+                        current_directive = new OpenMPDirective(OMPD_begin_declare_variant);
+                     } declare_variant_clause_optseq
+                   ;
+
+end_declare_variant_directive : END DECLARE VARIANT {
+                        current_directive = new OpenMPDirective(OMPD_end_declare_variant);
+                     }
                    ;
 
 variant_func_id : '(' EXPR_STRING { ((OpenMPDeclareVariantDirective*)current_directive)->setVariantFuncID($2); } ')'
