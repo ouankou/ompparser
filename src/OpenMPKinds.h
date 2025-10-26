@@ -694,6 +694,7 @@ enum OpenMPMapClauseType {
 #define OPENMP_MAP_TYPE(Name) OMPC_MAP_TYPE_##Name,
   OPENMP_MAP_TYPE(to) OPENMP_MAP_TYPE(from) OPENMP_MAP_TYPE(tofrom)
       OPENMP_MAP_TYPE(alloc) OPENMP_MAP_TYPE(release) OPENMP_MAP_TYPE(delete)
+          OPENMP_MAP_TYPE(present)
           OPENMP_MAP_TYPE(unknown) OPENMP_MAP_TYPE(unspecified)
 #undef OPENMP_MAP_TYPE
 };

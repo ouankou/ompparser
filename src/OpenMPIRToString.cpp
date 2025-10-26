@@ -826,6 +826,9 @@ std::string OpenMPClause::toString() {
   case OMPC_counts:
     result += "counts ";
     break;
+  case OMPC_apply:
+    result += "apply ";
+    break;
   case OMPC_induction:
     result += "induction ";
     break;
@@ -1406,6 +1409,9 @@ std::string OpenMPMapClause::toString() {
     break;
   case OMPC_MAP_TYPE_delete:
     clause_string += " delete";
+    break;
+  case OMPC_MAP_TYPE_present:
+    clause_string += " present";
     break;
   default:;
   }

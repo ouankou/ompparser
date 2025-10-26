@@ -152,6 +152,7 @@ process_file() {
     preprocessed=$("$CLANG" -E -P -CC -fopenmp \
         -I"$(dirname "$file")" \
         -I"$REPO_PATH/ompvv" \
+        -I"/usr/lib/gcc/x86_64-linux-gnu/13/include" \
         "$file" 2>"$preprocess_errors" || true)
 
     # Check if preprocessing failed

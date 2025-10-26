@@ -930,6 +930,7 @@ block                     { return BLOCK; }
 <MAP_STATE>alloc/{blank}*:                   { return MAP_TYPE_ALLOC; }
 <MAP_STATE>release/{blank}*:                 { return MAP_TYPE_RELEASE; }
 <MAP_STATE>delete                            { return MAP_TYPE_DELETE; }
+<MAP_STATE>present/{blank}*:                 { return MAP_TYPE_PRESENT; }
 <MAP_STATE>{blank}*                          { ; }
 <MAP_STATE>.                                 { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 

@@ -114,6 +114,30 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   case OMPC_hint:
   case OMPC_destroy:
   case OMPC_sizes:
+  case OMPC_filter:
+  case OMPC_at:
+  case OMPC_severity:
+  case OMPC_message:
+  case OMPC_absent:
+  case OMPC_contains:
+  case OMPC_holds:
+  case OMPC_otherwise:
+  case OMPC_looprange:
+  case OMPC_permutation:
+  case OMPC_counts:
+  case OMPC_apply:
+  case OMPC_induction:
+  case OMPC_inductor:
+  case OMPC_collector:
+  case OMPC_combiner:
+  case OMPC_adjust_args:
+  case OMPC_append_args:
+  case OMPC_nocontext:
+  case OMPC_novariants:
+  case OMPC_no_openmp:
+  case OMPC_no_openmp_constructs:
+  case OMPC_no_openmp_routines:
+  case OMPC_no_parallelism:
 
   {
     if (current_clauses->size() == 0) {

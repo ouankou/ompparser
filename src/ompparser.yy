@@ -103,7 +103,7 @@ corresponding C type is union name defaults to YYSTYPE.
         TASKLOOP GRAINSIZE NUM_TASKS NOGROUP TASKYIELD REQUIRES REVERSE_OFFLOAD UNIFIED_ADDRESS UNIFIED_SHARED_MEMORY ATOMIC_DEFAULT_MEM_ORDER DYNAMIC_ALLOCATORS SEQ_CST ACQ_REL RELAXED UNROLL TILE
         USE_DEVICE_PTR USE_DEVICE_ADDR TARGET DATA ENTER EXIT ANCESTOR DEVICE_NUM IS_DEVICE_PTR HAS_DEVICE_ADDR SIZES
         DEFAULTMAP BEHAVIOR_ALLOC BEHAVIOR_TO BEHAVIOR_FROM BEHAVIOR_TOFROM BEHAVIOR_FIRSTPRIVATE BEHAVIOR_NONE BEHAVIOR_DEFAULT CATEGORY_SCALAR CATEGORY_AGGREGATE CATEGORY_POINTER CATEGORY_ALLOCATABLE UPDATE TO FROM TO_MAPPER FROM_MAPPER USES_ALLOCATORS
- LINK DEVICE_TYPE MAP MAP_MODIFIER_ALWAYS MAP_MODIFIER_CLOSE MAP_MODIFIER_MAPPER MAP_TYPE_TO MAP_TYPE_FROM MAP_TYPE_TOFROM MAP_TYPE_ALLOC MAP_TYPE_RELEASE MAP_TYPE_DELETE EXT_ BARRIER TASKWAIT FLUSH RELEASE ACQUIRE ATOMIC READ WRITE CAPTURE HINT CRITICAL SOURCE SINK DESTROY THREADS
+ LINK DEVICE_TYPE MAP MAP_MODIFIER_ALWAYS MAP_MODIFIER_CLOSE MAP_MODIFIER_MAPPER MAP_TYPE_TO MAP_TYPE_FROM MAP_TYPE_TOFROM MAP_TYPE_ALLOC MAP_TYPE_RELEASE MAP_TYPE_DELETE MAP_TYPE_PRESENT EXT_ BARRIER TASKWAIT FLUSH RELEASE ACQUIRE ATOMIC READ WRITE CAPTURE HINT CRITICAL SOURCE SINK DESTROY THREADS
         CONCURRENT
         LESSOREQUAL MOREOREQUAL NOTEQUAL
         ERROR_DIR NOTHING MASKED SCOPE INTEROP ASSUME ASSUMES BEGIN_DIR
@@ -975,17 +975,30 @@ novariants_clause : NOVARIANTS '(' expression ')'
 nocontext_clause : NOCONTEXT '(' expression ')'
                  { current_clause = current_directive->addOpenMPClause(OMPC_nocontext); }
                  ;
-looprange_clause : LOOPRANGE '(' expression ')'
-                 { current_clause = current_directive->addOpenMPClause(OMPC_looprange); }
+looprange_clause : LOOPRANGE {
+                     current_clause = current_directive->addOpenMPClause(OMPC_looprange);
+                   } '(' var_list ')' {
+                   }
                  ;
-permutation_clause : PERMUTATION '(' var_list ')'
-                   { current_clause = current_directive->addOpenMPClause(OMPC_permutation); }
+permutation_clause : PERMUTATION {
+                       current_clause = current_directive->addOpenMPClause(OMPC_permutation);
+                     } '(' var_list ')' {
+                   }
                    ;
-counts_clause : COUNTS '(' var_list ')'
-              { current_clause = current_directive->addOpenMPClause(OMPC_counts); }
+counts_clause : COUNTS {
+                  current_clause = current_directive->addOpenMPClause(OMPC_counts);
+                } '(' var_list ')' {
+              }
               ;
-induction_clause : INDUCTION '(' var_list ')'
-                 { current_clause = current_directive->addOpenMPClause(OMPC_induction); }
+apply_clause : APPLY {
+                 current_clause = current_directive->addOpenMPClause(OMPC_apply);
+               } '(' expression ')' {
+             }
+             ;
+induction_clause : INDUCTION {
+                     current_clause = current_directive->addOpenMPClause(OMPC_induction);
+                   } '(' var_list ')' {
+                 }
                  ;
 inductor_clause : INDUCTOR '(' expression ')'
                 { current_clause = current_directive->addOpenMPClause(OMPC_inductor); }
@@ -1414,6 +1427,8 @@ fuse_clause_seq : fuse_clause
                 | fuse_clause_seq ',' fuse_clause
                 ;
 fuse_clause : counts_clause
+            | looprange_clause
+            | apply_clause
             ;
 interchange_clause_seq : interchange_clause
                        | interchange_clause_seq interchange_clause
@@ -1876,6 +1891,7 @@ map_type : MAP_TYPE_TO { current_clause = current_directive->addOpenMPClause(OMP
          | MAP_TYPE_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_alloc, firstStringParameter); }
          | MAP_TYPE_RELEASE { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_release, firstStringParameter); }
          | MAP_TYPE_DELETE { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_delete, firstStringParameter); }
+         | MAP_TYPE_PRESENT { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_present, firstStringParameter); }
          ;
 map_modifier_mapper : MAP_MODIFIER_MAPPER '('EXPR_STRING')' { firstStringParameter = $3; }
                     ;
