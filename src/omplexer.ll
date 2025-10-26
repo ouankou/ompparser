@@ -891,8 +891,7 @@ block                     { return BLOCK; }
 
 <USES_ALLOCATORS_STATE>"("                                     { return '('; }
 <USES_ALLOCATORS_STATE>","                                     { return ','; }
-<USES_ALLOCATORS_STATE>")"/{blank}*")"                         { yy_pop_state(); return ')'; }
-<USES_ALLOCATORS_STATE>")"                                     { return ')'; }
+<USES_ALLOCATORS_STATE>")"                                     { yy_pop_state(); return ')'; }
 <USES_ALLOCATORS_STATE>omp_default_mem_alloc/{blank}*"("       { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return DEFAULT_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_large_cap_mem_alloc/{blank}*"("     { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return LARGE_CAP_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_const_mem_alloc/{blank}*"("         { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return CONST_MEM_ALLOC; }
@@ -901,6 +900,14 @@ block                     { return BLOCK; }
 <USES_ALLOCATORS_STATE>omp_cgroup_mem_alloc/{blank}*"("        { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return CGROUP_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_pteam_mem_alloc/{blank}*"("         { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return PTEAM_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_thread_mem_alloc/{blank}*"("        { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return THREAD_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_default_mem_alloc       { return DEFAULT_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_large_cap_mem_alloc     { return LARGE_CAP_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_const_mem_alloc         { return CONST_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_high_bw_mem_alloc       { return HIGH_BW_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_low_lat_mem_alloc       { return LOW_LAT_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_cgroup_mem_alloc        { return CGROUP_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_pteam_mem_alloc         { return PTEAM_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_thread_mem_alloc        { return THREAD_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>{blank}*                                { ; }
 <USES_ALLOCATORS_STATE>.                                       { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 

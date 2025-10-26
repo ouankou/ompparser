@@ -323,6 +323,21 @@ public:
   };
 };
 
+// groupprivate directive
+class OpenMPGroupprivateDirective : public OpenMPDirective {
+protected:
+  std::vector<const char *> groupprivate_list;
+
+public:
+  OpenMPGroupprivateDirective() : OpenMPDirective(OMPD_groupprivate) {};
+  void addGroupprivateList(const char *_groupprivate_list) {
+    groupprivate_list.push_back(_groupprivate_list);
+  };
+  std::vector<const char *> *getGroupprivateList() {
+    return &groupprivate_list;
+  };
+};
+
 // declare simd directive
 class OpenMPDeclareSimdDirective : public OpenMPDirective {
 protected:

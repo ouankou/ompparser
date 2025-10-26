@@ -57,6 +57,19 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     result += ")";
     break;
   }
+  case OMPD_groupprivate: {
+    std::vector<const char *> *list =
+        ((OpenMPGroupprivateDirective *)this)->getGroupprivateList();
+    std::vector<const char *>::iterator list_item;
+    result += "(";
+    for (list_item = list->begin(); list_item != list->end(); list_item++) {
+      result += *list_item;
+      result += ",";
+    }
+    result = result.substr(0, result.size() - 1);
+    result += ")";
+    break;
+  }
   case OMPD_declare_reduction: {
     std::vector<const char *> *list =
         ((OpenMPDeclareReductionDirective *)this)->getTypenameList();

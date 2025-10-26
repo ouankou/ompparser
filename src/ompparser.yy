@@ -700,7 +700,7 @@ dispatch_directive : DISPATCH {
                       dispatch_clause_optseq
                    ;
 groupprivate_directive : GROUPPRIVATE {
-                        current_directive = new OpenMPDirective(OMPD_groupprivate);
+                        current_directive = new OpenMPGroupprivateDirective();
                      }
                       groupprivate_clause_optseq
                    ;
@@ -1415,9 +1415,12 @@ dispatch_clause : device_clause
                 | novariants_clause
                 | nocontext_clause
                 ;
-groupprivate_clause_seq : groupprivate_var_list
+groupprivate_clause_seq : '(' groupprivate_var_list ')'
                         ;
-groupprivate_var_list : '(' var_list ')'
+groupprivate_variable : EXPR_STRING { ((OpenMPGroupprivateDirective*)current_directive)->addGroupprivateList($1); }
+                      ;
+groupprivate_var_list : groupprivate_variable
+                      | groupprivate_var_list ',' groupprivate_variable
                       ;
 workdistribute_clause_seq : workdistribute_clause
                           | workdistribute_clause_seq workdistribute_clause
