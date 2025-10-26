@@ -980,9 +980,16 @@ weak_clause : WEAK { current_clause = current_directive->addOpenMPClause(OMPC_we
 // OpenMP 5.2 clause implementations
 doacross_clause : DOACROSS '(' doacross_type ')'
                 ;
-doacross_type : SOURCE { current_clause = current_directive->addOpenMPClause(OMPC_doacross, OMPC_DOACROSS_TYPE_source); }
-              | SINK { current_clause = current_directive->addOpenMPClause(OMPC_doacross, OMPC_DOACROSS_TYPE_sink); }
+doacross_type : SOURCE ':' {
+                    current_clause = current_directive->addOpenMPClause(OMPC_doacross, OMPC_DOACROSS_TYPE_source);
+                } doacross_source_arg
+              | SINK ':' {
+                    current_clause = current_directive->addOpenMPClause(OMPC_doacross, OMPC_DOACROSS_TYPE_sink);
+                } expression
               ;
+doacross_source_arg : /* empty */
+                    | expression
+                    ;
 absent_clause : ABSENT {
                     current_clause = current_directive->addOpenMPClause(OMPC_absent);
               } '(' directive_name_list ')'
@@ -1995,6 +2002,7 @@ ordered_clause_depend_seq : ordered_clause_depend
                           | ordered_clause_depend_seq ',' ordered_clause_depend
                           ;
 ordered_clause_depend : depend_ordered_clause
+                      | doacross_clause
                       ;
 ordered_clause_threads_simd : threads_clause
                             | simd_ordered_clause

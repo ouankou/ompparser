@@ -971,6 +971,23 @@ public:
   void mergeDepend(OpenMPDirective *, OpenMPClause *);
 };
 
+// doacross clause (OpenMP 5.2)
+class OpenMPDoacrossClause : public OpenMPClause {
+
+protected:
+  OpenMPDoacrossClauseType type; // source or sink
+
+public:
+  OpenMPDoacrossClause() : OpenMPClause(OMPC_doacross) {}
+
+  OpenMPDoacrossClause(OpenMPDoacrossClauseType _type)
+      : OpenMPClause(OMPC_doacross), type(_type) {};
+
+  OpenMPDoacrossClauseType getType() { return type; };
+
+  std::string toString();
+};
+
 // affinity clause
 class OpenMPAffinityClause : public OpenMPClause {
 

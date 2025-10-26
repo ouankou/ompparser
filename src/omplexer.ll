@@ -30,6 +30,7 @@
 %x DEPEND_EXPR_STATE
 %x DEPEND_ITERATOR_STATE
 %x DEPEND_STATE
+%x DOACROSS_STATE
 %x DEVICE_STATE
 %x DEVICE_TYPE_STATE
 %x DIST_SCHEDULE_STATE
@@ -290,6 +291,7 @@ untied          { return UNTIED; }
 mergeable       { return MERGEABLE; }
 in_reduction    { yy_push_state(IN_REDUCTION_STATE); return IN_REDUCTION; }
 depend          { yy_push_state(DEPEND_STATE); return DEPEND; }
+doacross        { yy_push_state(DOACROSS_STATE); return DOACROSS; }
 priority        { return PRIORITY; }
 affinity        { yy_push_state(AFFINITY_STATE); return AFFINITY; }
 detach          { return DETACH; }
@@ -357,7 +359,6 @@ execution                 { return EXECUTION; }
 fatal                     { return FATAL; }
 warning                   { return WARNING; }
 
-doacross                  { return DOACROSS; }
 absent                    { return ABSENT; }
 contains                  { return CONTAINS; }
 holds                     { return HOLDS; }
@@ -790,6 +791,14 @@ block                     { return BLOCK; }
 <DEPEND_STATE>sink                          { return SINK; }
 <DEPEND_STATE>{blank}*                      { ; }
 <DEPEND_STATE>.                             { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+
+<DOACROSS_STATE>"("                         { return '('; }
+<DOACROSS_STATE>")"                         { yy_pop_state(); return ')'; }
+<DOACROSS_STATE>":"                         { return ':'; }
+<DOACROSS_STATE>source                      { return SOURCE; }
+<DOACROSS_STATE>sink                        { return SINK; }
+<DOACROSS_STATE>{blank}*                    { ; }
+<DOACROSS_STATE>.                           { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
 <DEPEND_ITERATOR_STATE>"("                  { return '('; }
 <DEPEND_ITERATOR_STATE>"="                  { return '='; }

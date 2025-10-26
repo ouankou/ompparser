@@ -437,6 +437,17 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
     new_clause = OpenMPDependClause::addDependClause(this, modifier, type);
     break;
   }
+  case OMPC_doacross: {
+    OpenMPDoacrossClauseType type = (OpenMPDoacrossClauseType)va_arg(args, int);
+    std::vector<OpenMPClause *> *current_clauses = getClauses(OMPC_doacross);
+    if (current_clauses->size() == 0 || !this->getNormalizeClauses()) {
+      new_clause = registerClause(std::make_unique<OpenMPDoacrossClause>(type));
+      current_clauses->push_back(new_clause);
+    } else {
+      new_clause = current_clauses->at(0);
+    }
+    break;
+  }
   case OMPC_affinity: {
     OpenMPAffinityClauseModifier modifier =
         (OpenMPAffinityClauseModifier)va_arg(args, int);

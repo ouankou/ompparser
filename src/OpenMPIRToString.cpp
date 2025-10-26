@@ -1062,6 +1062,31 @@ std::string OpenMPDependClause::toString() {
   return result;
 };
 
+std::string OpenMPDoacrossClause::toString() {
+  std::string result = "doacross (";
+
+  OpenMPDoacrossClauseType type = this->getType();
+  switch (type) {
+  case OMPC_DOACROSS_TYPE_source:
+    result += "source:";
+    break;
+  case OMPC_DOACROSS_TYPE_sink:
+    result += "sink:";
+    break;
+  default:
+    result += "unknown:";
+  }
+
+  // Add any expressions (for sink: i-1, or source:omp_cur_iteration)
+  std::string expr_string = this->expressionToString();
+  if (expr_string.size() > 0) {
+    result += " " + expr_string;
+  }
+
+  result += ") ";
+  return result;
+};
+
 std::string OpenMPDepobjUpdateClause::toString() {
 
   std::string result = "update ";
