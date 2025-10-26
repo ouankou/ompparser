@@ -85,8 +85,6 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   case OMPC_exclusive:
   case OMPC_use_device_ptr:
   case OMPC_use_device_addr:
-  case OMPC_grainsize:
-  case OMPC_num_tasks:
   case OMPC_nogroup:
   case OMPC_final:
   case OMPC_untied:
@@ -452,6 +450,30 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
     OpenMPAffinityClauseModifier modifier =
         (OpenMPAffinityClauseModifier)va_arg(args, int);
     new_clause = OpenMPAffinityClause::addAffinityClause(this, modifier);
+    break;
+  }
+  case OMPC_grainsize: {
+    OpenMPGrainsizeClauseModifier modifier =
+        (OpenMPGrainsizeClauseModifier)va_arg(args, int);
+    std::vector<OpenMPClause *> *current_clauses = getClauses(OMPC_grainsize);
+    if (current_clauses->size() == 0) {
+      new_clause = registerClause(std::make_unique<OpenMPGrainsizeClause>(modifier));
+      current_clauses->push_back(new_clause);
+    } else {
+      std::cerr << "Cannot have two grainsize clauses, ignored\n";
+    }
+    break;
+  }
+  case OMPC_num_tasks: {
+    OpenMPNumTasksClauseModifier modifier =
+        (OpenMPNumTasksClauseModifier)va_arg(args, int);
+    std::vector<OpenMPClause *> *current_clauses = getClauses(OMPC_num_tasks);
+    if (current_clauses->size() == 0) {
+      new_clause = registerClause(std::make_unique<OpenMPNumTasksClause>(modifier));
+      current_clauses->push_back(new_clause);
+    } else {
+      std::cerr << "Cannot have two num_tasks clauses, ignored\n";
+    }
     break;
   }
   case OMPC_to: {

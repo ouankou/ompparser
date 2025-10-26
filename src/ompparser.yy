@@ -1770,14 +1770,32 @@ detach_clause: DETACH {
                             current_clause = current_directive->addOpenMPClause(OMPC_detach);
                          } '(' expression ')'
              ;
-grainsize_clause: GRAINSIZE {
-                            current_clause = current_directive->addOpenMPClause(OMPC_grainsize);
-                         } '(' expression ')'
+grainsize_clause: GRAINSIZE { firstParameter = OMPC_GRAINSIZE_MODIFIER_unspecified; } '(' grainsize_parameter ')'
                 ;
-num_tasks_clause: NUM_TASKS {
-                            current_clause = current_directive->addOpenMPClause(OMPC_num_tasks);
-                         } '(' expression ')'
+grainsize_parameter : EXPR_STRING ':' {
+                        if (strcmp($1, "strict") == 0) {
+                            firstParameter = OMPC_GRAINSIZE_MODIFIER_strict;
+                        }
+                        current_clause = current_directive->addOpenMPClause(OMPC_grainsize, firstParameter);
+                    } expression
+                    | EXPR_STRING {
+                        current_clause = current_directive->addOpenMPClause(OMPC_grainsize, firstParameter);
+                        current_clause->addLangExpr($1);
+                    }
+                    ;
+num_tasks_clause: NUM_TASKS { firstParameter = OMPC_NUM_TASKS_MODIFIER_unspecified; } '(' num_tasks_parameter ')'
                 ;
+num_tasks_parameter : EXPR_STRING ':' {
+                        if (strcmp($1, "strict") == 0) {
+                            firstParameter = OMPC_NUM_TASKS_MODIFIER_strict;
+                        }
+                        current_clause = current_directive->addOpenMPClause(OMPC_num_tasks, firstParameter);
+                    } expression
+                    | EXPR_STRING {
+                        current_clause = current_directive->addOpenMPClause(OMPC_num_tasks, firstParameter);
+                        current_clause->addLangExpr($1);
+                    }
+                    ;
 nogroup_clause: NOGROUP {
                             current_clause = current_directive->addOpenMPClause(OMPC_nogroup);
                          } 

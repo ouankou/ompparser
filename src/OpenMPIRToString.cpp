@@ -2346,3 +2346,45 @@ std::string OpenMPFailClause::toString() {
   result += ") ";
   return result;
 };
+
+std::string OpenMPGrainsizeClause::toString() {
+  std::string result = "grainsize (";
+
+  OpenMPGrainsizeClauseModifier modifier = this->getModifier();
+  if (modifier == OMPC_GRAINSIZE_MODIFIER_strict) {
+    result += "strict:";
+  }
+
+  std::string expr_string = this->expressionToString();
+  if (expr_string.size() > 0) {
+    if (modifier == OMPC_GRAINSIZE_MODIFIER_strict) {
+      result += " " + expr_string;
+    } else {
+      result += expr_string;
+    }
+  }
+
+  result += ") ";
+  return result;
+};
+
+std::string OpenMPNumTasksClause::toString() {
+  std::string result = "num_tasks (";
+
+  OpenMPNumTasksClauseModifier modifier = this->getModifier();
+  if (modifier == OMPC_NUM_TASKS_MODIFIER_strict) {
+    result += "strict:";
+  }
+
+  std::string expr_string = this->expressionToString();
+  if (expr_string.size() > 0) {
+    if (modifier == OMPC_NUM_TASKS_MODIFIER_strict) {
+      result += " " + expr_string;
+    } else {
+      result += expr_string;
+    }
+  }
+
+  result += ") ";
+  return result;
+};
