@@ -1402,6 +1402,12 @@ std::string OpenMPMapClause::toString() {
   case OMPC_MAP_MODIFIER_close:
     clause_string += "close";
     break;
+  case OMPC_MAP_MODIFIER_present:
+    clause_string += "present";
+    break;
+  case OMPC_MAP_MODIFIER_self:
+    clause_string += "self";
+    break;
   case OMPC_MAP_MODIFIER_mapper:
     clause_string += "mapper";
     clause_string += "(";
@@ -1417,6 +1423,12 @@ std::string OpenMPMapClause::toString() {
   case OMPC_MAP_MODIFIER_close:
     clause_string += " close";
     break;
+  case OMPC_MAP_MODIFIER_present:
+    clause_string += " present";
+    break;
+  case OMPC_MAP_MODIFIER_self:
+    clause_string += " self";
+    break;
   case OMPC_MAP_MODIFIER_mapper:
     clause_string += " mapper";
     clause_string += "(";
@@ -1431,6 +1443,12 @@ std::string OpenMPMapClause::toString() {
     break;
   case OMPC_MAP_MODIFIER_close:
     clause_string += " close";
+    break;
+  case OMPC_MAP_MODIFIER_present:
+    clause_string += " present";
+    break;
+  case OMPC_MAP_MODIFIER_self:
+    clause_string += " self";
     break;
   case OMPC_MAP_MODIFIER_mapper:
     clause_string += " mapper";
@@ -1462,6 +1480,9 @@ std::string OpenMPMapClause::toString() {
     break;
   case OMPC_MAP_TYPE_present:
     clause_string += " present";
+    break;
+  case OMPC_MAP_TYPE_self:
+    clause_string += " self";
     break;
   default:;
   }

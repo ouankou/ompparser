@@ -939,6 +939,8 @@ block                     { return BLOCK; }
 
 <MAP_STATE>always/{blank}*,                  { return MAP_MODIFIER_ALWAYS; }
 <MAP_STATE>close/{blank}*,                   { return MAP_MODIFIER_CLOSE; }
+<MAP_STATE>present/{blank}*,                 { return MAP_MODIFIER_PRESENT; }
+<MAP_STATE>self/{blank}*,                    { return MAP_MODIFIER_SELF; }
 <MAP_STATE>mapper/{blank}*"("                { prepare_expression_capture(); yy_push_state(MAP_MAPPER_STATE);return MAP_MODIFIER_MAPPER; }
 <MAP_STATE>"("                               { return '('; }
 <MAP_STATE>")"                               { yy_pop_state(); return ')'; }
@@ -951,6 +953,7 @@ block                     { return BLOCK; }
 <MAP_STATE>release/{blank}*:                 { return MAP_TYPE_RELEASE; }
 <MAP_STATE>delete                            { return MAP_TYPE_DELETE; }
 <MAP_STATE>present/{blank}*:                 { return MAP_TYPE_PRESENT; }
+<MAP_STATE>self/{blank}*:                    { return MAP_TYPE_SELF; }
 <MAP_STATE>{blank}*                          { ; }
 <MAP_STATE>.                                 { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
