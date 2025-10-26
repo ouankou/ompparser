@@ -134,6 +134,35 @@ corresponding C type is union name defaults to YYSTYPE.
 /* lang-dependent expression is only used in clause, at this point, the current_clause object should already be created. */
 expression : EXPR_STRING { current_clause->addLangExpr($1); /*void * astnode = exprParse)($1);*/ }
 variable :   EXPR_STRING { current_clause->addLangExpr($1); } /* we use expression for variable so far */
+           | UPDATE { current_clause->addLangExpr("update"); }
+           | DEVICE { current_clause->addLangExpr("device"); }
+           | HOST { current_clause->addLangExpr("host"); }
+           | NOHOST { current_clause->addLangExpr("nohost"); }
+           | TARGET { current_clause->addLangExpr("target"); }
+           | DISPATCH { current_clause->addLangExpr("dispatch"); }
+           | USER { current_clause->addLangExpr("user"); }
+           | CONSTRUCT { current_clause->addLangExpr("construct"); }
+           | IMPLEMENTATION { current_clause->addLangExpr("implementation"); }
+           | DEVICE_TYPE { current_clause->addLangExpr("device_type"); }
+           | KIND { current_clause->addLangExpr("kind"); }
+           | ARCH { current_clause->addLangExpr("arch"); }
+           | ISA { current_clause->addLangExpr("isa"); }
+           | CONDITION { current_clause->addLangExpr("condition"); }
+           | DYNAMIC_ALLOCATORS { current_clause->addLangExpr("dynamic_allocators"); }
+           | REVERSE_OFFLOAD { current_clause->addLangExpr("reverse_offload"); }
+           | ATOMIC_DEFAULT_MEM_ORDER { current_clause->addLangExpr("atomic_default_mem_order"); }
+           | ALLOCATOR { current_clause->addLangExpr("allocator"); }
+           | USES_ALLOCATORS { current_clause->addLangExpr("uses_allocators"); }
+           | DATA { current_clause->addLangExpr("data"); }
+           | ANY { current_clause->addLangExpr("any"); }
+           | MAP { current_clause->addLangExpr("map"); }
+           | TO { current_clause->addLangExpr("to"); }
+           | FROM { current_clause->addLangExpr("from"); }
+           | LINK { current_clause->addLangExpr("link"); }
+           | ENTER { current_clause->addLangExpr("enter"); }
+           | PRIVATE { current_clause->addLangExpr("private"); }
+           | SHARED { current_clause->addLangExpr("shared"); }
+           | REDUCTION { current_clause->addLangExpr("reduction"); }
 
 /* For absent/contains clauses that take directive names as arguments */
 directive_name : PARALLEL { current_clause->addLangExpr("parallel"); }
@@ -503,6 +532,7 @@ context_vendor_name : AMD { ((OpenMPVariantClause*)current_clause)->setImplement
                     ;
 
 construct_selector : parallel_selector
+                   | dispatch_selector
                    ;
 
 parallel_selector : PARALLEL { current_directive = new OpenMPDirective(OMPD_parallel); }
@@ -511,6 +541,9 @@ parallel_selector : PARALLEL { current_directive = new OpenMPDirective(OMPD_para
 
 parallel_selector_parameter : trait_score parallel_clause_optseq
                             ;
+
+dispatch_selector : DISPATCH { current_directive = new OpenMPDirective(OMPD_dispatch); }
+                  ;
 
 trait_score : /* empty */
             | SCORE '(' EXPR_STRING { trait_score = $3; } ')' ':'
@@ -1485,6 +1518,7 @@ dispatch_clause : device_clause
                 | nocontext_clause
                 ;
 groupprivate_clause_seq : '(' groupprivate_var_list ')'
+                        | '(' groupprivate_var_list ')' device_type_clause
                         ;
 groupprivate_variable : EXPR_STRING { ((OpenMPGroupprivateDirective*)current_directive)->addGroupprivateList($1); }
                       ;
