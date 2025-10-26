@@ -1185,6 +1185,9 @@ std::string OpenMPToClause::toString() {
     clause_string += this->getMapperIdentifier();
     clause_string += ")";
     break;
+  case OMPC_TO_present:
+    clause_string += "present";
+    break;
   default:;
   }
   if (clause_string.size() > 1) {
@@ -1210,6 +1213,9 @@ std::string OpenMPFromClause::toString() {
     clause_string += "(";
     clause_string += this->getMapperIdentifier();
     clause_string += ")";
+    break;
+  case OMPC_FROM_present:
+    clause_string += "present";
     break;
   default:;
   }

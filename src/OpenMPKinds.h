@@ -672,13 +672,13 @@ enum OpenMPAffinityClauseModifier {
 
 enum OpenMPToClauseKind {
 #define OPENMP_TO_KIND(Name) OMPC_TO_##Name,
-  OPENMP_TO_KIND(mapper) OPENMP_TO_KIND(unspecified)
+  OPENMP_TO_KIND(mapper) OPENMP_TO_KIND(present) OPENMP_TO_KIND(unspecified)
 #undef OPENMP_TO_KIND
 };
 
 enum OpenMPFromClauseKind {
 #define OPENMP_FROM_KIND(Name) OMPC_FROM_##Name,
-  OPENMP_FROM_KIND(mapper) OPENMP_FROM_KIND(unspecified)
+  OPENMP_FROM_KIND(mapper) OPENMP_FROM_KIND(present) OPENMP_FROM_KIND(unspecified)
 #undef OPENMP_FROM_KIND
 };
 

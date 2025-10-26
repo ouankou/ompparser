@@ -113,7 +113,7 @@ corresponding C type is union name defaults to YYSTYPE.
         ERROR_DIR NOTHING MASKED SCOPE INTEROP ASSUME ASSUMES BEGIN_DIR
         ALLOCATORS TASKGRAPH TASK_ITERATION DISPATCH GROUPPRIVATE WORKDISTRIBUTE FUSE INTERCHANGE REVERSE SPLIT STRIPE INDUCTION
         FILTER COMPARE FAIL WEAK AT SEVERITY MESSAGE COMPILATION EXECUTION FATAL WARNING
-        DOACROSS ABSENT CONTAINS HOLDS OTHERWISE
+        DOACROSS ABSENT PRESENT CONTAINS HOLDS OTHERWISE
         GRAPH_ID GRAPH_RESET TRANSPARENT REPLAYABLE THREADSET INDIRECT LOCAL INIT INIT_COMPLETE SAFESYNC DEVICE_SAFESYNC MEMSCOPE
         LOOPRANGE PERMUTATION COUNTS INDUCTOR COLLECTOR COMBINER ADJUST_ARGS APPEND_ARGS APPLY
         NO_OPENMP NO_OPENMP_CONSTRUCTS NO_OPENMP_ROUTINES NO_PARALLELISM NOCONTEXT NOVARIANTS USE SYSTEM WARP WAVEFRONT BLOCK
@@ -1964,6 +1964,7 @@ to_clause: TO '(' to_parameter ')' ;
 to_parameter : EXPR_STRING  { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_unspecified); current_clause->addLangExpr($1);  }
              | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_unspecified); current_clause->addLangExpr($1); } var_list
              | to_mapper ':' var_list
+             | PRESENT ':' { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_present); } var_list
              ;
 to_mapper : TO_MAPPER { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_mapper);
                               }'('EXPR_STRING')' { ((OpenMPToClause*)current_clause)->setMapperIdentifier($4); }
@@ -1973,6 +1974,7 @@ from_clause: FROM '(' from_parameter ')' ;
 from_parameter : EXPR_STRING { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_unspecified); current_clause->addLangExpr($1);  }
                | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_unspecified); current_clause->addLangExpr($1); } var_list
                | from_mapper ':' var_list
+               | PRESENT ':' { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_present); } var_list
                ;
 from_mapper : FROM_MAPPER { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_mapper); 
                               }'('EXPR_STRING')' { ((OpenMPFromClause*)current_clause)->setMapperIdentifier($4); }

@@ -389,6 +389,7 @@ fatal                     { return FATAL; }
 warning                   { return WARNING; }
 
 absent                    { return ABSENT; }
+present                   { return PRESENT; }
 contains                  { return CONTAINS; }
 holds                     { return HOLDS; }
 otherwise                 { return OTHERWISE; }
@@ -914,6 +915,7 @@ block                     { return BLOCK; }
 <TO_STATE>","                               { return ','; }
 <TO_STATE>":"                               { return ':'; }
 <TO_STATE>mapper/{blank}*"("                { prepare_expression_capture(); yy_push_state(TO_MAPPER_STATE);return TO_MAPPER; }
+<TO_STATE>present                           { return PRESENT; }
 <TO_STATE>{blank}*                          { ; }
 <TO_STATE>.                                 { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
@@ -927,6 +929,7 @@ block                     { return BLOCK; }
 <FROM_STATE>","                             { return ','; }
 <FROM_STATE>":"                             { return ':'; }
 <FROM_STATE>mapper/{blank}*"("              { prepare_expression_capture(); yy_push_state(FROM_MAPPER_STATE);return FROM_MAPPER; }
+<FROM_STATE>present                         { return PRESENT; }
 <FROM_STATE>{blank}*                        { ; }
 <FROM_STATE>.                               { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
