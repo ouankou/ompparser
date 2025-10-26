@@ -1698,6 +1698,7 @@ declare_target_clause : to_clause
                       | device_type_clause
                       ;
 taskwait_clause : depend_with_modifier_clause
+                | nowait_clause
                 ;
 unroll_clause : full_clause
               | partial_clause
