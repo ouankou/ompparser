@@ -117,7 +117,6 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   case OMPC_sizes:
   case OMPC_filter:
   case OMPC_at:
-  case OMPC_severity:
   case OMPC_message:
   case OMPC_absent:
   case OMPC_contains:
@@ -264,6 +263,18 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
       current_clauses->push_back(new_clause);
     } else {
       std::cerr << "Cannot have two fail clauses for the directive, ignored\n";
+    }
+    break;
+  }
+
+  case OMPC_severity: {
+    OpenMPSeverityClauseKind severity_kind =
+        (OpenMPSeverityClauseKind)va_arg(args, int);
+    if (current_clauses->size() == 0) {
+      new_clause = registerClause(std::make_unique<OpenMPSeverityClause>(severity_kind));
+      current_clauses->push_back(new_clause);
+    } else {
+      std::cerr << "Cannot have two severity clauses for the directive, ignored\n";
     }
     break;
   }

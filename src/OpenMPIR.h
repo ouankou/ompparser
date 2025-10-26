@@ -278,6 +278,19 @@ public:
   std::string toString();
 };
 
+class OpenMPSeverityClause : public OpenMPClause {
+protected:
+  OpenMPSeverityClauseKind severity_kind;
+
+public:
+  OpenMPSeverityClause(OpenMPSeverityClauseKind _severity_kind)
+      : OpenMPClause(OMPC_severity), severity_kind(_severity_kind) {};
+
+  OpenMPSeverityClauseKind getSeverityKind() { return severity_kind; };
+
+  std::string toString();
+};
+
 class OpenMPEndDirective : public OpenMPDirective {
 protected:
   OpenMPDirective *paired_directive;

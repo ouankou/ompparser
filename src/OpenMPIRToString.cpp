@@ -2411,6 +2411,25 @@ std::string OpenMPFailClause::toString() {
   return result;
 };
 
+std::string OpenMPSeverityClause::toString() {
+  std::string result = "severity (";
+
+  OpenMPSeverityClauseKind severity_kind = this->getSeverityKind();
+  switch (severity_kind) {
+  case OMPC_SEVERITY_fatal:
+    result += "fatal";
+    break;
+  case OMPC_SEVERITY_warning:
+    result += "warning";
+    break;
+  default:
+    result += "unknown";
+  }
+
+  result += ") ";
+  return result;
+};
+
 std::string OpenMPGrainsizeClause::toString() {
   std::string result = "grainsize (";
 

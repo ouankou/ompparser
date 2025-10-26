@@ -172,6 +172,7 @@ extern bool b_within_variable_list; /* = false; */
 blank           [ ]
 newline         [\n]
 comment         [\/\/].*
+id_char         [a-zA-Z0-9_]
 
 %%
 
@@ -311,8 +312,14 @@ dynamic_allocators        { return DYNAMIC_ALLOCATORS; }
 seq_cst                   { return SEQ_CST; }
 acq_rel                   { return ACQ_REL; }
 relaxed                   { return RELAXED; }
+target/{blank}            { return TARGET; }
+target/"("                { return TARGET; }
 target                    { return TARGET; }
+data/{blank}              { return DATA; }
+data/"("                  { return DATA; }
 data                      { return DATA; }
+device/{blank}            { yy_push_state(DEVICE_STATE); return DEVICE; }
+device/"("                { yy_push_state(DEVICE_STATE); return DEVICE; }
 device                    { yy_push_state(DEVICE_STATE); return DEVICE; }
 use_device_ptr            { return USE_DEVICE_PTR; }
 use_device_addr           { return USE_DEVICE_ADDR; }  
