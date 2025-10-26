@@ -136,6 +136,11 @@ static inline void prepare_expression_capture(char initial_char) {
   current_string.push_back(initial_char);
 }
 
+static inline void prepare_expression_capture_str(const char* initial_str) {
+  clear_expression_buffer();
+  current_string = initial_str;
+}
+
 /* Liao 6/11/2010, OpenMP does not preclude the use of clause names as regular
    variable names. For example, num_threads could be a clause name or a
    variable in the variable list.
@@ -276,7 +281,12 @@ end             { return END; }
 score           { return SCORE; }
 condition       { yy_push_state(CONDITION_STATE); return CONDITION; }
 kind            { return KIND; }
-host            { return HOST; }
+host{id_char}+  { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
+host/{blank}    { return HOST; }
+host/"("        { return HOST; }
+host/","        { return HOST; }
+host/")"        { return HOST; }
+host/":"        { return HOST; }
 nohost          { return NOHOST; }
 any             { return ANY; }
 cpu             { return CPU; }
@@ -312,17 +322,29 @@ dynamic_allocators        { return DYNAMIC_ALLOCATORS; }
 seq_cst                   { return SEQ_CST; }
 acq_rel                   { return ACQ_REL; }
 relaxed                   { return RELAXED; }
+use_device_ptr            { return USE_DEVICE_PTR; }
+use_device_addr           { return USE_DEVICE_ADDR; }
 target/{blank}            { return TARGET; }
+target/{newline}          { return TARGET; }
 target/"("                { return TARGET; }
+target/","                { return TARGET; }
+target/")"                { return TARGET; }
+target/":"                { return TARGET; }
 target                    { return TARGET; }
 data/{blank}              { return DATA; }
+data/{newline}            { return DATA; }
 data/"("                  { return DATA; }
+data/","                  { return DATA; }
+data/")"                  { return DATA; }
+data/":"                  { return DATA; }
 data                      { return DATA; }
 device/{blank}            { yy_push_state(DEVICE_STATE); return DEVICE; }
+device/{newline}          { yy_push_state(DEVICE_STATE); return DEVICE; }
 device/"("                { yy_push_state(DEVICE_STATE); return DEVICE; }
-device                    { yy_push_state(DEVICE_STATE); return DEVICE; }
-use_device_ptr            { return USE_DEVICE_PTR; }
-use_device_addr           { return USE_DEVICE_ADDR; }  
+device/","                { yy_push_state(DEVICE_STATE); return DEVICE; }
+device/")"                { yy_push_state(DEVICE_STATE); return DEVICE; }
+device/":"                { yy_push_state(DEVICE_STATE); return DEVICE; }
+device                    { yy_push_state(DEVICE_STATE); return DEVICE; }  
 enter                     { return ENTER; }
 exit                      { return EXIT; }
 is_device_ptr             { return IS_DEVICE_PTR; }
@@ -382,6 +404,9 @@ init                      { return INIT; }
 init_complete             { return INIT_COMPLETE; }
 safesync                  { return SAFESYNC; }
 device_safesync           { return DEVICE_SAFESYNC; }
+target{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
+data{id_char}+            { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
+device{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
 memscope                  { return MEMSCOPE; }
 looprange                 { return LOOPRANGE; }
 permutation               { return PERMUTATION; }
