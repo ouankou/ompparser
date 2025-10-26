@@ -686,6 +686,38 @@ public:
   void generateDOT(std::ofstream &, int, int, std::string);
 };
 
+// grainsize clause with optional strict modifier (OpenMP 5.1)
+class OpenMPGrainsizeClause : public OpenMPClause {
+protected:
+  OpenMPGrainsizeClauseModifier modifier;
+
+public:
+  OpenMPGrainsizeClause() : OpenMPClause(OMPC_grainsize), modifier(OMPC_GRAINSIZE_MODIFIER_unspecified) {}
+
+  OpenMPGrainsizeClause(OpenMPGrainsizeClauseModifier _modifier)
+      : OpenMPClause(OMPC_grainsize), modifier(_modifier) {};
+
+  OpenMPGrainsizeClauseModifier getModifier() { return modifier; };
+
+  std::string toString();
+};
+
+// num_tasks clause with optional strict modifier (OpenMP 5.1)
+class OpenMPNumTasksClause : public OpenMPClause {
+protected:
+  OpenMPNumTasksClauseModifier modifier;
+
+public:
+  OpenMPNumTasksClause() : OpenMPClause(OMPC_num_tasks), modifier(OMPC_NUM_TASKS_MODIFIER_unspecified) {}
+
+  OpenMPNumTasksClause(OpenMPNumTasksClauseModifier _modifier)
+      : OpenMPClause(OMPC_num_tasks), modifier(_modifier) {};
+
+  OpenMPNumTasksClauseModifier getModifier() { return modifier; };
+
+  std::string toString();
+};
+
 // OpenMP clauses with variant directives, such as WHEN and MATCH clauses.
 class OpenMPVariantClause : public OpenMPClause {
 protected:

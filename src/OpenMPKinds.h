@@ -544,6 +544,22 @@ enum OpenMPDistScheduleClauseKind {
 #undef OPENMP_DIST_SCHEDULE_KIND
 };
 
+/// OpenMP attributes for 'grainsize' clause modifier (OpenMP 5.1).
+enum OpenMPGrainsizeClauseModifier {
+#define OPENMP_GRAINSIZE_MODIFIER(Name) OMPC_GRAINSIZE_MODIFIER_##Name,
+  OPENMP_GRAINSIZE_MODIFIER(strict)
+  OPENMP_GRAINSIZE_MODIFIER(unspecified)
+#undef OPENMP_GRAINSIZE_MODIFIER
+};
+
+/// OpenMP attributes for 'num_tasks' clause modifier (OpenMP 5.1).
+enum OpenMPNumTasksClauseModifier {
+#define OPENMP_NUM_TASKS_MODIFIER(Name) OMPC_NUM_TASKS_MODIFIER_##Name,
+  OPENMP_NUM_TASKS_MODIFIER(strict)
+  OPENMP_NUM_TASKS_MODIFIER(unspecified)
+#undef OPENMP_NUM_TASKS_MODIFIER
+};
+
 /// OpenMP attributes for 'bind' clause.
 enum OpenMPBindClauseBinding {
 #define OPENMP_BIND_BINDING(Name) OMPC_BIND_##Name,
