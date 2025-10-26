@@ -70,6 +70,10 @@ OpenMPBaseLang user_set_lang = Lang_unknown;
 OpenMPBaseLang auto_lang;
 void setLang(OpenMPBaseLang _lang) { user_set_lang = _lang; };
 
+/* used for clause normalization control */
+bool normalize_clauses_global = true;
+void setNormalizeClauses(bool normalize) { normalize_clauses_global = normalize; };
+
 %}
 
 %locations

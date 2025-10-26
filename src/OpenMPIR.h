@@ -25,6 +25,9 @@ using namespace std;
 
 enum OpenMPBaseLang { Lang_C, Lang_Cplusplus, Lang_Fortran, Lang_unknown };
 
+// Global flag for clause normalization control
+extern bool normalize_clauses_global;
+
 class SourceLocation {
   int line;
   int column;
@@ -105,6 +108,7 @@ class OpenMPDirective : public SourceLocation {
 protected:
   OpenMPDirectiveKind kind;
   OpenMPBaseLang lang;
+  bool normalize_clauses = true;  // Control clause normalization
 
   /* The vector is used to store the pointers of clauses in original order.
    * While unparsing, the generated pragma keeps the clauses in the same order
@@ -183,7 +187,9 @@ protected:
 public:
   OpenMPDirective(OpenMPDirectiveKind k, OpenMPBaseLang _lang = Lang_unknown,
                   int _line = 0, int _col = 0)
-      : SourceLocation(_line, _col), kind(k), lang(_lang) {};
+      : SourceLocation(_line, _col), kind(k), lang(_lang) {
+    normalize_clauses = normalize_clauses_global;
+  };
 
   OpenMPDirectiveKind getKind() { return kind; };
 
@@ -216,6 +222,8 @@ public:
   OpenMPClause *addOpenMPClause(int, ...);
   void setBaseLang(OpenMPBaseLang _lang) { lang = _lang; };
   OpenMPBaseLang getBaseLang() { return lang; };
+  void setNormalizeClauses(bool normalize) { normalize_clauses = normalize; };
+  bool getNormalizeClauses() { return normalize_clauses; };
 
   // Registers a clause for automatic lifetime management
   // Takes ownership of the clause and returns a raw pointer for use

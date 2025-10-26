@@ -248,7 +248,7 @@ process_file() {
             # Round-trip through ROUP (auto-detects Fortran from sentinel)
             local pragma_file="$temp_dir/pragma_${file_id}_$$"
             echo "$pragma" > "$pragma_file"
-            if ! roundtrip=$("$ROUNDTRIP_BIN" "$pragma_file" 2>&1 | grep -E '^[!cC*]\$omp' | head -1); then
+            if ! roundtrip=$("$ROUNDTRIP_BIN" --no-normalize "$pragma_file" 2>&1 | grep -E '^[!cC*]\$omp' | head -1); then
                 file_parse_errors=$((file_parse_errors + 1))
                 file_failed=$((file_failed + 1))
                 echo "$file|$pragma|Parse error" >> "$temp_dir/failures_$file_id"
@@ -274,7 +274,7 @@ process_file() {
             # Round-trip through ROUP
             local pragma_file="$temp_dir/pragma_${file_id}_$$"
             echo "$pragma" > "$pragma_file"
-            if ! roundtrip=$("$ROUNDTRIP_BIN" "$pragma_file" 2>&1 | grep -E '^#pragma omp' | head -1); then
+            if ! roundtrip=$("$ROUNDTRIP_BIN" --no-normalize "$pragma_file" 2>&1 | grep -E '^#pragma omp' | head -1); then
                 file_parse_errors=$((file_parse_errors + 1))
                 file_failed=$((file_failed + 1))
                 echo "$file|$pragma|Parse error" >> "$temp_dir/failures_$file_id"
