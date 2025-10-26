@@ -1247,6 +1247,9 @@ std::string OpenMPDefaultmapClause::toString() {
   case OMPC_DEFAULTMAP_BEHAVIOR_default:
     clause_string += "default";
     break;
+  case OMPC_DEFAULTMAP_BEHAVIOR_present:
+    clause_string += "present";
+    break;
   default:;
   }
   if (category != OMPC_DEFAULTMAP_CATEGORY_unspecified) {

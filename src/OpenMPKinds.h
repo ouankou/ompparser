@@ -689,7 +689,8 @@ enum OpenMPDefaultmapClauseBehavior {
               OPENMP_DEFAULTMAP_BEHAVIOR(firstprivate)
                   OPENMP_DEFAULTMAP_BEHAVIOR(none)
                       OPENMP_DEFAULTMAP_BEHAVIOR(default)
-                          OPENMP_DEFAULTMAP_BEHAVIOR(unknown)
+                          OPENMP_DEFAULTMAP_BEHAVIOR(present)
+                              OPENMP_DEFAULTMAP_BEHAVIOR(unknown)
 #undef OPENMP_DEFAULTMAP_BEHAVIOR
 };
 

@@ -867,6 +867,7 @@ block                     { return BLOCK; }
 <DEFAULTMAP_STATE>firstprivate/{blank}*     { return BEHAVIOR_FIRSTPRIVATE; }
 <DEFAULTMAP_STATE>none/{blank}*             { return BEHAVIOR_NONE; }
 <DEFAULTMAP_STATE>default/{blank}*          { return BEHAVIOR_DEFAULT; }
+<DEFAULTMAP_STATE>present/{blank}*          { return BEHAVIOR_PRESENT; }
 <DEFAULTMAP_STATE>scalar/{blank}*           { return CATEGORY_SCALAR; }
 <DEFAULTMAP_STATE>aggregate/{blank}*        { return CATEGORY_AGGREGATE; }
 <DEFAULTMAP_STATE>pointer/{blank}*          { return CATEGORY_POINTER; }
