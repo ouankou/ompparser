@@ -866,6 +866,9 @@ std::string OpenMPClause::toString() {
   case OMPC_no_openmp_routines:
     result += "no_openmp_routines ";
     break;
+  case OMPC_no_openmp_constructs:
+    result += "no_openmp_constructs ";
+    break;
   case OMPC_no_parallelism:
     result += "no_parallelism ";
     break;

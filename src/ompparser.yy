@@ -135,6 +135,40 @@ corresponding C type is union name defaults to YYSTYPE.
 expression : EXPR_STRING { current_clause->addLangExpr($1); /*void * astnode = exprParse)($1);*/ }
 variable :   EXPR_STRING { current_clause->addLangExpr($1); } /* we use expression for variable so far */
 
+/* For absent/contains clauses that take directive names as arguments */
+directive_name : PARALLEL { current_clause->addLangExpr("parallel"); }
+               | FOR { current_clause->addLangExpr("for"); }
+               | DO { current_clause->addLangExpr("do"); }
+               | SIMD { current_clause->addLangExpr("simd"); }
+               | TARGET { current_clause->addLangExpr("target"); }
+               | TEAMS { current_clause->addLangExpr("teams"); }
+               | DISTRIBUTE { current_clause->addLangExpr("distribute"); }
+               | TASK { current_clause->addLangExpr("task"); }
+               | TASKLOOP { current_clause->addLangExpr("taskloop"); }
+               | SECTIONS { current_clause->addLangExpr("sections"); }
+               | SECTION { current_clause->addLangExpr("section"); }
+               | SINGLE { current_clause->addLangExpr("single"); }
+               | MASTER { current_clause->addLangExpr("master"); }
+               | MASKED { current_clause->addLangExpr("masked"); }
+               | CRITICAL { current_clause->addLangExpr("critical"); }
+               | BARRIER { current_clause->addLangExpr("barrier"); }
+               | TASKWAIT { current_clause->addLangExpr("taskwait"); }
+               | TASKGROUP { current_clause->addLangExpr("taskgroup"); }
+               | ATOMIC { current_clause->addLangExpr("atomic"); }
+               | FLUSH { current_clause->addLangExpr("flush"); }
+               | ORDERED { current_clause->addLangExpr("ordered"); }
+               | SCAN { current_clause->addLangExpr("scan"); }
+               | SCOPE { current_clause->addLangExpr("scope"); }
+               | LOOP { current_clause->addLangExpr("loop"); }
+               | WORKSHARE { current_clause->addLangExpr("workshare"); }
+               | CANCEL { current_clause->addLangExpr("cancel"); }
+               | METADIRECTIVE { current_clause->addLangExpr("metadirective"); }
+               ;
+
+directive_name_list : directive_name
+                    | directive_name_list ',' directive_name
+                    ;
+
 /*expr_list : expression
         | expr_list ',' expression
         ;
@@ -949,14 +983,17 @@ doacross_clause : DOACROSS '(' doacross_type ')'
 doacross_type : SOURCE { current_clause = current_directive->addOpenMPClause(OMPC_doacross, OMPC_DOACROSS_TYPE_source); }
               | SINK { current_clause = current_directive->addOpenMPClause(OMPC_doacross, OMPC_DOACROSS_TYPE_sink); }
               ;
-absent_clause : ABSENT '(' var_list ')'
-              { current_clause = current_directive->addOpenMPClause(OMPC_absent); }
+absent_clause : ABSENT {
+                    current_clause = current_directive->addOpenMPClause(OMPC_absent);
+              } '(' directive_name_list ')'
               ;
-contains_clause : CONTAINS '(' var_list ')'
-                { current_clause = current_directive->addOpenMPClause(OMPC_contains); }
+contains_clause : CONTAINS {
+                    current_clause = current_directive->addOpenMPClause(OMPC_contains);
+                } '(' directive_name_list ')'
                 ;
-holds_clause : HOLDS '(' expression ')'
-             { current_clause = current_directive->addOpenMPClause(OMPC_holds); }
+holds_clause : HOLDS {
+                    current_clause = current_directive->addOpenMPClause(OMPC_holds);
+             } '(' expression ')'
              ;
 otherwise_clause : OTHERWISE '(' variant_directive ')'
                  { current_clause = current_directive->addOpenMPClause(OMPC_otherwise); }
@@ -1025,6 +1062,13 @@ no_openmp_clause : NO_OPENMP { current_clause = current_directive->addOpenMPClau
                  ;
 no_openmp_routines_clause : NO_OPENMP_ROUTINES { current_clause = current_directive->addOpenMPClause(OMPC_no_openmp_routines); }
                           ;
+no_openmp_constructs_clause : NO_OPENMP_CONSTRUCTS {
+                                current_clause = current_directive->addOpenMPClause(OMPC_no_openmp_constructs);
+                            }
+                            | NO_OPENMP_CONSTRUCTS {
+                                current_clause = current_directive->addOpenMPClause(OMPC_no_openmp_constructs);
+                            } '(' expression ')'
+                            ;
 no_parallelism_clause : NO_PARALLELISM { current_clause = current_directive->addOpenMPClause(OMPC_no_parallelism); }
                       ;
 
@@ -1345,6 +1389,7 @@ assume_clause : holds_clause
               | contains_clause
               | no_openmp_clause
               | no_openmp_routines_clause
+              | no_openmp_constructs_clause
               | no_parallelism_clause
               ;
 assumes_clause_seq : assumes_clause
@@ -1356,6 +1401,7 @@ assumes_clause : holds_clause
                | contains_clause
                | no_openmp_clause
                | no_openmp_routines_clause
+               | no_openmp_constructs_clause
                | no_parallelism_clause
                ;
 begin_assumes_clause_seq : begin_assumes_clause
@@ -1367,6 +1413,7 @@ begin_assumes_clause : holds_clause
                      | contains_clause
                      | no_openmp_clause
                      | no_openmp_routines_clause
+                     | no_openmp_constructs_clause
                      | no_parallelism_clause
                      ;
 begin_metadirective_clause_seq : begin_metadirective_clause
