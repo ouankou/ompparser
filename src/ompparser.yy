@@ -243,6 +243,7 @@ openmp_directive : parallel_directive
                  | begin_assumes_directive
                  | end_assumes_directive
                  | begin_metadirective_directive
+                 | begin_declare_target_directive
                  | allocators_directive
                  | taskgraph_directive
                  | task_iteration_directive
@@ -668,6 +669,10 @@ begin_metadirective_directive : BEGIN_DIR METADIRECTIVE {
                         current_directive = new OpenMPDirective(OMPD_begin_metadirective);
                      }
                       begin_metadirective_clause_optseq
+                   ;
+begin_declare_target_directive : BEGIN_DIR DECLARE TARGET {
+                        current_directive = new OpenMPDirective(OMPD_begin_declare_target);
+                     }
                    ;
 // OpenMP 6.0 directives
 allocators_directive : ALLOCATORS {

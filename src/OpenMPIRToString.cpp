@@ -339,6 +339,9 @@ std::string OpenMPDirective::toString() {
   case OMPD_declare_target:
     result += "declare target ";
     break;
+  case OMPD_begin_declare_target:
+    result += "begin declare target ";
+    break;
   case OMPD_end_declare_target:
     result += "end declare target ";
     break;

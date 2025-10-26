@@ -78,6 +78,7 @@ enum OpenMPDirectiveKind {
     OPENMP_DIRECTIVE(target_exit_data)
     OPENMP_DIRECTIVE(target)
     OPENMP_DIRECTIVE(declare_target)
+    OPENMP_DIRECTIVE(begin_declare_target)
     OPENMP_DIRECTIVE(end_declare_target)
     OPENMP_DIRECTIVE(master)
     OPENMP_DIRECTIVE(end)
