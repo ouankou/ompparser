@@ -1696,6 +1696,7 @@ declare_target_clause : to_clause
                       | link_clause
                       | enter_clause
                       | device_type_clause
+                      | indirect_clause
                       ;
 taskwait_clause : depend_with_modifier_clause
                 | nowait_clause
@@ -4222,6 +4223,8 @@ fortran_nowait_clause: NOWAIT { if (user_set_lang == Lang_C || auto_lang == Lang
                      ;
 nowait_clause: NOWAIT { current_clause = current_directive->addOpenMPClause(OMPC_nowait); }
              ;
+indirect_clause: INDIRECT { current_clause = current_directive->addOpenMPClause(OMPC_indirect); }
+               ;
 full_clause: FULL { current_clause = current_directive->addOpenMPClause(OMPC_full); }
              ;
 order_clause: ORDER '(' order_parameter ')' { }
