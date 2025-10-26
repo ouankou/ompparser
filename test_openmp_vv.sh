@@ -1,13 +1,13 @@
 #!/bin/bash
 #
-# test_openmp_vv.sh - Validate ompparser against OpenMP_VV test suite
+# test_openmp_vv.sh - Round-trip OpenMP pragmas from OpenMP_VV through ompparser
 #
 # This script validates ompparser by:
 # 1. Cloning the OpenMP Validation & Verification test suite (on-demand)
 # 2. Preprocessing all C/C++ test files with clang
 # 3. Extracting OpenMP pragmas
-# 4. Parsing each pragma through ompparser
-# 5. Unparsing and comparing with original (normalized)
+# 4. Round-tripping each pragma through ompparser
+# 5. Comparing normalized input vs output
 # 6. Reporting pass/fail statistics
 #
 # Usage:
@@ -25,8 +25,7 @@ REPO_PATH="${OPENMP_VV_PATH:-build/openmp_vv}"
 TESTS_DIR="tests"
 CLANG="${CLANG:-clang}"
 CLANG_FORMAT="${CLANG_FORMAT:-clang-format}"
-MAX_DISPLAY_FAILURES=20
-
+MAX_DISPLAY_FAILURES=10
 # Fallback for systems without nproc (e.g., macOS)
 if command -v nproc >/dev/null 2>&1; then
     DEFAULT_JOBS=$(nproc)
@@ -41,7 +40,6 @@ PARALLEL_JOBS="${PARALLEL_JOBS:-$DEFAULT_JOBS}"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Statistics
@@ -51,16 +49,11 @@ total_pragmas=0
 passed=0
 failed=0
 parse_errors=0
-skipped_files=0
 
 # Arrays for failure details
 declare -a failure_files=()
 declare -a failure_pragmas=()
 declare -a failure_reasons=()
-
-# Arrays for skipped file details
-declare -a skipped_file_paths=()
-declare -a skipped_file_reasons=()
 
 echo "========================================="
 echo "  ompparser OpenMP_VV Validation"
@@ -76,25 +69,6 @@ for tool in "$CLANG" "$CLANG_FORMAT"; do
     fi
 done
 echo -e "${GREEN}✓${NC} All required tools found"
-echo ""
-
-# Check for ompparser build
-if [ ! -d "build" ]; then
-    echo -e "${RED}Error: build directory not found. Please run cmake and build first.${NC}"
-    exit 1
-fi
-
-OMPPARSER_BIN=""
-if [ -f "build/utils/ompp" ]; then
-    OMPPARSER_BIN="build/utils/ompp"
-elif [ -f "build/ompp" ]; then
-    OMPPARSER_BIN="build/ompp"
-else
-    echo -e "${RED}Error: ompparser binary (ompp) not found in build directory${NC}"
-    exit 1
-fi
-
-echo "Using ompparser binary: $OMPPARSER_BIN"
 echo ""
 
 # Ensure OpenMP_VV repository exists
@@ -116,19 +90,38 @@ else
     echo ""
 fi
 
+# Find ompparser binary
+OMPPARSER_BIN=""
+if [ -f "build/utils/ompp" ]; then
+    OMPPARSER_BIN="build/utils/ompp"
+elif [ -f "build/ompp" ]; then
+    OMPPARSER_BIN="build/ompp"
+elif [ -f "ompp" ]; then
+    OMPPARSER_BIN="./ompp"
+else
+    echo -e "${RED}Error: ompparser binary (ompp) not found${NC}"
+    echo "Please build ompparser first:"
+    echo "  mkdir -p build && cd build && cmake .. && make ompp"
+    exit 1
+fi
+
+echo "Using ompparser binary: $OMPPARSER_BIN"
+echo ""
+
 # Find all C/C++ source files
-echo "Finding C/C++ test files in $REPO_PATH/$TESTS_DIR..."
-mapfile -t source_files < <(find "$REPO_PATH/$TESTS_DIR" -type f \( -name "*.c" -o -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" \) | sort)
+echo "Finding test files in $REPO_PATH/$TESTS_DIR..."
+mapfile -t source_files < <(find "$REPO_PATH/$TESTS_DIR" -type f \( \
+    -name "*.c" -o -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" \
+    \) | sort)
+echo "Found ${#source_files[@]} files (C/C++)"
 total_files=${#source_files[@]}
-echo "Found $total_files C/C++ files"
 echo ""
 
 # Function to process a single file
 process_file() {
     local file="$1"
     local temp_dir="$2"
-
-    # Use hash of full file path to avoid collisions
+    # Use hash of full file path to avoid collisions (e.g., file-name.c vs file_name.c)
     local file_hash
     if command -v sha1sum >/dev/null 2>&1; then
         file_hash=$(echo -n "$file" | sha1sum | awk '{print $1}')
@@ -137,34 +130,30 @@ process_file() {
     elif command -v md5sum >/dev/null 2>&1; then
         file_hash=$(echo -n "$file" | md5sum | awk '{print $1}')
     else
-        # Fallback: use full path with character substitution
+        # Fallback: use full path with character substitution (less safe but functional)
         file_hash=$(echo "$file" | sed 's/[^a-zA-Z0-9]/_/g')
     fi
-
     local file_id="$file_hash"
     local result_file="$temp_dir/result_$file_id"
 
-    # Preprocess with clang
-    # Include both the file's directory and OpenMP_VV's ompvv/ directory for headers
-    local preprocess_errors
-    preprocess_errors=$(mktemp)
-    local preprocessed
-    preprocessed=$("$CLANG" -E -P -CC -fopenmp \
-        -I"$(dirname "$file")" \
-        -I"$REPO_PATH/ompvv" \
-        -I"/usr/lib/gcc/x86_64-linux-gnu/13/include" \
-        "$file" 2>"$preprocess_errors" || true)
+    local preprocessed=""
+    local pragmas=()
 
-    # Check if preprocessing failed
-    if [ ! -s "$preprocess_errors" ]; then
-        rm -f "$preprocess_errors"
+    # C/C++ file - use clang
+    # Find system omp.h path
+    local omp_h_path=""
+    if [ -f "/usr/lib/gcc/x86_64-linux-gnu/13/include/omp.h" ]; then
+        omp_h_path="/usr/lib/gcc/x86_64-linux-gnu/13/include"
+    elif [ -f "/usr/lib/gcc/x86_64-linux-gnu/12/include/omp.h" ]; then
+        omp_h_path="/usr/lib/gcc/x86_64-linux-gnu/12/include"
+    elif [ -f "/usr/lib/gcc/x86_64-linux-gnu/11/include/omp.h" ]; then
+        omp_h_path="/usr/lib/gcc/x86_64-linux-gnu/11/include"
+    fi
+
+    if [ -n "$omp_h_path" ]; then
+        preprocessed=$("$CLANG" -E -P -CC -fopenmp -I"$(dirname "$file")" -I"$REPO_PATH/ompvv" -I"$omp_h_path" "$file" 2>/dev/null || true)
     else
-        # Preprocessing had errors - treat as skipped file and record it
-        local error_msg=$(head -1 "$preprocess_errors")
-        echo "$file|PREPROCESS_SKIP|Preprocessing failed: $error_msg" >> "$temp_dir/skipped_files"
-        rm -f "$preprocess_errors"
-        echo "0 0 0 0" > "$result_file"
-        return
+        preprocessed=$("$CLANG" -E -P -CC -fopenmp -I"$(dirname "$file")" -I"$REPO_PATH/ompvv" "$file" 2>/dev/null || true)
     fi
 
     if [ -z "$preprocessed" ]; then
@@ -187,27 +176,26 @@ process_file() {
 
     # Process each pragma
     for pragma in "${pragmas[@]}"; do
-        # Normalize original pragma with clang-format
+        # C/C++: normalize with clang-format
         local original_formatted=$(echo "$pragma" | "$CLANG_FORMAT" 2>/dev/null || echo "$pragma")
 
-        # Parse with ompparser
-        # ompparser reads from file, so create temp file
+        # Round-trip through ompparser (ompp reads from file)
         local pragma_file="$temp_dir/pragma_${file_id}_$$"
         echo "$pragma" > "$pragma_file"
 
-        # Run ompparser and capture output
         local parse_output
         if ! parse_output=$("$OMPPARSER_BIN" "$pragma_file" 2>&1); then
             file_parse_errors=$((file_parse_errors + 1))
             file_failed=$((file_failed + 1))
-            echo "$file|$pragma|Parse error: $parse_output" >> "$temp_dir/failures_$file_id"
+            # Extract just the error message (not the full output)
+            local error_msg=$(echo "$parse_output" | grep -E "^error:" | head -1 || echo "Parse error")
+            echo "$file|$pragma|$error_msg" >> "$temp_dir/failures_$file_id"
             rm -f "$pragma_file"
             continue
         fi
         rm -f "$pragma_file"
 
-        # Extract pragma from output (ompparser outputs in specific format)
-        # The ompp tool outputs the parsed pragma
+        # Extract the round-tripped pragma from ompparser output
         local roundtrip=$(echo "$parse_output" | grep -E '^#pragma omp' | head -1 || echo "")
 
         if [ -z "$roundtrip" ]; then
@@ -237,18 +225,15 @@ export -f process_file
 export CLANG CLANG_FORMAT OMPPARSER_BIN REPO_PATH
 
 echo "Processing files in parallel (using $PARALLEL_JOBS jobs)..."
-echo -e "${BLUE}This may take several minutes...${NC}"
 echo ""
 
 # Create temporary directory for results
 temp_dir=$(mktemp -d)
 trap "rm -rf $temp_dir" EXIT
 
-# Process files in parallel
+# Process files in parallel (use null-terminated input and positional args to avoid
+# filename splitting and shell interpolation of special characters)
 printf '%s\0' "${source_files[@]}" | xargs -0 -P "$PARALLEL_JOBS" -I {} bash -c 'process_file "$1" "$2"' _ {} "$temp_dir"
-
-echo "Collecting results..."
-echo ""
 
 # Collect results
 for file in "${source_files[@]}"; do
@@ -263,7 +248,6 @@ for file in "${source_files[@]}"; do
     else
         file_hash=$(echo "$file" | sed 's/[^a-zA-Z0-9]/_/g')
     fi
-
     file_id="$file_hash"
     result_file="$temp_dir/result_$file_id"
 
@@ -282,6 +266,7 @@ for file in "${source_files[@]}"; do
 done
 
 # Read failure details from all per-file failure logs
+# Enable nullglob to handle case where no failure files exist
 shopt -s nullglob
 for failure_file in "$temp_dir"/failures_*; do
     while IFS='|' read -r file pragma reason; do
@@ -290,15 +275,6 @@ for failure_file in "$temp_dir"/failures_*; do
         failure_reasons+=("$reason")
     done < "$failure_file"
 done
-
-# Read skipped file details
-if [ -f "$temp_dir/skipped_files" ]; then
-    while IFS='|' read -r file marker reason; do
-        skipped_files=$((skipped_files + 1))
-        skipped_file_paths+=("$file")
-        skipped_file_reasons+=("$reason")
-    done < "$temp_dir/skipped_files"
-fi
 shopt -u nullglob
 
 echo ""
@@ -307,9 +283,6 @@ echo "  Results"
 echo "========================================="
 echo ""
 echo "Files processed:        $total_files"
-if [ $skipped_files -gt 0 ]; then
-    echo -e "${YELLOW}Files skipped:${NC}          $skipped_files (preprocessing failed)"
-fi
 echo "Files with pragmas:     $files_with_pragmas"
 echo "Total pragmas:          $total_pragmas"
 echo ""
@@ -328,29 +301,6 @@ echo "  Mismatches:           $((failed - parse_errors))"
 echo ""
 echo "Success rate:           ${pass_rate}%"
 echo ""
-
-# Show skipped file details
-if [ $skipped_files -gt 0 ]; then
-    echo "========================================="
-    echo "  Skipped Files (showing first $MAX_DISPLAY_FAILURES)"
-    echo "========================================="
-    echo ""
-
-    display_count=0
-    for i in "${!skipped_file_paths[@]}"; do
-        if [ $display_count -ge $MAX_DISPLAY_FAILURES ]; then
-            remaining=$((skipped_files - MAX_DISPLAY_FAILURES))
-            echo "... and $remaining more skipped files"
-            break
-        fi
-
-        echo -e "${YELLOW}[$((i + 1))]${NC} ${skipped_file_paths[$i]}"
-        echo "    Reason:  ${skipped_file_reasons[$i]}"
-        echo ""
-
-        display_count=$((display_count + 1))
-    done
-fi
 
 # Show failure details
 if [ $failed -gt 0 ]; then
@@ -378,9 +328,9 @@ fi
 
 # Exit with appropriate code
 if [ $failed -eq 0 ]; then
-    echo -e "${GREEN}✓ All pragmas processed successfully!${NC}"
+    echo -e "${GREEN}✓ All pragmas round-tripped successfully!${NC}"
     exit 0
 else
-    echo -e "${RED}✗ Some pragmas failed to process${NC}"
+    echo -e "${RED}✗ Some pragmas failed to round-trip${NC}"
     exit 1
 fi
