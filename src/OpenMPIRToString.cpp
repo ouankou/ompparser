@@ -731,6 +731,9 @@ std::string OpenMPClause::toString() {
   case OMPC_link:
     result += "link ";
     break;
+  case OMPC_enter:
+    result += "enter ";
+    break;
   case OMPC_acq_rel:
     result += "acq_rel ";
     break;

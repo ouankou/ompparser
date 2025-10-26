@@ -1475,6 +1475,9 @@ void OpenMPClause::generateDOT(std::ofstream &dot_file, int depth, int index,
   case OMPC_link:
     clause_kind += "link";
     break;
+  case OMPC_enter:
+    clause_kind += "enter";
+    break;
   case OMPC_device_type:
     clause_kind += "device_type";
     break;

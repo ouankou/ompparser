@@ -1591,6 +1591,7 @@ target_update_other_clause: if_target_update_clause
                           ;
 declare_target_clause : to_clause
                       | link_clause
+                      | enter_clause
                       | device_type_clause
                       ;
 taskwait_clause : depend_with_modifier_clause
@@ -1854,6 +1855,11 @@ from_mapper : FROM_MAPPER { current_clause = current_directive->addOpenMPClause(
             ;
 link_clause : LINK {
                 current_clause = current_directive->addOpenMPClause(OMPC_link);
+} '(' var_list ')' {
+}
+  ;
+enter_clause : ENTER {
+                current_clause = current_directive->addOpenMPClause(OMPC_enter);
 } '(' var_list ')' {
 }
   ;
