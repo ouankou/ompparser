@@ -1058,6 +1058,7 @@ graph_id_clause : GRAPH_ID '(' expression ')'
 graph_reset_clause : GRAPH_RESET { current_clause = current_directive->addOpenMPClause(OMPC_graph_reset); }
                    ;
 transparent_clause : TRANSPARENT { current_clause = current_directive->addOpenMPClause(OMPC_transparent); }
+                   | TRANSPARENT '(' expression ')' { current_clause = current_directive->addOpenMPClause(OMPC_transparent); }
                    ;
 replayable_clause : REPLAYABLE { current_clause = current_directive->addOpenMPClause(OMPC_replayable); }
                   ;
@@ -1598,6 +1599,7 @@ task_clause : if_task_clause
             | allocate_clause
             | affinity_clause
             | detach_clause
+            | transparent_clause
             ;
 taskloop_clause : if_taskloop_clause
                 | shared_clause
