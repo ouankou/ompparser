@@ -291,6 +291,19 @@ public:
   std::string toString();
 };
 
+class OpenMPAtClause : public OpenMPClause {
+protected:
+  OpenMPAtClauseKind at_kind;
+
+public:
+  OpenMPAtClause(OpenMPAtClauseKind _at_kind)
+      : OpenMPClause(OMPC_at), at_kind(_at_kind) {};
+
+  OpenMPAtClauseKind getAtKind() { return at_kind; };
+
+  std::string toString();
+};
+
 class OpenMPEndDirective : public OpenMPDirective {
 protected:
   OpenMPDirective *paired_directive;
@@ -744,6 +757,7 @@ protected:
   std::pair<std::string, OpenMPClauseContextVendor> context_vendor_name =
       std::make_pair("", OMPC_CONTEXT_VENDOR_unspecified);
   std::pair<std::string, std::string> implementation_user_defined_expression;
+  bool is_target_device_selector = false;
 
 public:
   OpenMPVariantClause(OpenMPClauseKind _kind) : OpenMPClause(_kind) {};
@@ -811,6 +825,12 @@ public:
   std::pair<std::string, std::string> *getImplementationExpression() {
     return &implementation_user_defined_expression;
   };
+  void setIsTargetDeviceSelector(bool _is_target_device) {
+    is_target_device_selector = _is_target_device;
+  };
+  bool getIsTargetDeviceSelector() {
+    return is_target_device_selector;
+  };
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
 };
@@ -830,6 +850,22 @@ public:
 
   static OpenMPClause *addWhenClause(OpenMPDirective *directive);
   // void generateDOT(std::ofstream&, int, int, std::string);
+};
+
+// Otherwise Clause
+class OpenMPOtherwiseClause : public OpenMPVariantClause {
+protected:
+  OpenMPDirective *variant_directive =
+      NULL; // variant directive inside the OTHERWISE clause
+
+public:
+  OpenMPOtherwiseClause() : OpenMPVariantClause(OMPC_otherwise) {};
+  OpenMPDirective *getVariantDirective() { return variant_directive; };
+  void setVariantDirective(OpenMPDirective *_variant_directive) {
+    variant_directive = _variant_directive;
+  };
+
+  static OpenMPClause *addOtherwiseClause(OpenMPDirective *directive);
 };
 
 // Match Clause

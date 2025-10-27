@@ -95,6 +95,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   case OMPC_unified_address:
   case OMPC_unified_shared_memory:
   case OMPC_dynamic_allocators:
+  case OMPC_self_maps:
   case OMPC_is_device_ptr:
   case OMPC_has_device_addr:
   case OMPC_link:
@@ -116,12 +117,10 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   case OMPC_destroy:
   case OMPC_sizes:
   case OMPC_filter:
-  case OMPC_at:
   case OMPC_message:
   case OMPC_absent:
   case OMPC_contains:
   case OMPC_holds:
-  case OMPC_otherwise:
   case OMPC_looprange:
   case OMPC_permutation:
   case OMPC_counts:
@@ -138,6 +137,8 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   case OMPC_no_openmp_constructs:
   case OMPC_no_openmp_routines:
   case OMPC_no_parallelism:
+  case OMPC_indirect:
+  case OMPC_transparent:
 
   {
     if (current_clauses->size() == 0) {
@@ -275,6 +276,18 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
       current_clauses->push_back(new_clause);
     } else {
       std::cerr << "Cannot have two severity clauses for the directive, ignored\n";
+    }
+    break;
+  }
+
+  case OMPC_at: {
+    OpenMPAtClauseKind at_kind =
+        (OpenMPAtClauseKind)va_arg(args, int);
+    if (current_clauses->size() == 0) {
+      new_clause = registerClause(std::make_unique<OpenMPAtClause>(at_kind));
+      current_clauses->push_back(new_clause);
+    } else {
+      std::cerr << "Cannot have two at clauses for the directive, ignored\n";
     }
     break;
   }
@@ -540,6 +553,10 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   }
   case OMPC_when: {
     new_clause = OpenMPWhenClause::addWhenClause(this);
+    break;
+  }
+  case OMPC_otherwise: {
+    new_clause = OpenMPOtherwiseClause::addOtherwiseClause(this);
     break;
   }
   default: {
@@ -1550,6 +1567,20 @@ OpenMPClause *OpenMPWhenClause::addWhenClause(OpenMPDirective *directive) {
   if (current_clauses->size() == 0) {
   };
   new_clause = directive->registerClause(std::make_unique<OpenMPWhenClause>());
+  current_clauses->push_back(new_clause);
+
+  return new_clause;
+};
+
+OpenMPClause *OpenMPOtherwiseClause::addOtherwiseClause(OpenMPDirective *directive) {
+
+  std::vector<OpenMPClause *> *current_clauses =
+      directive->getClauses(OMPC_otherwise);
+  OpenMPClause *new_clause = NULL;
+
+  if (current_clauses->size() == 0) {
+  };
+  new_clause = directive->registerClause(std::make_unique<OpenMPOtherwiseClause>());
   current_clauses->push_back(new_clause);
 
   return new_clause;

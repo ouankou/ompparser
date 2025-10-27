@@ -207,6 +207,9 @@ void OpenMPDependClause::generateDOT(std::ofstream &dot_file, int depth,
   case OMPC_DEPENDENCE_TYPE_inout:
     parameter_string = "inout";
     break;
+  case OMPC_DEPENDENCE_TYPE_inoutset:
+    parameter_string = "inoutset";
+    break;
   case OMPC_DEPENDENCE_TYPE_mutexinoutset:
     parameter_string = "mutexinoutset";
     break;
@@ -1703,6 +1706,9 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
               break;
           case OMPC_CONTEXT_VENDOR_llvm:
               parameter_string = "llvm";
+              break;
+          case OMPC_CONTEXT_VENDOR_nvidia:
+              parameter_string = "nvidia";
               break;
           case OMPC_CONTEXT_VENDOR_pgi:
               parameter_string = "pgi";

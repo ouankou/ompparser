@@ -153,7 +153,8 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       result = result.substr(0, result.size() - 1);
       result += ") ";
     }
-    break;
+    // Don't break - we need to fall through to default to output clauses
+    goto default_case;
   }
   case OMPD_critical: {
     std::string name = ((OpenMPCriticalDirective *)this)->getCriticalName();
@@ -186,7 +187,8 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     result += ") ";
     break;
   }
-  default:;
+  default:
+  default_case:;
   };
 
   std::vector<OpenMPClause *> *clauses = this->getClausesInOriginalOrder();
@@ -710,6 +712,9 @@ std::string OpenMPClause::toString() {
   case OMPC_dynamic_allocators:
     result += "dynamic_allocators ";
     break;
+  case OMPC_self_maps:
+    result += "self_maps ";
+    break;
   case OMPC_use_device_ptr:
     result += "use_device_ptr ";
     break;
@@ -782,12 +787,6 @@ std::string OpenMPClause::toString() {
   case OMPC_filter:
     result += "filter ";
     break;
-  case OMPC_at:
-    result += "at ";
-    break;
-  case OMPC_severity:
-    result += "severity ";
-    break;
   case OMPC_message:
     result += "message ";
     break;
@@ -829,6 +828,30 @@ std::string OpenMPClause::toString() {
     break;
   case OMPC_threadset:
     result += "threadset ";
+    break;
+  case OMPC_safesync:
+    result += "safesync ";
+    break;
+  case OMPC_device_safesync:
+    result += "device_safesync ";
+    break;
+  case OMPC_memscope:
+    result += "memscope ";
+    break;
+  case OMPC_init_complete:
+    result += "init_complete ";
+    break;
+  case OMPC_local:
+    result += "local ";
+    break;
+  case OMPC_adjust_args:
+    result += "adjust_args ";
+    break;
+  case OMPC_append_args:
+    result += "append_args ";
+    break;
+  case OMPC_indirect:
+    result += "indirect ";
     break;
   case OMPC_init:
     result += "init ";
@@ -1039,6 +1062,9 @@ std::string OpenMPDependClause::toString() {
   case OMPC_DEPENDENCE_TYPE_inout:
     clause_string += "inout";
     break;
+  case OMPC_DEPENDENCE_TYPE_inoutset:
+    clause_string += "inoutset";
+    break;
   case OMPC_DEPENDENCE_TYPE_mutexinoutset:
     clause_string += "mutexinoutset";
     break;
@@ -1110,6 +1136,9 @@ std::string OpenMPDepobjUpdateClause::toString() {
     break;
   case OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_inout:
     clause_string += "inout";
+    break;
+  case OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_inoutset:
+    clause_string += "inoutset";
     break;
   case OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_mutexinoutset:
     clause_string += "mutexinoutset";
@@ -1943,10 +1972,23 @@ std::string OpenMPVariantClause::toString() {
   case OMPC_match:
     result = "match";
     break;
+  case OMPC_otherwise:
+    result = "otherwise";
+    break;
   default:
     std::cout << "The variant clause is not supported.\n";
   };
   result += " (";
+
+  // For otherwise clause, skip context selectors and just output the directive
+  if (clause_kind == OMPC_otherwise) {
+    variant_directive = ((OpenMPOtherwiseClause *)this)->getVariantDirective();
+    if (variant_directive != NULL) {
+      result += variant_directive->generatePragmaString("", "", "");
+    }
+    result += ") ";
+    return result;
+  }
 
   // check user
   parameter_pair_string = this->getUserCondition();
@@ -2043,7 +2085,8 @@ std::string OpenMPVariantClause::toString() {
   };
 
   if (clause_string.size() > 0) {
-    result += "device = {" + clause_string.substr(0, clause_string.size() - 2) +
+    std::string selector_name = this->getIsTargetDeviceSelector() ? "target_device" : "device";
+    result += selector_name + " = {" + clause_string.substr(0, clause_string.size() - 2) +
               "}, ";
   };
 
@@ -2080,6 +2123,9 @@ std::string OpenMPVariantClause::toString() {
     break;
   case OMPC_CONTEXT_VENDOR_llvm:
     parameter_string = "llvm";
+    break;
+  case OMPC_CONTEXT_VENDOR_nvidia:
+    parameter_string = "nvidia";
     break;
   case OMPC_CONTEXT_VENDOR_pgi:
     parameter_string = "pgi";
@@ -2122,6 +2168,13 @@ std::string OpenMPVariantClause::toString() {
   if (clause_kind == OMPC_when) {
     clause_string = " : ";
     variant_directive = ((OpenMPWhenClause *)this)->getVariantDirective();
+    if (variant_directive != NULL) {
+      clause_string += variant_directive->generatePragmaString("");
+    };
+  };
+
+  if (clause_kind == OMPC_otherwise) {
+    variant_directive = ((OpenMPOtherwiseClause *)this)->getVariantDirective();
     if (variant_directive != NULL) {
       clause_string += variant_directive->generatePragmaString("");
     };
@@ -2427,6 +2480,25 @@ std::string OpenMPSeverityClause::toString() {
     break;
   case OMPC_SEVERITY_warning:
     result += "warning";
+    break;
+  default:
+    result += "unknown";
+  }
+
+  result += ") ";
+  return result;
+};
+
+std::string OpenMPAtClause::toString() {
+  std::string result = "at (";
+
+  OpenMPAtClauseKind at_kind = this->getAtKind();
+  switch (at_kind) {
+  case OMPC_AT_compilation:
+    result += "compilation";
+    break;
+  case OMPC_AT_execution:
+    result += "execution";
     break;
   default:
     result += "unknown";

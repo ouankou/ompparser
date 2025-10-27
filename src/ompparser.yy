@@ -102,12 +102,12 @@ corresponding C type is union name defaults to YYSTYPE.
         NUM_TEAMS THREAD_LIMIT DOUBLE_COLON
         END USER CONSTRUCT DEVICE IMPLEMENTATION CONDITION SCORE VENDOR
         KIND HOST NOHOST ANY CPU GPU FPGA ISA ARCH EXTENSION
-        AMD ARM BSC CRAY FUJITSU GNU IBM INTEL LLVM PGI TI UNKNOWN
-        FINAL UNTIED MERGEABLE IN_REDUCTION DEPEND PRIORITY AFFINITY DETACH MODIFIER_ITERATOR DEPOBJ FINAL_CLAUSE IN INOUT MUTEXINOUTSET OUT
-        TASKLOOP GRAINSIZE NUM_TASKS NOGROUP TASKYIELD REQUIRES REVERSE_OFFLOAD UNIFIED_ADDRESS UNIFIED_SHARED_MEMORY ATOMIC_DEFAULT_MEM_ORDER DYNAMIC_ALLOCATORS SEQ_CST ACQ_REL RELAXED UNROLL TILE
+        AMD ARM BSC CRAY FUJITSU GNU IBM INTEL LLVM NVIDIA PGI TI UNKNOWN
+        FINAL UNTIED MERGEABLE IN_REDUCTION DEPEND PRIORITY AFFINITY DETACH MODIFIER_ITERATOR DEPOBJ FINAL_CLAUSE IN INOUT INOUTSET MUTEXINOUTSET OUT
+        TASKLOOP GRAINSIZE NUM_TASKS NOGROUP TASKYIELD REQUIRES REVERSE_OFFLOAD UNIFIED_ADDRESS UNIFIED_SHARED_MEMORY ATOMIC_DEFAULT_MEM_ORDER DYNAMIC_ALLOCATORS SELF_MAPS SEQ_CST ACQ_REL RELAXED UNROLL TILE
         USE_DEVICE_PTR USE_DEVICE_ADDR TARGET DATA ENTER EXIT ANCESTOR DEVICE_NUM IS_DEVICE_PTR HAS_DEVICE_ADDR SIZES
         DEFAULTMAP BEHAVIOR_ALLOC BEHAVIOR_TO BEHAVIOR_FROM BEHAVIOR_TOFROM BEHAVIOR_FIRSTPRIVATE BEHAVIOR_NONE BEHAVIOR_DEFAULT BEHAVIOR_PRESENT CATEGORY_SCALAR CATEGORY_AGGREGATE CATEGORY_POINTER CATEGORY_ALLOCATABLE UPDATE TO FROM TO_MAPPER FROM_MAPPER USES_ALLOCATORS
- LINK DEVICE_TYPE MAP MAP_MODIFIER_ALWAYS MAP_MODIFIER_CLOSE MAP_MODIFIER_PRESENT MAP_MODIFIER_SELF MAP_MODIFIER_MAPPER MAP_TYPE_TO MAP_TYPE_FROM MAP_TYPE_TOFROM MAP_TYPE_ALLOC MAP_TYPE_RELEASE MAP_TYPE_DELETE MAP_TYPE_PRESENT MAP_TYPE_SELF EXT_ BARRIER TASKWAIT FLUSH RELEASE ACQUIRE ATOMIC READ WRITE CAPTURE HINT CRITICAL SOURCE SINK DESTROY THREADS
+ LINK DEVICE_TYPE TARGET_DEVICE MAP MAP_MODIFIER_ALWAYS MAP_MODIFIER_CLOSE MAP_MODIFIER_PRESENT MAP_MODIFIER_SELF MAP_MODIFIER_MAPPER MAP_TYPE_TO MAP_TYPE_FROM MAP_TYPE_TOFROM MAP_TYPE_ALLOC MAP_TYPE_RELEASE MAP_TYPE_DELETE MAP_TYPE_PRESENT MAP_TYPE_SELF EXT_ BARRIER TASKWAIT FLUSH RELEASE ACQUIRE ATOMIC READ WRITE CAPTURE HINT CRITICAL SOURCE SINK DESTROY THREADS
         CONCURRENT REPRODUCIBLE UNCONSTRAINED
         LESSOREQUAL MOREOREQUAL NOTEQUAL
         ERROR_DIR NOTHING MASKED SCOPE INTEROP ASSUME ASSUMES BEGIN_DIR
@@ -150,6 +150,7 @@ variable :   EXPR_STRING { current_clause->addLangExpr($1); } /* we use expressi
            | CONDITION { current_clause->addLangExpr("condition"); }
            | DYNAMIC_ALLOCATORS { current_clause->addLangExpr("dynamic_allocators"); }
            | REVERSE_OFFLOAD { current_clause->addLangExpr("reverse_offload"); }
+           | SELF_MAPS { current_clause->addLangExpr("self_maps"); }
            | ATOMIC_DEFAULT_MEM_ORDER { current_clause->addLangExpr("atomic_default_mem_order"); }
            | ALLOCATOR { current_clause->addLangExpr("allocator"); }
            | USES_ALLOCATORS { current_clause->addLangExpr("uses_allocators"); }
@@ -328,6 +329,7 @@ openmp_directive : parallel_directive
                  ;
 
 variant_directive : parallel_directive
+                  | parallel_for_directive
                   | metadirective_directive
                   | declare_variant_directive
                   | for_directive
@@ -339,6 +341,8 @@ variant_directive : parallel_directive
                   | distribute_simd_directive
                   | distribute_parallel_for_directive
                   | distribute_parallel_for_simd_directive
+                  | teams_distribute_parallel_for_directive
+                  | teams_distribute_parallel_for_simd_directive
                   | loop_directive
                   | scan_directive
                   | sections_directive
@@ -347,6 +351,12 @@ variant_directive : parallel_directive
                   | cancel_directive
                   | cancellation_point_directive
                   | allocate_directive
+                  | master_directive
+                  | masked_directive
+                  | nothing_directive
+                  | target_directive
+                  | target_teams_directive
+                  | target_teams_distribute_parallel_for_directive
                   ;
 
 fortran_paired_directive : parallel_directive
@@ -433,6 +443,7 @@ metadirective_clause_seq : metadirective_clause
 
 metadirective_clause : when_clause
                      | default_variant_clause
+                     | otherwise_clause
                      ;
 
 when_clause : WHEN { current_clause = current_directive->addOpenMPClause(OMPC_when); }
@@ -469,7 +480,8 @@ trait_set_selector : trait_set_selector_name { } '=' '{' trait_selector_list {
 trait_set_selector_name : USER { }
                 | CONSTRUCT { current_parent_directive = current_directive;
                     current_parent_clause = current_clause; }
-                | DEVICE { }
+                | DEVICE { ((OpenMPVariantClause*)current_clause)->setIsTargetDeviceSelector(false); }
+                | TARGET_DEVICE { ((OpenMPVariantClause*)current_clause)->setIsTargetDeviceSelector(true); }
                 | IMPLEMENTATION { }
                 ;
 
@@ -483,6 +495,7 @@ trait_selector : condition_selector
                     ((OpenMPVariantClause*)current_parent_clause)->addConstructDirective(trait_score, current_directive);
                 }
                 | device_selector
+                | target_device_selector
                 | implementation_selector
                 ;
 
@@ -493,6 +506,9 @@ device_selector : context_kind
                 | context_isa
                 | context_arch
                 ;
+
+target_device_selector : context_kind
+                       ;
 
 context_kind : KIND '(' trait_score context_kind_name ')'
              ;
@@ -526,6 +542,7 @@ context_vendor_name : AMD { ((OpenMPVariantClause*)current_clause)->setImplement
                     | IBM { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_ibm); }
                     | INTEL { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_intel); }
                     | LLVM { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_llvm); }
+                    | NVIDIA { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_nvidia); }
                     | PGI { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_pgi); }
                     | TI { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_ti); }
                     | UNKNOWN { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_unknown); }
@@ -533,6 +550,10 @@ context_vendor_name : AMD { ((OpenMPVariantClause*)current_clause)->setImplement
 
 construct_selector : parallel_selector
                    | dispatch_selector
+                   | target_construct_selector
+                   | teams_construct_selector
+                   | for_construct_selector
+                   | simd_construct_selector
                    ;
 
 parallel_selector : PARALLEL { current_directive = new OpenMPDirective(OMPD_parallel); }
@@ -544,6 +565,34 @@ parallel_selector_parameter : trait_score parallel_clause_optseq
 
 dispatch_selector : DISPATCH { current_directive = new OpenMPDirective(OMPD_dispatch); }
                   ;
+
+target_construct_selector : TARGET { current_directive = new OpenMPDirective(OMPD_target); }
+                          | TARGET '(' { current_directive = new OpenMPDirective(OMPD_target); } target_construct_selector_parameter ')'
+                          ;
+
+target_construct_selector_parameter : trait_score target_clause_optseq
+                                    ;
+
+teams_construct_selector : TEAMS { current_directive = new OpenMPDirective(OMPD_teams); }
+                         | TEAMS '(' { current_directive = new OpenMPDirective(OMPD_teams); } teams_construct_selector_parameter ')'
+                         ;
+
+teams_construct_selector_parameter : trait_score teams_clause_optseq
+                                   ;
+
+for_construct_selector : FOR { current_directive = new OpenMPDirective(OMPD_for); }
+                       | FOR '(' { current_directive = new OpenMPDirective(OMPD_for); } for_construct_selector_parameter ')'
+                       ;
+
+for_construct_selector_parameter : trait_score for_clause_optseq
+                                 ;
+
+simd_construct_selector : SIMD { current_directive = new OpenMPDirective(OMPD_simd); }
+                        | SIMD '(' { current_directive = new OpenMPDirective(OMPD_simd); } simd_construct_selector_parameter ')'
+                        ;
+
+simd_construct_selector_parameter : trait_score simd_clause_optseq
+                                  ;
 
 trait_score : /* empty */
             | SCORE '(' EXPR_STRING { trait_score = $3; } ')' ':'
@@ -659,6 +708,7 @@ master_directive : MASTER {
                         current_directive = new OpenMPDirective(OMPD_master);
                      }
                    ;
+
 barrier_directive : BARRIER {
                         current_directive = new OpenMPDirective(OMPD_barrier);
                              }
@@ -861,6 +911,7 @@ update_dependence_type : SOURCE { current_clause = current_directive->addOpenMPC
                        | IN { current_clause = current_directive->addOpenMPClause(OMPC_depobj_update, OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_in); }
                        | OUT { current_clause = current_directive->addOpenMPClause(OMPC_depobj_update, OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_out); }
                        | INOUT { current_clause = current_directive->addOpenMPClause(OMPC_depobj_update, OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_inout); }
+                       | INOUTSET { current_clause = current_directive->addOpenMPClause(OMPC_depobj_update, OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_inoutset); }
                        | MUTEXINOUTSET { current_clause = current_directive->addOpenMPClause(OMPC_depobj_update,OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_mutexinoutset); }
                        | DEPOBJ { current_clause = current_directive->addOpenMPClause(OMPC_depobj_update, OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_depobj); }
                        | SINK { current_clause = current_directive->addOpenMPClause(OMPC_depobj_update, OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_sink); }
@@ -894,6 +945,7 @@ target_update_clause_optseq :target_update_clause_seq
                             ;
 declare_target_clause_optseq : /* empty */
                              | '(' declare_target_extended_list ')'
+                             | '(' declare_target_extended_list ')' declare_target_seq
                              | declare_target_seq
                              ;
 
@@ -914,7 +966,8 @@ flush_variable : EXPR_STRING { ((OpenMPFlushDirective*)current_directive)->addFl
 flush_clause_seq : flush_memory_order_clause
                  | flush_memory_order_clause '(' flush_list ')'
                  ;
-flush_memory_order_clause : acq_rel_clause
+flush_memory_order_clause : seq_cst_clause
+                          | acq_rel_clause
                           | release_clause
                           | acquire_clause
                           ;
@@ -1008,8 +1061,7 @@ severity_clause : SEVERITY '(' severity_kind ')'
 severity_kind : FATAL { current_clause = current_directive->addOpenMPClause(OMPC_severity, OMPC_SEVERITY_fatal); }
               | WARNING { current_clause = current_directive->addOpenMPClause(OMPC_severity, OMPC_SEVERITY_warning); }
               ;
-message_clause : MESSAGE '(' expression ')'
-               { current_clause = current_directive->addOpenMPClause(OMPC_message); }
+message_clause : MESSAGE { current_clause = current_directive->addOpenMPClause(OMPC_message); } '(' expression ')'
                ;
 compare_clause : COMPARE { current_clause = current_directive->addOpenMPClause(OMPC_compare); }
                ;
@@ -1047,8 +1099,17 @@ holds_clause : HOLDS {
                     current_clause = current_directive->addOpenMPClause(OMPC_holds);
              } '(' expression ')'
              ;
-otherwise_clause : OTHERWISE '(' variant_directive ')'
-                 { current_clause = current_directive->addOpenMPClause(OMPC_otherwise); }
+otherwise_clause : OTHERWISE {
+                    current_clause = current_directive->addOpenMPClause(OMPC_otherwise);
+                    current_parent_directive = current_directive;
+                    current_parent_clause = current_clause;
+                 } '(' variant_directive {
+                    ((OpenMPOtherwiseClause*)current_parent_clause)->setVariantDirective(current_directive);
+                    current_directive = current_parent_directive;
+                    current_clause = current_parent_clause;
+                    current_parent_directive = nullptr;
+                    current_parent_clause = nullptr;
+                 } ')'
                  ;
 
 // OpenMP 6.0 clause implementations
@@ -1058,24 +1119,19 @@ graph_id_clause : GRAPH_ID '(' expression ')'
 graph_reset_clause : GRAPH_RESET { current_clause = current_directive->addOpenMPClause(OMPC_graph_reset); }
                    ;
 transparent_clause : TRANSPARENT { current_clause = current_directive->addOpenMPClause(OMPC_transparent); }
-                   | TRANSPARENT '(' expression ')' { current_clause = current_directive->addOpenMPClause(OMPC_transparent); }
+                   | TRANSPARENT { current_clause = current_directive->addOpenMPClause(OMPC_transparent); } '(' expression ')'
                    ;
 replayable_clause : REPLAYABLE { current_clause = current_directive->addOpenMPClause(OMPC_replayable); }
                   ;
-threadset_clause : THREADSET '(' expression ')'
-                 { current_clause = current_directive->addOpenMPClause(OMPC_threadset); }
+threadset_clause : THREADSET { current_clause = current_directive->addOpenMPClause(OMPC_threadset); } '(' expression ')'
                  ;
-init_clause : INIT '(' expression ')'
-            { current_clause = current_directive->addOpenMPClause(OMPC_init); }
+init_clause : INIT { current_clause = current_directive->addOpenMPClause(OMPC_init); } '(' expression ')'
             ;
-use_clause : USE '(' expression ')'
-           { current_clause = current_directive->addOpenMPClause(OMPC_use); }
+use_clause : USE { current_clause = current_directive->addOpenMPClause(OMPC_use); } '(' expression ')'
            ;
-novariants_clause : NOVARIANTS '(' expression ')'
-                  { current_clause = current_directive->addOpenMPClause(OMPC_novariants); }
+novariants_clause : NOVARIANTS { current_clause = current_directive->addOpenMPClause(OMPC_novariants); } '(' expression ')'
                   ;
-nocontext_clause : NOCONTEXT '(' expression ')'
-                 { current_clause = current_directive->addOpenMPClause(OMPC_nocontext); }
+nocontext_clause : NOCONTEXT { current_clause = current_directive->addOpenMPClause(OMPC_nocontext); } '(' expression ')'
                  ;
 looprange_clause : LOOPRANGE {
                      current_clause = current_directive->addOpenMPClause(OMPC_looprange);
@@ -1431,6 +1487,7 @@ interop_clause : init_clause
                | destroy_clause
                | depend_with_modifier_clause
                | nowait_clause
+               | device_clause
                ;
 // OpenMP 5.2 clause sequences and clauses
 assume_clause_seq : assume_clause
@@ -1600,6 +1657,7 @@ task_clause : if_task_clause
             | affinity_clause
             | detach_clause
             | transparent_clause
+            | threadset_clause
             ;
 taskloop_clause : if_taskloop_clause
                 | shared_clause
@@ -1645,16 +1703,19 @@ taskloop_simd_clause : if_taskloop_simd_clause
                      ;
 requires_clause : reverse_offload_clause
                 | unified_address_clause
-                | unified_shared_memory_clause   
-                | atomic_default_mem_order_clause 
+                | unified_shared_memory_clause
+                | atomic_default_mem_order_clause
                 | dynamic_allocators_clause
-                | ext_implementation_defined_requirement_clause       
+                | self_maps_clause
+                | ext_implementation_defined_requirement_clause
                 ;
 target_data_clause : if_target_data_clause
                    | device_clause
                    | map_clause
                    | use_device_ptr_clause
                    | use_device_addr_clause
+                   | nogroup_clause
+                   | depend_with_modifier_clause
                    ;
 target_enter_data_clause: if_target_enter_data_clause
                         | device_clause
@@ -1697,6 +1758,7 @@ target_update_other_clause: if_target_update_clause
 declare_target_clause : to_clause
                       | link_clause
                       | enter_clause
+                      | local_clause
                       | device_type_clause
                       | indirect_clause
                       ;
@@ -1765,6 +1827,7 @@ depend_range_step : /*empty*/ { depend_iterator_definition->push_back(""); depen
 depend_enum_type : IN { current_clause = current_directive->addOpenMPClause(OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_in); }
                  | OUT { current_clause = current_directive->addOpenMPClause(OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_out); }
                  | INOUT { current_clause = current_directive->addOpenMPClause(OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_inout); }
+                 | INOUTSET { current_clause = current_directive->addOpenMPClause(OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_inoutset); }
                  | MUTEXINOUTSET { current_clause = current_directive->addOpenMPClause(OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_mutexinoutset); }
                  | DEPOBJ { current_clause = current_directive->addOpenMPClause(OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_depobj); }
                  ;
@@ -1777,6 +1840,7 @@ dependence_depobj_parameter : dependence_depobj_type ':' expression
 dependence_depobj_type : IN             { current_clause = current_directive->addOpenMPClause(OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_in, depend_iterators_definition_class); }
                        | OUT            { current_clause = current_directive->addOpenMPClause(OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_out, depend_iterators_definition_class); }
                        | INOUT          { current_clause = current_directive->addOpenMPClause(OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_inout, depend_iterators_definition_class); }
+                       | INOUTSET       { current_clause = current_directive->addOpenMPClause(OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_inoutset, depend_iterators_definition_class); }
                        | MUTEXINOUTSET  { current_clause = current_directive->addOpenMPClause(OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_mutexinoutset); }
                        ;
 depend_ordered_clause : DEPEND { firstParameter = OMPC_DEPEND_MODIFIER_unspecified; }'(' dependence_ordered_parameter ')' {
@@ -1870,7 +1934,11 @@ atomic_default_mem_order_parameter : SEQ_CST { current_clause = current_directiv
                                    ;
 dynamic_allocators_clause: DYNAMIC_ALLOCATORS {
                             current_clause = current_directive->addOpenMPClause(OMPC_dynamic_allocators);
-                         } 
+                         }
+                         ;
+self_maps_clause: SELF_MAPS {
+                            current_clause = current_directive->addOpenMPClause(OMPC_self_maps);
+                         }
                          ;
 ext_implementation_defined_requirement_clause: EXT_ EXPR_STRING {
                                                current_clause = current_directive->addOpenMPClause(OMPC_ext_implementation_defined_requirement);
@@ -1988,6 +2056,11 @@ link_clause : LINK {
   ;
 enter_clause : ENTER {
                 current_clause = current_directive->addOpenMPClause(OMPC_enter);
+} '(' var_list ')' {
+}
+  ;
+local_clause : LOCAL {
+                current_clause = current_directive->addOpenMPClause(OMPC_local);
 } '(' var_list ')' {
 }
   ;
@@ -3471,6 +3544,9 @@ parallel_clause : if_parallel_clause
                 | reduction_clause
                 | proc_bind_clause
                 | allocate_clause
+                | message_clause
+                | severity_clause
+                | safesync_clause
                 ;
 teams_clause : num_teams_clause
              | thread_limit_clause
@@ -4079,6 +4155,8 @@ align_clause: ALIGN {
                 
 thread_limit_clause: THREAD_LIMIT { current_clause = current_directive->addOpenMPClause(OMPC_thread_limit); } '(' expression ')'
                    ;
+safesync_clause: SAFESYNC { current_clause = current_directive->addOpenMPClause(OMPC_safesync); } '(' expression ')'
+               ;
 copyin_clause: COPYIN {
                 current_clause = current_directive->addOpenMPClause(OMPC_copyin);
                 } '(' var_list ')'

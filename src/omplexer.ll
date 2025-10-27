@@ -112,6 +112,7 @@ static int parenthesis_local_count = 0;
 static int parenthesis_global_count = 1;
 static int bracket_count;
 static int brace_count = 0;
+static bool inside_quotes = false;
 static char current_char;
 
 /* Helper functions for expression state management */
@@ -120,6 +121,7 @@ static inline void reset_expression_counters() {
   parenthesis_global_count = 1;
   bracket_count = 0;
   brace_count = 0;
+  inside_quotes = false;
 }
 
 static inline void clear_expression_buffer() {
@@ -134,6 +136,9 @@ static inline void prepare_expression_capture() {
 static inline void prepare_expression_capture(char initial_char) {
   clear_expression_buffer();
   current_string.push_back(initial_char);
+  if (initial_char == '"') {
+    inside_quotes = true;
+  }
 }
 
 static inline void prepare_expression_capture_str(const char* initial_str) {
@@ -317,8 +322,9 @@ requires                  { return REQUIRES; }
 reverse_offload           { return REVERSE_OFFLOAD; }
 unified_address           { return UNIFIED_ADDRESS; }
 unified_shared_memory     { return UNIFIED_SHARED_MEMORY; }
-atomic_default_mem_order  { yy_push_state(ATOMIC_DEFAULT_MEM_ORDER_STATE); return ATOMIC_DEFAULT_MEM_ORDER; } 
+atomic_default_mem_order  { yy_push_state(ATOMIC_DEFAULT_MEM_ORDER_STATE); return ATOMIC_DEFAULT_MEM_ORDER; }
 dynamic_allocators        { return DYNAMIC_ALLOCATORS; }
+self_maps                 { return SELF_MAPS; }
 seq_cst                   { return SEQ_CST; }
 acq_rel                   { return ACQ_REL; }
 relaxed                   { return RELAXED; }
@@ -405,6 +411,9 @@ init                      { return INIT; }
 init_complete             { return INIT_COMPLETE; }
 safesync                  { return SAFESYNC; }
 device_safesync           { return DEVICE_SAFESYNC; }
+target_data/{blank}       { yyless(7); return TARGET; }
+target_enter_data/{blank} { yyless(7); return TARGET; }
+target_exit_data/{blank}  { yyless(7); return TARGET; }
 target{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
 data{id_char}+            { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
 device{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
@@ -715,6 +724,7 @@ block                     { return BLOCK; }
 <WHEN_STATE>user                            { return USER; }
 <WHEN_STATE>construct                       { return CONSTRUCT; }
 <WHEN_STATE>device                          { return DEVICE; }
+<WHEN_STATE>target_device                   { return TARGET_DEVICE; }
 <WHEN_STATE>implementation                  { yy_push_state(IMPLEMENTATION_STATE); return IMPLEMENTATION; }
 <WHEN_STATE>{blank}*                        { ; }
 <WHEN_STATE>.                               { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
@@ -739,6 +749,7 @@ block                     { return BLOCK; }
 <MATCH_STATE>user                           { return USER; }
 <MATCH_STATE>construct                      { return CONSTRUCT; }
 <MATCH_STATE>device                         { return DEVICE; }
+<MATCH_STATE>target_device                  { return TARGET_DEVICE; }
 <MATCH_STATE>implementation                 { yy_push_state(IMPLEMENTATION_STATE); return IMPLEMENTATION; }
 <MATCH_STATE>{blank}*                       { ; }
 <MATCH_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
@@ -781,6 +792,7 @@ block                     { return BLOCK; }
 <VENDOR_STATE>ibm/{blank}*\)                { return IBM; }
 <VENDOR_STATE>intel/{blank}*\)              { return INTEL; }
 <VENDOR_STATE>llvm/{blank}*\)               { return LLVM; }
+<VENDOR_STATE>nvidia/{blank}*\)             { return NVIDIA; }
 <VENDOR_STATE>pgi/{blank}*\)                { return PGI; }
 <VENDOR_STATE>ti/{blank}*\)                 { return TI; }
 <VENDOR_STATE>unknown/{blank}*\)            { return UNKNOWN; }
@@ -818,6 +830,7 @@ block                     { return BLOCK; }
 <DEPEND_STATE>in                            { return IN; }
 <DEPEND_STATE>out                           { return OUT; }
 <DEPEND_STATE>inout                         { return INOUT; }
+<DEPEND_STATE>inoutset                      { return INOUTSET; }
 <DEPEND_STATE>mutexinoutset                 { return MUTEXINOUTSET; }
 <DEPEND_STATE>depobj                        { return DEPOBJ; }
 <DEPEND_STATE>source                        { return SOURCE; }
@@ -1102,14 +1115,21 @@ block                     { return BLOCK; }
                                                     break;
                                                 }
                                                 case ' ': {
-                                                    if (parenthesis_global_count == 0) {
+                                                    if (parenthesis_global_count == 0 && !inside_quotes) {
                                                         yy_pop_state();
                                                         return emit_expr_string_no_unput();
+                                                    } else if (inside_quotes) {
+                                                        current_string.push_back(current_char);
                                                     }
                                                     break;
                                                 }
+                                                case '"': {
+                                                    inside_quotes = !inside_quotes;
+                                                    current_string.push_back(current_char);
+                                                    break;
+                                                }
                                                 default: {
-                                                    if (current_char != ' ' || parenthesis_local_count != 0) {
+                                                    if (current_char != ' ' || parenthesis_local_count != 0 || inside_quotes) {
                                                         current_string.push_back(current_char);
                                                     }
                                                     break;
@@ -1150,13 +1170,14 @@ block                     { return BLOCK; }
                                                     break;
                                                 }
                                                 case ' ': {
-                                                    if (parenthesis_global_count == 0) {
+                                                    if (parenthesis_global_count == 0 && !inside_quotes) {
                                                         yy_pop_state();
                                                         openmp_lval.stype = strdup(current_string.c_str());
                                                         current_string.clear();
                                                         parenthesis_local_count = 0;
                                                         parenthesis_global_count = 1;
                                                         bracket_count = 0;
+                                                        inside_quotes = false;
                                                         return EXPR_STRING;
                                                     }
                                                     else {
@@ -1164,8 +1185,13 @@ block                     { return BLOCK; }
                                                     }
                                                     break;
                                                 }
+                                                case '"': {
+                                                    inside_quotes = !inside_quotes;
+                                                    current_string.push_back(current_char);
+                                                    break;
+                                                }
                                                 default: {
-                                                    if (current_char != ' ' || parenthesis_local_count != 0) {
+                                                    if (current_char != ' ' || parenthesis_local_count != 0 || inside_quotes) {
                                                         current_string.push_back(current_char);
                                                     }
                                                     break;

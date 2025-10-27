@@ -237,6 +237,7 @@ enum OpenMPClauseKind {
     OPENMP_CLAUSE(unified_shared_memory, OMPUnifiedShared_memoryClause)
     OPENMP_CLAUSE(atomic_default_mem_order, OMPAtomicDefaultMemOrderClause)
     OPENMP_CLAUSE(dynamic_allocators, OMPDynamicAllocatorsClause)
+    OPENMP_CLAUSE(self_maps, OMPSelfMapsClause)
     OPENMP_CLAUSE(ext_implementation_defined_requirement, OMPExtImplementationDefinedRequirementClause)
 
     OPENMP_CLAUSE(device, OMPDeviceClause)
@@ -362,8 +363,9 @@ enum OpenMPClauseContextVendor {
       OPENMP_CONTEXT_VENDOR(bsc) OPENMP_CONTEXT_VENDOR(cray)
           OPENMP_CONTEXT_VENDOR(fujitsu) OPENMP_CONTEXT_VENDOR(gnu)
               OPENMP_CONTEXT_VENDOR(ibm) OPENMP_CONTEXT_VENDOR(intel)
-                  OPENMP_CONTEXT_VENDOR(llvm) OPENMP_CONTEXT_VENDOR(pgi)
-                      OPENMP_CONTEXT_VENDOR(ti) OPENMP_CONTEXT_VENDOR(user)
+                  OPENMP_CONTEXT_VENDOR(llvm) OPENMP_CONTEXT_VENDOR(nvidia)
+                      OPENMP_CONTEXT_VENDOR(pgi) OPENMP_CONTEXT_VENDOR(ti)
+                          OPENMP_CONTEXT_VENDOR(user)
                           OPENMP_CONTEXT_VENDOR(unknown) OPENMP_CONTEXT_VENDOR(
                               unspecified) // default enum for vendor list
 #undef OPENMP_CONTEXT_VENDOR
@@ -658,9 +660,10 @@ enum OpenMPDeclareMapperDirectiveIdentifier {
 enum OpenMPDependClauseType {
 #define OPENMP_DEPENDENCE_TYPE(Name) OMPC_DEPENDENCE_TYPE_##Name,
   OPENMP_DEPENDENCE_TYPE(in) OPENMP_DEPENDENCE_TYPE(out)
-      OPENMP_DEPENDENCE_TYPE(inout) OPENMP_DEPENDENCE_TYPE(mutexinoutset)
-          OPENMP_DEPENDENCE_TYPE(depobj) OPENMP_DEPENDENCE_TYPE(source)
-              OPENMP_DEPENDENCE_TYPE(sink) OPENMP_DEPENDENCE_TYPE(unknown)
+      OPENMP_DEPENDENCE_TYPE(inout) OPENMP_DEPENDENCE_TYPE(inoutset)
+          OPENMP_DEPENDENCE_TYPE(mutexinoutset)
+              OPENMP_DEPENDENCE_TYPE(depobj) OPENMP_DEPENDENCE_TYPE(source)
+                  OPENMP_DEPENDENCE_TYPE(sink) OPENMP_DEPENDENCE_TYPE(unknown)
 #undef OPENMP_DEPENDENCE_TYPE
 };
 
@@ -751,11 +754,12 @@ enum OpenMPDepobjUpdateClauseDependeceType {
   OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(in)
       OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(out)
           OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(inout)
-              OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(mutexinoutset)
-                  OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(depobj)
-                      OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(sink)
-                          OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(source)
-                              OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(unknown)
+              OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(inoutset)
+                  OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(mutexinoutset)
+                      OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(depobj)
+                          OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(sink)
+                              OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(source)
+                                  OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(unknown)
 #undef OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE
 };
 

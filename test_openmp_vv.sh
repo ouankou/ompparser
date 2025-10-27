@@ -27,7 +27,7 @@ TESTS_DIR="tests"
 CLANG="${CLANG:-clang}"
 CLANG_FORMAT="${CLANG_FORMAT:-clang-format}"
 FC="${FC:-}"  # Auto-detect if not specified
-MAX_DISPLAY_FAILURES=10
+MAX_DISPLAY_FAILURES=100
 # Fallback for systems without nproc (e.g., macOS)
 if command -v nproc >/dev/null 2>&1; then
     DEFAULT_JOBS=$(nproc)
