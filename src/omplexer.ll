@@ -22,6 +22,8 @@
 %x ATOMIC_DEFAULT_MEM_ORDER_STATE
 %x BIND_STATE
 %x COLLAPSE_STATE
+%x SIZES_STATE
+%x LOOPRANGE_STATE
 %x CONDITION_STATE
 %x COPYIN_STATE
 %x COPYPRIVATE_STATE
@@ -380,7 +382,7 @@ critical                  { return CRITICAL; }
 depobj                    { return DEPOBJ; }
 destroy                   { return DESTROY; }
 threads                   { return THREADS; }
-sizes                     { return SIZES; }
+sizes                     { yy_push_state(SIZES_STATE); return SIZES; }
 
 filter                    { return FILTER; }
 compare                   { return COMPARE; }
@@ -418,7 +420,7 @@ target{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_captur
 data{id_char}+            { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
 device{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
 memscope                  { return MEMSCOPE; }
-looprange                 { return LOOPRANGE; }
+looprange                 { yy_push_state(LOOPRANGE_STATE); return LOOPRANGE; }
 permutation               { return PERMUTATION; }
 counts                    { return COUNTS; }
 inductor                  { return INDUCTOR; }
@@ -601,6 +603,18 @@ block                     { return BLOCK; }
 <COLLAPSE_STATE>")"                         { yy_pop_state(); return ')'; }
 <COLLAPSE_STATE>{blank}*                    { ; }
 <COLLAPSE_STATE>.                           { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<SIZES_STATE>"("                            { return '('; }
+<SIZES_STATE>")"                            { yy_pop_state(); return ')'; }
+<SIZES_STATE>","                            { return ','; }
+<SIZES_STATE>{blank}*                       { ; }
+<SIZES_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<LOOPRANGE_STATE>"("                        { return '('; }
+<LOOPRANGE_STATE>")"                        { yy_pop_state(); return ')'; }
+<LOOPRANGE_STATE>","                        { return ','; }
+<LOOPRANGE_STATE>{blank}*                   { ; }
+<LOOPRANGE_STATE>.                          { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ORDERED_STATE>"("                          { yy_push_state(EXPR_STATE); return '('; }
 <ORDERED_STATE>")"                          { yy_pop_state(); return ')'; }

@@ -60,6 +60,8 @@ protected:
   OpenMPClauseKind kind;
   // the clause position in the vector of clauses in original order
   int clause_position = -1;
+  // flag to allow duplicate expressions (e.g., sizes(4, 4))
+  bool allow_duplicates = false;
 
   /* consider this is a struct of array, i.e.
    * the expression/localtionLine/locationColumn are the same index are one
@@ -75,7 +77,12 @@ protected:
 
 public:
   OpenMPClause(OpenMPClauseKind k, int _line = 0, int _col = 0)
-      : SourceLocation(_line, _col), kind(k) {};
+      : SourceLocation(_line, _col), kind(k) {
+    // Allow duplicates for clauses where order matters
+    if (k == OMPC_sizes || k == OMPC_looprange) {
+      allow_duplicates = true;
+    }
+  };
 
   virtual ~OpenMPClause() = default;
 

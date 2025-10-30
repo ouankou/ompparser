@@ -4244,7 +4244,7 @@ lastprivate_parameter : EXPR_STRING { current_clause = current_directive->addOpe
                       ;
 
 lastprivate_distribute_clause : LASTPRIVATE {
-                         current_clause = current_directive->addOpenMPClause(OMPC_lastprivate);
+                         current_clause = current_directive->addOpenMPClause(OMPC_lastprivate, OMPC_LASTPRIVATE_MODIFIER_unspecified);
                         } '(' var_list ')' {
                     }
 
@@ -4304,6 +4304,7 @@ partial_clause: PARTIAL { current_clause = current_directive->addOpenMPClause(OM
 fortran_nowait_clause: NOWAIT { if (user_set_lang == Lang_C || auto_lang == Lang_C) {current_clause = current_directive->addOpenMPClause(OMPC_nowait);} else {yyerror("Sections does not support nowait clause in Fortran."); YYABORT;} }
                      ;
 nowait_clause: NOWAIT { current_clause = current_directive->addOpenMPClause(OMPC_nowait); }
+             | NOWAIT { current_clause = current_directive->addOpenMPClause(OMPC_nowait); } '(' expression ')'
              ;
 indirect_clause: INDIRECT { current_clause = current_directive->addOpenMPClause(OMPC_indirect); }
                ;

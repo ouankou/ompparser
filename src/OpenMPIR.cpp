@@ -22,11 +22,14 @@ OpenMPClause *OpenMPDirective::registerClause(
 void OpenMPClause::addLangExpr(const char *expression, int line, int col) {
   // Since the size of expression vector is supposed to be small, brute force is
   // used here.
-  for (unsigned int i = 0; i < this->expressions.size(); i++) {
-    if (!strcmp(expressions.at(i), expression)) {
-      return;
+  // Skip deduplication if duplicates are allowed (e.g., for sizes(4, 4))
+  if (!allow_duplicates) {
+    for (unsigned int i = 0; i < this->expressions.size(); i++) {
+      if (!strcmp(expressions.at(i), expression)) {
+        return;
+      };
     };
-  };
+  }
   if (expression == nullptr) {
     return;
   }
@@ -139,6 +142,13 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   case OMPC_no_parallelism:
   case OMPC_indirect:
   case OMPC_transparent:
+  case OMPC_threadset:
+  case OMPC_safesync:
+  case OMPC_device_safesync:
+  case OMPC_local:
+  case OMPC_init:
+  case OMPC_init_complete:
+  case OMPC_use:
 
   {
     if (current_clauses->size() == 0) {
