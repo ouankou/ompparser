@@ -24,6 +24,7 @@
 %x COLLAPSE_STATE
 %x SIZES_STATE
 %x LOOPRANGE_STATE
+%x INIT_STATE
 %x CONDITION_STATE
 %x COPYIN_STATE
 %x COPYPRIVATE_STATE
@@ -412,7 +413,8 @@ threadset                 { return THREADSET; }
 indirect                  { return INDIRECT; }
 local/{blank}             { return LOCAL; }
 local/"("                 { return LOCAL; }
-init                      { return INIT; }
+init/{blank}              { yy_push_state(INIT_STATE); return INIT; }
+init/"("                  { yy_push_state(INIT_STATE); return INIT; }
 init_complete             { return INIT_COMPLETE; }
 safesync                  { return SAFESYNC; }
 device_safesync           { return DEVICE_SAFESYNC; }
@@ -620,6 +622,12 @@ block                     { return BLOCK; }
 <LOOPRANGE_STATE>","                        { return ','; }
 <LOOPRANGE_STATE>{blank}*                   { ; }
 <LOOPRANGE_STATE>.                          { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<INIT_STATE>"("                             { return '('; }
+<INIT_STATE>")"                             { yy_pop_state(); return ')'; }
+<INIT_STATE>":"                             { return ':'; }
+<INIT_STATE>{blank}*                        { ; }
+<INIT_STATE>.                               { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ORDERED_STATE>"("                          { yy_push_state(EXPR_STATE); return '('; }
 <ORDERED_STATE>")"                          { yy_pop_state(); return ')'; }

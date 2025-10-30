@@ -903,6 +903,7 @@ depobj_clause : depend_depobj_clause
               | depobj_update_clause
               ;
 destroy_clause : DESTROY{current_clause = current_directive->addOpenMPClause(OMPC_destroy); }
+               | DESTROY{current_clause = current_directive->addOpenMPClause(OMPC_destroy); } '(' expression ')'
                ;
 
 depobj_update_clause : UPDATE '(' update_dependence_type ')'
@@ -1126,6 +1127,7 @@ replayable_clause : REPLAYABLE { current_clause = current_directive->addOpenMPCl
 threadset_clause : THREADSET { current_clause = current_directive->addOpenMPClause(OMPC_threadset); } '(' expression ')'
                  ;
 init_clause : INIT { current_clause = current_directive->addOpenMPClause(OMPC_init); } '(' expression ')'
+            | INIT { current_clause = current_directive->addOpenMPClause(OMPC_init); } '(' expression ':' expression ')'
             ;
 use_clause : USE { current_clause = current_directive->addOpenMPClause(OMPC_use); } '(' expression ')'
            ;
