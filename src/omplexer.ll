@@ -410,7 +410,8 @@ transparent               { return TRANSPARENT; }
 replayable                { return REPLAYABLE; }
 threadset                 { return THREADSET; }
 indirect                  { return INDIRECT; }
-local                     { return LOCAL; }
+local/{blank}             { return LOCAL; }
+local/"("                 { return LOCAL; }
 init                      { return INIT; }
 init_complete             { return INIT_COMPLETE; }
 safesync                  { return SAFESYNC; }
