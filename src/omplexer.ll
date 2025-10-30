@@ -114,6 +114,7 @@ static int parenthesis_local_count = 0;
 static int parenthesis_global_count = 1;
 static int bracket_count;
 static int brace_count = 0;
+static int ternary_count = 0;
 static bool inside_quotes = false;
 static char current_char;
 
@@ -123,6 +124,7 @@ static inline void reset_expression_counters() {
   parenthesis_global_count = 1;
   bracket_count = 0;
   brace_count = 0;
+  ternary_count = 0;
   inside_quotes = false;
 }
 
@@ -433,8 +435,10 @@ no_openmp                 { return NO_OPENMP; }
 no_openmp_constructs      { return NO_OPENMP_CONSTRUCTS; }
 no_openmp_routines        { return NO_OPENMP_ROUTINES; }
 no_parallelism            { return NO_PARALLELISM; }
-nocontext                 { return NOCONTEXT; }
-novariants                { return NOVARIANTS; }
+nocontext/{blank}         { return NOCONTEXT; }
+nocontext/"("             { return NOCONTEXT; }
+novariants/{blank}        { return NOVARIANTS; }
+novariants/"("            { return NOVARIANTS; }
 use                       { return USE; }
 system                    { return SYSTEM; }
 warp                      { return WARP; }
@@ -1116,10 +1120,18 @@ block                     { return BLOCK; }
                                                     }
                                                     break;
                                                 }
+                                                case '?': {
+                                                    ternary_count++;
+                                                    current_string.push_back(current_char);
+                                                    break;
+                                                }
                                                 case ':': {
                                                     if (current_string.empty()) {
                                                         clear_expression_buffer();
                                                         return ':';
+                                                    } else if (ternary_count > 0) {
+                                                        ternary_count--;
+                                                        current_string.push_back(current_char);
                                                     } else if (bracket_count == 0) {
                                                         yy_pop_state();
                                                         return emit_expr_string_and_unput(':');
@@ -1171,10 +1183,18 @@ block                     { return BLOCK; }
                                                     }
                                                     break;
                                                 }
+                                                case '?': {
+                                                    ternary_count++;
+                                                    current_string.push_back(current_char);
+                                                    break;
+                                                }
                                                 case ':': {
                                                     if (current_string.empty()) {
                                                         clear_expression_buffer();
                                                         return ':';
+                                                    } else if (ternary_count > 0) {
+                                                        ternary_count--;
+                                                        current_string.push_back(current_char);
                                                     } else if (bracket_count == 0) {
                                                         yy_pop_state();
                                                         return emit_expr_string_and_unput(':');
