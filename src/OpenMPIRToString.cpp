@@ -342,6 +342,9 @@ std::string OpenMPDirective::toString() {
   case OMPD_target_data:
     result += "target data ";
     break;
+  case OMPD_target_data_composite:
+    result += "target_data ";
+    break;
   case OMPD_taskyield:
     result += "taskyield ";
     break;
@@ -570,11 +573,29 @@ std::string OpenMPClause::expressionToString() {
   std::string result;
   std::vector<const char *> *expr = this->getExpressions();
   if (expr != NULL) {
-    std::vector<const char *>::iterator it;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      result += std::string(*it) + ", ";
-    };
-    result = result.substr(0, result.size() - 2);
+    // For init/apply/adjust_args clauses with 2 expressions, use ":" separator
+    if ((this->getKind() == OMPC_init || this->getKind() == OMPC_apply || this->getKind() == OMPC_adjust_args) && expr->size() == 2) {
+      result = std::string((*expr)[0]) + ": " + std::string((*expr)[1]);
+    }
+    // For induction clause with 3+ expressions, use colon before last expression
+    else if (this->getKind() == OMPC_induction && expr->size() >= 3) {
+      for (size_t i = 0; i < expr->size(); i++) {
+        if (i > 0) {
+          if (i == expr->size() - 1) {
+            result += ": ";
+          } else {
+            result += ", ";
+          }
+        }
+        result += std::string((*expr)[i]);
+      }
+    } else {
+      std::vector<const char *>::iterator it;
+      for (it = expr->begin(); it != expr->end(); it++) {
+        result += std::string(*it) + ", ";
+      };
+      result = result.substr(0, result.size() - 2);
+    }
   }
 
   return result;
@@ -1214,6 +1235,16 @@ std::string OpenMPToClause::toString() {
     clause_string += this->getMapperIdentifier();
     clause_string += ")";
     break;
+  case OMPC_TO_iterator: {
+    clause_string += "iterator";
+    clause_string += "(";
+    std::vector<const char *> *expr = this->getExpressions();
+    if (expr != NULL && expr->size() >= 3) {
+      clause_string += std::string((*expr)[0]) + " = " + std::string((*expr)[1]) + ":" + std::string((*expr)[2]);
+    }
+    clause_string += ")";
+    break;
+  }
   case OMPC_TO_present:
     clause_string += "present";
     break;
@@ -1222,7 +1253,18 @@ std::string OpenMPToClause::toString() {
   if (clause_string.size() > 1) {
     clause_string += " : ";
   };
-  clause_string += this->expressionToString();
+  // For iterator, skip the first 3 expressions (var, start, end) and print the rest (var_list)
+  if (to_kind == OMPC_TO_iterator) {
+    std::vector<const char *> *expr = this->getExpressions();
+    if (expr != NULL && expr->size() > 3) {
+      for (size_t i = 3; i < expr->size(); i++) {
+        if (i > 3) clause_string += ", ";
+        clause_string += std::string((*expr)[i]);
+      }
+    }
+  } else {
+    clause_string += this->expressionToString();
+  }
   clause_string += ") ";
   if (clause_string.size() > 3) {
     result += clause_string;
@@ -1461,6 +1503,17 @@ std::string OpenMPMapClause::toString() {
     clause_string += ")";
     has_content = true;
     break;
+  case OMPC_MAP_MODIFIER_iterator: {
+    clause_string += "iterator";
+    clause_string += "(";
+    std::vector<const char *> *expr = this->getExpressions();
+    if (expr != NULL && expr->size() >= 3) {
+      clause_string += std::string((*expr)[0]) + " = " + std::string((*expr)[1]) + ":" + std::string((*expr)[2]);
+    }
+    clause_string += ")";
+    has_content = true;
+    break;
+  }
   default:;
   }
   switch (modifier2) {
@@ -1564,7 +1617,18 @@ std::string OpenMPMapClause::toString() {
   if (clause_string.size() > 1) {
     clause_string += " : ";
   };
-  clause_string += this->expressionToString();
+  // For iterator modifier, skip the first 3 expressions (var, start, end)
+  if (modifier1 == OMPC_MAP_MODIFIER_iterator || modifier2 == OMPC_MAP_MODIFIER_iterator || modifier3 == OMPC_MAP_MODIFIER_iterator) {
+    std::vector<const char *> *expr = this->getExpressions();
+    if (expr != NULL && expr->size() > 3) {
+      for (size_t i = 3; i < expr->size(); i++) {
+        if (i > 3) clause_string += ", ";
+        clause_string += std::string((*expr)[i]);
+      }
+    }
+  } else {
+    clause_string += this->expressionToString();
+  }
   clause_string += ") ";
   if (clause_string.size() > 3) {
     result += clause_string;
@@ -2082,6 +2146,15 @@ std::string OpenMPVariantClause::toString() {
         "kind(score(" + context_kind->first + "): " + parameter_string + "), ";
   } else if (parameter_string.size() > 0) {
     clause_string += "kind(" + parameter_string + "), ";
+  };
+
+  // check device_num
+  parameter_pair_string = this->getDeviceNumExpression();
+  if (parameter_pair_string->first.size() > 0) {
+    clause_string += "device_num(score(" + parameter_pair_string->first +
+                     "): " + parameter_pair_string->second + "), ";
+  } else if (parameter_pair_string->second.size() > 0) {
+    clause_string += "device_num(" + parameter_pair_string->second + "), ";
   };
 
   if (clause_string.size() > 0) {

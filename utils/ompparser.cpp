@@ -104,8 +104,18 @@ int main(int argc, const char *argv[]) {
   // Set normalization flag globally before parsing
   setNormalizeClauses(normalize_clauses);
 
+  // Regex to detect Fortran directives
+  std::regex fortran_regex("^[[:blank:]]*[!cC*]\\$omp");
+
   // parse the preprocessed inputs
   for (i = 0; i < omp_pragmas->size(); i++) {
+    // Detect if this is a Fortran directive and set language accordingly
+    if (std::regex_search(omp_pragmas->at(i), fortran_regex)) {
+      setLang(Lang_Fortran);
+    } else {
+      setLang(Lang_C);
+    }
+
     omp_ast = parseOpenMP(omp_pragmas->at(i).c_str(), NULL);
     omp_ast_list->push_back(omp_ast);
     if (omp_ast != NULL) {

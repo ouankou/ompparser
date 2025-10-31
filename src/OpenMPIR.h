@@ -760,6 +760,7 @@ protected:
   std::pair<std::string, std::string> isa_expression;
   std::pair<std::string, OpenMPClauseContextKind> context_kind_name =
       std::make_pair("", OMPC_CONTEXT_KIND_unknown);
+  std::pair<std::string, std::string> device_num_expression;
   std::pair<std::string, std::string> extension_expression;
   std::pair<std::string, OpenMPClauseContextVendor> context_vendor_name =
       std::make_pair("", OMPC_CONTEXT_VENDOR_unspecified);
@@ -806,6 +807,13 @@ public:
   };
   std::pair<std::string, OpenMPClauseContextKind> *getContextKind() {
     return &context_kind_name;
+  };
+  void setDeviceNumExpression(const char *_score, const char *_device_num_expression) {
+    device_num_expression =
+        std::make_pair(std::string(_score), std::string(_device_num_expression));
+  };
+  std::pair<std::string, std::string> *getDeviceNumExpression() {
+    return &device_num_expression;
   };
   void setExtensionExpression(const char *_score,
                               const char *_extension_expression) {

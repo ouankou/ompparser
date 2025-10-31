@@ -862,6 +862,9 @@ void OpenMPDirective::generateDOT() {
   case OMPD_target_data:
     directive_kind = "target_data ";
     break;
+  case OMPD_target_data_composite:
+    directive_kind = "target_data_composite ";
+    break;
   case OMPD_target_enter_data:
     directive_kind = "target_enter_data ";
     break;
@@ -1114,6 +1117,9 @@ void OpenMPDirective::generateDOT(std::ofstream &dot_file, int depth, int index,
     break;
   case OMPD_target_data:
     directive_kind = "target_data";
+    break;
+  case OMPD_target_data_composite:
+    directive_kind = "target_data_composite";
     break;
   case OMPD_target_enter_data:
     directive_kind = "target_enter_data";

@@ -72,6 +72,20 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Normalize Fortran pragma to match clang-format style spacing
+normalize_fortran_pragma() {
+    local pragma="$1"
+    echo "$pragma" | \
+        sed 's/,\([^[:space:]]\)/, \1/g' | \
+        sed 's/\([^[:space:]]\):/\1 :/g' | \
+        sed 's/:\([^[:space:]]\)/: \1/g' | \
+        sed 's/\[\([^[:space:]]\)/[ \1/g' | \
+        sed 's/\([^[:space:]]\)\]/\1 ]/g' | \
+        sed 's/ (/(/g' | \
+        sed 's/[[:space:]][[:space:]]*/ /g' | \
+        sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
 # Statistics
 total_files=0
 files_with_pragmas=0
@@ -242,8 +256,8 @@ process_file() {
     # Process each pragma
     for pragma in "${pragmas[@]}"; do
         if [ $is_fortran -eq 1 ]; then
-            # Fortran: normalize by converting to lowercase and removing extra spaces
-            local original_normalized=$(echo "$pragma" | tr '[:upper:]' '[:lower:]' | sed 's/[[:space:]]\+/ /g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            # Fortran: normalize with clang-format style spacing, then lowercase
+            local original_normalized=$(normalize_fortran_pragma "$pragma" | tr '[:upper:]' '[:lower:]')
 
             # Round-trip through ROUP (auto-detects Fortran from sentinel)
             local pragma_file="$temp_dir/pragma_${file_id}_$$"
@@ -257,8 +271,8 @@ process_file() {
             fi
             rm -f "$pragma_file"
 
-            # Normalize round-tripped output
-            local roundtrip_normalized=$(echo "$roundtrip" | tr '[:upper:]' '[:lower:]' | sed 's/[[:space:]]\+/ /g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            # Normalize round-tripped output the same way
+            local roundtrip_normalized=$(normalize_fortran_pragma "$roundtrip" | tr '[:upper:]' '[:lower:]')
 
             # Compare
             if [ "$original_normalized" = "$roundtrip_normalized" ]; then
@@ -268,8 +282,10 @@ process_file() {
                 echo "$file|$pragma|Mismatch: got '$roundtrip'" >> "$temp_dir/failures_$file_id"
             fi
         else
-            # C/C++: normalize with clang-format
-            local original_formatted=$(echo "$pragma" | "$CLANG_FORMAT" 2>/dev/null || echo "$pragma")
+            # C/C++: Strip comments and normalize with clang-format
+            # Remove C-style block comments (/* ... */) and C++ line comments (// ...)
+            local pragma_no_comments=$(echo "$pragma" | sed 's|/\*[^*]*\*\+\([^/*][^*]*\*\+\)*/||g' | sed 's|//.*$||')
+            local original_formatted=$(echo "$pragma_no_comments" | "$CLANG_FORMAT" 2>/dev/null || echo "$pragma_no_comments")
 
             # Round-trip through ROUP
             local pragma_file="$temp_dir/pragma_${file_id}_$$"
@@ -283,7 +299,7 @@ process_file() {
             fi
             rm -f "$pragma_file"
 
-            # Normalize round-tripped pragma with clang-format
+            # Normalize round-tripped pragma with clang-format (no need to strip comments, already done by parser)
             local roundtrip_formatted=$(echo "$roundtrip" | "$CLANG_FORMAT" 2>/dev/null || echo "$roundtrip")
 
             # Compare
@@ -301,6 +317,7 @@ process_file() {
 }
 
 export -f process_file
+export -f normalize_fortran_pragma
 export CLANG CLANG_FORMAT ROUNDTRIP_BIN FORTRAN_COMPILER
 
 echo "Processing files in parallel (using $PARALLEL_JOBS jobs)..."

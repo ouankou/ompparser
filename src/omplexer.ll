@@ -25,6 +25,8 @@
 %x SIZES_STATE
 %x LOOPRANGE_STATE
 %x INIT_STATE
+%x APPLY_STATE
+%x ADJUST_ARGS_STATE
 %x CONDITION_STATE
 %x COPYIN_STATE
 %x COPYPRIVATE_STATE
@@ -53,6 +55,8 @@
 %x LINEAR_STATE
 %x MAPPER_STATE
 %x MAP_MAPPER_STATE
+%x MAP_ITERATOR_STATE
+%x MAP_ITER_EXPR_STATE
 %x MAP_STATE
 %x MATCH_STATE
 %x NONTEMPORAL_STATE
@@ -72,6 +76,8 @@
 %x TASK_REDUCTION_STATE
 %x THREADPRIVATE_STATE
 %x TO_MAPPER_STATE
+%x TO_ITERATOR_STATE
+%x TO_ITER_EXPR_STATE
 %x TO_STATE
 %x TYPE_STR_STATE
 %x UPDATE_STATE
@@ -203,7 +209,8 @@ simd/{blank}*\( { yy_push_state(SIMD_STATE); return SIMD; }
 simd            { return SIMD; }
 num_threads     { yy_push_state(NUM_THREADS_STATE); return NUM_THREADS; }
 num_teams       { yy_push_state(NUM_TEAMS_STATE); return NUM_TEAMS; }
-thread_limit    { return THREAD_LIMIT; }
+thread_limit/{blank}    { return THREAD_LIMIT; }
+thread_limit/"("        { return THREAD_LIMIT; }
 default         { yy_push_state(DEFAULT_STATE); return DEFAULT; }
 private         { yy_push_state(PRIVATE_STATE); return PRIVATE; }
 firstprivate    { yy_push_state(FIRSTPRIVATE_STATE); return FIRSTPRIVATE; }
@@ -285,12 +292,14 @@ interchange     { return INTERCHANGE; }
 reverse         { return REVERSE; }
 split           { return SPLIT; }
 stripe          { return STRIPE; }
-induction       { return INDUCTION; }
+induction/{blank}      { return INDUCTION; }
+induction/"("          { return INDUCTION; }
 
 end             { return END; }
 score           { return SCORE; }
 condition       { yy_push_state(CONDITION_STATE); return CONDITION; }
 kind            { return KIND; }
+device_num/"("  { return DEVICE_NUM; }
 host{id_char}+  { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
 host/{blank}    { return HOST; }
 host/"("        { return HOST; }
@@ -418,7 +427,7 @@ init/"("                  { yy_push_state(INIT_STATE); return INIT; }
 init_complete             { return INIT_COMPLETE; }
 safesync                  { return SAFESYNC; }
 device_safesync           { return DEVICE_SAFESYNC; }
-target_data/{blank}       { yyless(7); return TARGET; }
+target_data/{blank}       { return TARGET_DATA_COMPOSITE; }  /* OpenMP 6.0 task-generating construct */
 target_enter_data/{blank} { yyless(7); return TARGET; }
 target_exit_data/{blank}  { yyless(7); return TARGET; }
 target{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
@@ -431,9 +440,11 @@ counts                    { return COUNTS; }
 inductor                  { return INDUCTOR; }
 collector                 { return COLLECTOR; }
 combiner                  { return COMBINER; }
-adjust_args               { return ADJUST_ARGS; }
+adjust_args/{blank}       { yy_push_state(ADJUST_ARGS_STATE); return ADJUST_ARGS; }
+adjust_args/"("           { yy_push_state(ADJUST_ARGS_STATE); return ADJUST_ARGS; }
 append_args               { return APPEND_ARGS; }
-apply                     { return APPLY; }
+apply/{blank}             { yy_push_state(APPLY_STATE); return APPLY; }
+apply/"("                 { yy_push_state(APPLY_STATE); return APPLY; }
 no_openmp                 { return NO_OPENMP; }
 no_openmp_constructs      { return NO_OPENMP_CONSTRUCTS; }
 no_openmp_routines        { return NO_OPENMP_ROUTINES; }
@@ -628,6 +639,18 @@ block                     { return BLOCK; }
 <INIT_STATE>":"                             { return ':'; }
 <INIT_STATE>{blank}*                        { ; }
 <INIT_STATE>.                               { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<APPLY_STATE>"("                            { return '('; }
+<APPLY_STATE>")"                            { yy_pop_state(); return ')'; }
+<APPLY_STATE>":"                            { return ':'; }
+<APPLY_STATE>{blank}*                       { ; }
+<APPLY_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<ADJUST_ARGS_STATE>"("                      { return '('; }
+<ADJUST_ARGS_STATE>")"                      { yy_pop_state(); return ')'; }
+<ADJUST_ARGS_STATE>":"                      { return ':'; }
+<ADJUST_ARGS_STATE>{blank}*                 { ; }
+<ADJUST_ARGS_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ORDERED_STATE>"("                          { yy_push_state(EXPR_STATE); return '('; }
 <ORDERED_STATE>")"                          { yy_pop_state(); return ')'; }
@@ -954,6 +977,7 @@ block                     { return BLOCK; }
 <TO_STATE>")"                               { yy_pop_state(); return ')'; }
 <TO_STATE>","                               { return ','; }
 <TO_STATE>":"                               { return ':'; }
+<TO_STATE>iterator/{blank}*"("              { prepare_expression_capture(); yy_push_state(TO_ITERATOR_STATE);return TO_ITERATOR; }
 <TO_STATE>mapper/{blank}*"("                { prepare_expression_capture(); yy_push_state(TO_MAPPER_STATE);return TO_MAPPER; }
 <TO_STATE>present                           { return PRESENT; }
 <TO_STATE>{blank}*                          { ; }
@@ -963,6 +987,22 @@ block                     { return BLOCK; }
 <TO_MAPPER_STATE>"("                        { return '('; }
 <TO_MAPPER_STATE>")"                        { yy_pop_state(); return ')'; }
 <TO_MAPPER_STATE>.                          { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+
+<TO_ITERATOR_STATE>"("                      { return '('; }
+<TO_ITERATOR_STATE>"="                      { return '='; }
+<TO_ITERATOR_STATE>","                      { return ','; }
+<TO_ITERATOR_STATE>":"                      { return ':'; }
+<TO_ITERATOR_STATE>")"                      { yy_pop_state(); return ')'; }
+<TO_ITERATOR_STATE>{blank}*                 { ; }
+<TO_ITERATOR_STATE>.                        { yy_push_state(TO_ITER_EXPR_STATE); unput(yytext[0]); }
+
+<TO_ITER_EXPR_STATE>"("{blank}*             { return '('; }
+<TO_ITER_EXPR_STATE>{blank}*")"             { yy_pop_state(); return emit_expr_string_and_unput(')'); }
+<TO_ITER_EXPR_STATE>","                     { yy_pop_state(); return emit_expr_string_and_unput(','); }
+<TO_ITER_EXPR_STATE>{blank}                 { yy_pop_state(); return emit_expr_string_no_unput(); }
+<TO_ITER_EXPR_STATE>"="                     { yy_pop_state(); return emit_expr_string_and_unput('='); }
+<TO_ITER_EXPR_STATE>":"                     { yy_pop_state(); return emit_expr_string_and_unput(':'); }
+<TO_ITER_EXPR_STATE>.                       { current_string.push_back(yytext[0]); }
 
 <FROM_STATE>"("                             { return '('; }
 <FROM_STATE>")"                             { yy_pop_state(); return ')'; }
@@ -1017,6 +1057,7 @@ block                     { return BLOCK; }
 <MAP_STATE>present/{blank}*,                 { return MAP_MODIFIER_PRESENT; }
 <MAP_STATE>self/{blank}*,                    { return MAP_MODIFIER_SELF; }
 <MAP_STATE>mapper/{blank}*"("                { prepare_expression_capture(); yy_push_state(MAP_MAPPER_STATE);return MAP_MODIFIER_MAPPER; }
+<MAP_STATE>iterator/{blank}*"("              { prepare_expression_capture(); yy_push_state(MAP_ITERATOR_STATE);return MAP_MODIFIER_ITERATOR; }
 <MAP_STATE>"("                               { return '('; }
 <MAP_STATE>")"                               { yy_pop_state(); return ')'; }
 <MAP_STATE>","                               { return ','; }
@@ -1035,6 +1076,22 @@ block                     { return BLOCK; }
 <MAP_MAPPER_STATE>"("                        { return '('; }
 <MAP_MAPPER_STATE>")"                        { yy_pop_state(); return ')'; }
 <MAP_MAPPER_STATE>.                          { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+
+<MAP_ITERATOR_STATE>"("                      { return '('; }
+<MAP_ITERATOR_STATE>"="                      { return '='; }
+<MAP_ITERATOR_STATE>","                      { return ','; }
+<MAP_ITERATOR_STATE>":"                      { return ':'; }
+<MAP_ITERATOR_STATE>")"                      { yy_pop_state(); return ')'; }
+<MAP_ITERATOR_STATE>{blank}*                 { ; }
+<MAP_ITERATOR_STATE>.                        { yy_push_state(MAP_ITER_EXPR_STATE); unput(yytext[0]); }
+
+<MAP_ITER_EXPR_STATE>"("{blank}*             { return '('; }
+<MAP_ITER_EXPR_STATE>{blank}*")"             { yy_pop_state(); return emit_expr_string_and_unput(')'); }
+<MAP_ITER_EXPR_STATE>","                     { yy_pop_state(); return emit_expr_string_and_unput(','); }
+<MAP_ITER_EXPR_STATE>{blank}                 { yy_pop_state(); return emit_expr_string_no_unput(); }
+<MAP_ITER_EXPR_STATE>"="                     { yy_pop_state(); return emit_expr_string_and_unput('='); }
+<MAP_ITER_EXPR_STATE>":"                     { yy_pop_state(); return emit_expr_string_and_unput(':'); }
+<MAP_ITER_EXPR_STATE>.                       { current_string.push_back(yytext[0]); }
 
 <TASK_REDUCTION_STATE>"("                     { return '('; }
 <TASK_REDUCTION_STATE>")"                     { yy_pop_state(); return ')'; }

@@ -55,6 +55,8 @@ static std::vector<const char *> *depend_iterator_definition =
 static std::vector<std::vector<const char *> *> *
     depend_iterators_definition_class;
 // std::vector<std::vector<const char*>* >* depend_iterators_definition_class;
+static std::vector<const char *> *map_iterator_args =
+    new std::vector<const char *>();
 static const char *trait_score = "";
 /* Treat the entire expression as a string for now */
 extern void openmp_parse_expr();
@@ -105,9 +107,9 @@ corresponding C type is union name defaults to YYSTYPE.
         AMD ARM BSC CRAY FUJITSU GNU IBM INTEL LLVM NVIDIA PGI TI UNKNOWN
         FINAL UNTIED MERGEABLE IN_REDUCTION DEPEND PRIORITY AFFINITY DETACH MODIFIER_ITERATOR DEPOBJ FINAL_CLAUSE IN INOUT INOUTSET MUTEXINOUTSET OUT
         TASKLOOP GRAINSIZE NUM_TASKS NOGROUP TASKYIELD REQUIRES REVERSE_OFFLOAD UNIFIED_ADDRESS UNIFIED_SHARED_MEMORY ATOMIC_DEFAULT_MEM_ORDER DYNAMIC_ALLOCATORS SELF_MAPS SEQ_CST ACQ_REL RELAXED UNROLL TILE
-        USE_DEVICE_PTR USE_DEVICE_ADDR TARGET DATA ENTER EXIT ANCESTOR DEVICE_NUM IS_DEVICE_PTR HAS_DEVICE_ADDR SIZES
-        DEFAULTMAP BEHAVIOR_ALLOC BEHAVIOR_TO BEHAVIOR_FROM BEHAVIOR_TOFROM BEHAVIOR_FIRSTPRIVATE BEHAVIOR_NONE BEHAVIOR_DEFAULT BEHAVIOR_PRESENT CATEGORY_SCALAR CATEGORY_AGGREGATE CATEGORY_POINTER CATEGORY_ALLOCATABLE UPDATE TO FROM TO_MAPPER FROM_MAPPER USES_ALLOCATORS
- LINK DEVICE_TYPE TARGET_DEVICE MAP MAP_MODIFIER_ALWAYS MAP_MODIFIER_CLOSE MAP_MODIFIER_PRESENT MAP_MODIFIER_SELF MAP_MODIFIER_MAPPER MAP_TYPE_TO MAP_TYPE_FROM MAP_TYPE_TOFROM MAP_TYPE_ALLOC MAP_TYPE_RELEASE MAP_TYPE_DELETE MAP_TYPE_PRESENT MAP_TYPE_SELF EXT_ BARRIER TASKWAIT FLUSH RELEASE ACQUIRE ATOMIC READ WRITE CAPTURE HINT CRITICAL SOURCE SINK DESTROY THREADS
+        USE_DEVICE_PTR USE_DEVICE_ADDR TARGET TARGET_DATA_COMPOSITE DATA ENTER EXIT ANCESTOR DEVICE_NUM IS_DEVICE_PTR HAS_DEVICE_ADDR SIZES
+        DEFAULTMAP BEHAVIOR_ALLOC BEHAVIOR_TO BEHAVIOR_FROM BEHAVIOR_TOFROM BEHAVIOR_FIRSTPRIVATE BEHAVIOR_NONE BEHAVIOR_DEFAULT BEHAVIOR_PRESENT CATEGORY_SCALAR CATEGORY_AGGREGATE CATEGORY_POINTER CATEGORY_ALLOCATABLE UPDATE TO FROM TO_MAPPER TO_ITERATOR FROM_MAPPER FROM_ITERATOR USES_ALLOCATORS
+ LINK DEVICE_TYPE TARGET_DEVICE MAP MAP_MODIFIER_ALWAYS MAP_MODIFIER_CLOSE MAP_MODIFIER_PRESENT MAP_MODIFIER_SELF MAP_MODIFIER_MAPPER MAP_MODIFIER_ITERATOR MAP_TYPE_TO MAP_TYPE_FROM MAP_TYPE_TOFROM MAP_TYPE_ALLOC MAP_TYPE_RELEASE MAP_TYPE_DELETE MAP_TYPE_PRESENT MAP_TYPE_SELF EXT_ BARRIER TASKWAIT FLUSH RELEASE ACQUIRE ATOMIC READ WRITE CAPTURE HINT CRITICAL SOURCE SINK DESTROY THREADS
         CONCURRENT REPRODUCIBLE UNCONSTRAINED
         LESSOREQUAL MOREOREQUAL NOTEQUAL
         ERROR_DIR NOTHING MASKED SCOPE INTEROP ASSUME ASSUMES BEGIN_DIR
@@ -255,6 +257,7 @@ openmp_directive : parallel_directive
                  | taskyield_directive
                  | requires_directive
                  | target_data_directive
+                 | target_data_composite_directive
                  | target_enter_data_directive
                  | target_exit_data_directive
                  | target_directive
@@ -389,6 +392,7 @@ fortran_paired_directive : parallel_directive
                          | taskloop_simd_directive
                          | target_directive
                          | target_data_directive
+                         | target_data_composite_directive
                          | critical_directive
                          | taskgroup_directive
                          | atomic_directive
@@ -508,10 +512,14 @@ device_selector : context_kind
                 ;
 
 target_device_selector : context_kind
+                       | context_device_num
                        ;
 
 context_kind : KIND '(' trait_score context_kind_name ')'
              ;
+
+context_device_num : DEVICE_NUM '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setDeviceNumExpression(trait_score, $4); } ')'
+                   ;
 
 context_kind_name : HOST { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_host); }
                   | NOHOST { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_nohost); }
@@ -627,12 +635,20 @@ declare_variant_clause_seq : declare_variant_clause
                     ;
 
 declare_variant_clause : match_clause
-                ;
+                       | adjust_args_clause
+                       ;
 
 match_clause : MATCH { current_clause = current_directive->addOpenMPClause(OMPC_match); }
                 '(' context_selector_specification ')' { }
              ;
 
+adjust_args_clause : ADJUST_ARGS {
+                       current_clause = current_directive->addOpenMPClause(OMPC_adjust_args);
+                     } '(' adjust_args_parameter ')' {
+                   }
+                   ;
+adjust_args_parameter : expression ':' var_list
+                      ;
 
 parallel_directive : PARALLEL {
                         current_directive = new OpenMPDirective(OMPD_parallel);
@@ -667,7 +683,12 @@ requires_directive : REQUIRES {
 target_data_directive :  TARGET DATA {
                         current_directive = new OpenMPDirective(OMPD_target_data);
                      }
-                     target_data_clause_optseq 
+                     target_data_clause_optseq
+                      ;
+target_data_composite_directive :  TARGET_DATA_COMPOSITE {
+                        current_directive = new OpenMPDirective(OMPD_target_data_composite);
+                     }
+                     target_data_clause_optseq
                       ;
 target_enter_data_directive :  TARGET ENTER DATA {
                         current_directive = new OpenMPDirective(OMPD_target_enter_data);
@@ -1126,9 +1147,11 @@ replayable_clause : REPLAYABLE { current_clause = current_directive->addOpenMPCl
                   ;
 threadset_clause : THREADSET { current_clause = current_directive->addOpenMPClause(OMPC_threadset); } '(' expression ')'
                  ;
-init_clause : INIT { current_clause = current_directive->addOpenMPClause(OMPC_init); } '(' expression ')'
-            | INIT { current_clause = current_directive->addOpenMPClause(OMPC_init); } '(' expression ':' expression ')'
+init_clause : INIT { current_clause = current_directive->addOpenMPClause(OMPC_init); } '(' init_parameter ')'
             ;
+init_parameter : expression
+               | expression ':' expression
+               ;
 use_clause : USE { current_clause = current_directive->addOpenMPClause(OMPC_use); } '(' expression ')'
            ;
 novariants_clause : NOVARIANTS { current_clause = current_directive->addOpenMPClause(OMPC_novariants); } '(' expression ')'
@@ -1152,14 +1175,24 @@ counts_clause : COUNTS {
               ;
 apply_clause : APPLY {
                  current_clause = current_directive->addOpenMPClause(OMPC_apply);
-               } '(' expression ')' {
+               } '(' apply_parameter ')' {
              }
              ;
+apply_parameter : expression
+                | expression ':' expression
+                ;
 induction_clause : INDUCTION {
                      current_clause = current_directive->addOpenMPClause(OMPC_induction);
-                   } '(' var_list ')' {
+                   } '(' induction_parameter ')' {
                  }
                  ;
+induction_parameter : var_list
+                    | induction_modifiers ',' expression ':' expression
+                    | induction_modifiers ',' expression
+                    ;
+induction_modifiers : expression
+                    | induction_modifiers ',' expression
+                    ;
 inductor_clause : INDUCTOR '(' expression ')'
                 { current_clause = current_directive->addOpenMPClause(OMPC_inductor); }
                 ;
@@ -2036,11 +2069,18 @@ to_clause: TO '(' to_parameter ')' ;
 to_parameter : EXPR_STRING  { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_unspecified); current_clause->addLangExpr($1);  }
              | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_unspecified); current_clause->addLangExpr($1); } var_list
              | to_mapper ':' var_list
+             | to_iterator ':' var_list
              | PRESENT ':' { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_present); } var_list
              ;
 to_mapper : TO_MAPPER { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_mapper);
                               }'('EXPR_STRING')' { ((OpenMPToClause*)current_clause)->setMapperIdentifier($4); }
           ;
+to_iterator : TO_ITERATOR { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_iterator);
+                                }'(' to_iterator_args ')'
+            ;
+to_iterator_args : EXPR_STRING { current_clause->addLangExpr($1); } '=' EXPR_STRING { current_clause->addLangExpr($4); } ':' EXPR_STRING { current_clause->addLangExpr($7); }
+                 | EXPR_STRING { current_clause->addLangExpr($1); } '=' EXPR_STRING { current_clause->addLangExpr($4); } ':' EXPR_STRING { current_clause->addLangExpr($7); } ':' EXPR_STRING { current_clause->addLangExpr($10); }
+                 ;
 
 from_clause: FROM '(' from_parameter ')' ;
 from_parameter : EXPR_STRING { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_unspecified); current_clause->addLangExpr($1);  }
@@ -2080,10 +2120,11 @@ map_parameter : EXPR_STRING { current_clause = current_directive->addOpenMPClaus
               | map_modifier_type ':' var_list
               ;
 map_modifier_type : map_type
+                  | map_modifier_iterator ',' map_type
                   | map_modifier1 map_type
                   | map_modifier1 ',' map_type
                   | map_modifier1 ',' map_modifier_parameter1
-                  | map_modifier1 map_modifier_parameter1                  
+                  | map_modifier1 map_modifier_parameter1
                   ;
 map_modifier_parameter1 : map_modifier2 map_type
                         | map_modifier2 ',' map_type
@@ -2112,17 +2153,49 @@ map_modifier3 : MAP_MODIFIER_ALWAYS { if (firstParameter == OMPC_MAP_MODIFIER_al
               | MAP_MODIFIER_SELF { if (firstParameter == OMPC_MAP_MODIFIER_self || secondParameter==OMPC_MAP_MODIFIER_self) { yyerror("SELF modifier can appear in the map clause only once\n"); YYABORT; } else { thirdParameter = OMPC_MAP_MODIFIER_self; }}
               | map_modifier_mapper { if (firstParameter == OMPC_MAP_MODIFIER_mapper || secondParameter==OMPC_MAP_MODIFIER_mapper) { yyerror("MAPPER modifier can appear in the map clause only once\n"); YYABORT; } else { thirdParameter = OMPC_MAP_MODIFIER_mapper; }}
               ;
-map_type : MAP_TYPE_TO { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter,thirdParameter, OMPC_MAP_TYPE_to, firstStringParameter); }
-         | MAP_TYPE_FROM { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_from, firstStringParameter); }
-         | MAP_TYPE_TOFROM { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_tofrom, firstStringParameter); }
-         | MAP_TYPE_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_alloc, firstStringParameter); }
-         | MAP_TYPE_RELEASE { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_release, firstStringParameter); }
-         | MAP_TYPE_DELETE { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_delete, firstStringParameter); }
-         | MAP_TYPE_PRESENT { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_present, firstStringParameter); }
-         | MAP_TYPE_SELF { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_self, firstStringParameter); }
+map_type : MAP_TYPE_TO { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter,thirdParameter, OMPC_MAP_TYPE_to, firstStringParameter);
+                         if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
+                           for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                         } }
+         | MAP_TYPE_FROM { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_from, firstStringParameter);
+                           if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
+                             for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                           } }
+         | MAP_TYPE_TOFROM { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_tofrom, firstStringParameter);
+                             if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
+                               for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                             } }
+         | MAP_TYPE_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_alloc, firstStringParameter);
+                            if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
+                              for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                            } }
+         | MAP_TYPE_RELEASE { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_release, firstStringParameter);
+                              if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
+                                for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                              } }
+         | MAP_TYPE_DELETE { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_delete, firstStringParameter);
+                             if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
+                               for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                             } }
+         | MAP_TYPE_PRESENT { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_present, firstStringParameter);
+                              if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
+                                for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                              } }
+         | MAP_TYPE_SELF { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_self, firstStringParameter);
+                           if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
+                             for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                           } }
          ;
 map_modifier_mapper : MAP_MODIFIER_MAPPER '('EXPR_STRING')' { firstStringParameter = $3; }
                     ;
+map_modifier_iterator : MAP_MODIFIER_ITERATOR {
+                          firstParameter = OMPC_MAP_MODIFIER_iterator;
+                          map_iterator_args->clear();
+                        } '(' map_iterator_argument_list ')'
+                      ;
+map_iterator_argument_list : EXPR_STRING { map_iterator_args->push_back($1); } '=' EXPR_STRING { map_iterator_args->push_back($4); } ':' EXPR_STRING { map_iterator_args->push_back($7); }
+                           | EXPR_STRING { map_iterator_args->push_back($1); } '=' EXPR_STRING { map_iterator_args->push_back($4); } ':' EXPR_STRING { map_iterator_args->push_back($7); } ':' EXPR_STRING { map_iterator_args->push_back($10); }
+                           ;
 
 task_reduction_clause : TASK_REDUCTION '(' task_reduction_identifier ':' var_list ')' {
                       }
@@ -2444,18 +2517,19 @@ target_parallel_for_clause : if_target_parallel_clause
                            | depend_with_modifier_clause
                            | uses_allocators_clause
                            | num_threads_clause
-                           | default_clause                          
+                           | default_clause
                            | shared_clause
                            | copyin_clause
                            | reduction_clause
                            | proc_bind_clause
-                           | lastprivate_clause 
+                           | lastprivate_clause
                            | linear_clause
                            | schedule_clause
                            | collapse_clause
                            | ordered_clause
-                           | order_clause 
+                           | order_clause
                            | dist_schedule_clause
+                           | induction_clause
                            ;
 target_parallel_do_directive : TARGET PARALLEL DO{
                         current_directive = new OpenMPDirective(OMPD_target_parallel_do);

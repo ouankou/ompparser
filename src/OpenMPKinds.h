@@ -75,6 +75,7 @@ enum OpenMPDirectiveKind {
     OPENMP_DIRECTIVE(taskyield)
     OPENMP_DIRECTIVE(requires)
     OPENMP_DIRECTIVE(target_data)
+    OPENMP_DIRECTIVE(target_data_composite)  // OpenMP 6.0 task-generating construct
     OPENMP_DIRECTIVE(target_enter_data)
     OPENMP_DIRECTIVE(target_update)
     OPENMP_DIRECTIVE(target_exit_data)
@@ -675,13 +676,13 @@ enum OpenMPAffinityClauseModifier {
 
 enum OpenMPToClauseKind {
 #define OPENMP_TO_KIND(Name) OMPC_TO_##Name,
-  OPENMP_TO_KIND(mapper) OPENMP_TO_KIND(present) OPENMP_TO_KIND(unspecified)
+  OPENMP_TO_KIND(mapper) OPENMP_TO_KIND(iterator) OPENMP_TO_KIND(present) OPENMP_TO_KIND(unspecified)
 #undef OPENMP_TO_KIND
 };
 
 enum OpenMPFromClauseKind {
 #define OPENMP_FROM_KIND(Name) OMPC_FROM_##Name,
-  OPENMP_FROM_KIND(mapper) OPENMP_FROM_KIND(present) OPENMP_FROM_KIND(unspecified)
+  OPENMP_FROM_KIND(mapper) OPENMP_FROM_KIND(iterator) OPENMP_FROM_KIND(present) OPENMP_FROM_KIND(unspecified)
 #undef OPENMP_FROM_KIND
 };
 
@@ -720,7 +721,7 @@ enum OpenMPMapClauseModifier {
 #define OPENMP_MAP_MODIFIER(Name) OMPC_MAP_MODIFIER_##Name,
   OPENMP_MAP_MODIFIER(always) OPENMP_MAP_MODIFIER(close)
       OPENMP_MAP_MODIFIER(present) OPENMP_MAP_MODIFIER(self)
-          OPENMP_MAP_MODIFIER(mapper) OPENMP_MAP_MODIFIER(unspecified)
+          OPENMP_MAP_MODIFIER(mapper) OPENMP_MAP_MODIFIER(iterator) OPENMP_MAP_MODIFIER(unspecified)
 #undef OPENMP_MAP_MODIFIER
 };
 enum OpenMPMapClauseType {
