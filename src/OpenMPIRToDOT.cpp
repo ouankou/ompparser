@@ -207,6 +207,9 @@ void OpenMPDependClause::generateDOT(std::ofstream &dot_file, int depth,
   case OMPC_DEPENDENCE_TYPE_inout:
     parameter_string = "inout";
     break;
+  case OMPC_DEPENDENCE_TYPE_inoutset:
+    parameter_string = "inoutset";
+    break;
   case OMPC_DEPENDENCE_TYPE_mutexinoutset:
     parameter_string = "mutexinoutset";
     break;
@@ -859,6 +862,9 @@ void OpenMPDirective::generateDOT() {
   case OMPD_target_data:
     directive_kind = "target_data ";
     break;
+  case OMPD_target_data_composite:
+    directive_kind = "target_data_composite ";
+    break;
   case OMPD_target_enter_data:
     directive_kind = "target_enter_data ";
     break;
@@ -1111,6 +1117,9 @@ void OpenMPDirective::generateDOT(std::ofstream &dot_file, int depth, int index,
     break;
   case OMPD_target_data:
     directive_kind = "target_data";
+    break;
+  case OMPD_target_data_composite:
+    directive_kind = "target_data_composite";
     break;
   case OMPD_target_enter_data:
     directive_kind = "target_enter_data";
@@ -1475,6 +1484,9 @@ void OpenMPClause::generateDOT(std::ofstream &dot_file, int depth, int index,
   case OMPC_link:
     clause_kind += "link";
     break;
+  case OMPC_enter:
+    clause_kind += "enter";
+    break;
   case OMPC_device_type:
     clause_kind += "device_type";
     break;
@@ -1700,6 +1712,9 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
               break;
           case OMPC_CONTEXT_VENDOR_llvm:
               parameter_string = "llvm";
+              break;
+          case OMPC_CONTEXT_VENDOR_nvidia:
+              parameter_string = "nvidia";
               break;
           case OMPC_CONTEXT_VENDOR_pgi:
               parameter_string = "pgi";

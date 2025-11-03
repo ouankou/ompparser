@@ -14,7 +14,7 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp declare simd simdlen(4)
-PASS: #pragma omp declare simd simdlen (4)
+PASS: #pragma omp declare simd simdlen(4)
 
 #pragma omp declare simd linear(a,b,c:2)
 PASS: #pragma omp declare simd linear (a, b, c:2)
@@ -23,7 +23,7 @@ PASS: #pragma omp declare simd linear (a, b, c:2)
 PASS: #pragma omp declare simd aligned (*a, &b, c:2)
 
 #pragma omp declare simd uniform(*a,&b)
-PASS: #pragma omp declare simd uniform (*a, &b)
+PASS: #pragma omp declare simd uniform(*a, &b)
 
 #pragma omp declare simd inbranch
 PASS: #pragma omp declare simd inbranch
@@ -32,7 +32,7 @@ PASS: #pragma omp declare simd inbranch
 PASS: #pragma omp declare simd notinbranch
 
 #pragma omp declare simd uniform(i) linear(k) notinbranch
-PASS: #pragma omp declare simd uniform (i) linear (k) notinbranch
+PASS: #pragma omp declare simd uniform(i) linear (k) notinbranch
 
 
 // invalid test without paired validation.

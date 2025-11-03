@@ -14,10 +14,10 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp single private(a,b,c)
-PASS: !$omp single private (a, b, c)
+PASS: !$omp single private(a, b, c)
 
 !$omp single firstprivate(a,b,c)
-PASS: !$omp single firstprivate (a, b, c)
+PASS: !$omp single firstprivate(a, b, c)
 
 !$omp single allocate(a,b,c)
 PASS: !$omp single allocate (a, b, c)
@@ -29,16 +29,16 @@ PASS: !$omp single allocate (omp_allocator_handle_t: a, b, c)
 PASS: !$omp single allocate (omp_default_mem_alloc: a, b, c)
 
 !$omp end single
-PASS: !$omp end single 
+PASS: !$omp end single
 
 !$omp end single nowait 
 PASS: !$omp end single nowait
 
 !$omp end single copyprivate(to,b,c) 
-PASS: !$omp end single copyprivate (to, b, c)
+PASS: !$omp end single copyprivate(to, b, c)
 
 !$omp end single copyprivate(single,b,c) nowait
-PASS: !$omp end single copyprivate (single, b, c) nowait
+PASS: !$omp end single copyprivate(single, b, c) nowait
 
 // invalid test without paired validation.
 EXPECT: invalid

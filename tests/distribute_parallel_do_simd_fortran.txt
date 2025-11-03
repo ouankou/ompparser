@@ -14,13 +14,13 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp distribute parallel do simd private (a, b) private (a, c)
-PASS: !$omp distribute parallel do simd private (a, b, c)
+PASS: !$omp distribute parallel do simd private(a, b, c)
   
 !$omp distribute parallel do simd num_threads (3*5+4/(7+10))
-PASS: !$omp distribute parallel do simd num_threads (3*5+4/(7+10))
+PASS: !$omp distribute parallel do simd num_threads(3*5+4/(7+10))
 
 !$omp distribute parallel do simd firstprivate (x, y)
-PASS: !$omp distribute parallel do simd firstprivate (x, y)
+PASS: !$omp distribute parallel do simd firstprivate(x, y)
 
 !$omp distribute parallel do simd lastprivate(conditional:a,b,c)
 PASS: !$omp distribute parallel do simd lastprivate (conditional: a, b, c)
@@ -29,19 +29,19 @@ PASS: !$omp distribute parallel do simd lastprivate (conditional: a, b, c)
 PASS: !$omp distribute parallel do simd linear (a, b, c:2)
 
 !$omp distribute parallel do simd schedule(monotonic,simd:runtime,2)
-PASS: !$omp distribute parallel do simd schedule (monotonic,simd:runtime, 2)
+PASS: !$omp distribute parallel do simd schedule(monotonic,simd:runtime, 2)
 
 !$omp distribute parallel do simd collapse(a)
-PASS: !$omp distribute parallel do simd collapse (a)
+PASS: !$omp distribute parallel do simd collapse(a)
 
 !$omp distribute parallel do simd ordered(a)
-PASS: !$omp distribute parallel do simd ordered (a)
+PASS: !$omp distribute parallel do simd ordered(a)
 
 !$omp distribute parallel do simd shared (a, b, c[1:10])
-PASS: !$omp distribute parallel do simd shared (a, b, c[1:10])
+PASS: !$omp distribute parallel do simd shared(a, b, c[1 : 10])
 
 !$omp distribute parallel do simd copyin (a[foo(goo(x)):20],a,y)
-PASS: !$omp distribute parallel do simd copyin (a[foo(goo(x)):20], a, y)
+PASS: !$omp distribute parallel do simd copyin(a[foo(goo(x)) : 20], a, y)
 
 !$omp distribute parallel do simd default (shared)
 PASS: !$omp distribute parallel do simd default (shared)
@@ -62,10 +62,10 @@ PASS: !$omp distribute parallel do simd proc_bind (close) default (private)
 PASS: !$omp distribute parallel do simd proc_bind (spread)
 
 !$omp distribute parallel do simd reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
-PASS: !$omp distribute parallel do simd reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
+PASS: !$omp distribute parallel do simd reduction(inscan, + : a, foo(x)) reduction(abc : x, y, z) reduction(task, user_defined_value : x, y, z) reduction(inscan, max : a, foo(x))
 
 !$omp distribute parallel do simd allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
-PASS: !$omp distribute parallel do simd allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
+PASS: !$omp distribute parallel do simd allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1 : 5])
 
 !$omp distribute parallel do simd dist_schedule(static,2)
 PASS: !$omp distribute parallel do simd dist_schedule (static, 2)
@@ -74,19 +74,19 @@ PASS: !$omp distribute parallel do simd dist_schedule (static, 2)
 PASS: !$omp distribute parallel do simd dist_schedule (static)
 
 !$omp distribute parallel do simd safelen(4)
-PASS: !$omp distribute parallel do simd safelen (4)
+PASS: !$omp distribute parallel do simd safelen(4)
 
 !$omp distribute parallel do simd simdlen(4)
-PASS: !$omp distribute parallel do simd simdlen (4)
+PASS: !$omp distribute parallel do simd simdlen(4)
 
 !$omp distribute parallel do simd aligned(*a,&b,c:2)
 PASS: !$omp distribute parallel do simd aligned (*a, &b, c:2)
 
 !$omp distribute parallel do simd nontemporal(a)
-PASS: !$omp distribute parallel do simd nontemporal (a)
+PASS: !$omp distribute parallel do simd nontemporal(a)
 
 !$omp end distribute parallel do simd
-PASS: !$omp end distribute parallel do simd 
+PASS: !$omp end distribute parallel do simd
 
 // invalid test without paired validation.
 EXPECT: invalid

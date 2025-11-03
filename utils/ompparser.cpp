@@ -21,6 +21,7 @@ extern std::vector<std::string> *preProcessC(std::ifstream &);
 extern OpenMPDirective *parseOpenMP(const char *,
                                     void *_exprParse(const char *));
 extern void setLang(OpenMPBaseLang);
+extern void setNormalizeClauses(bool);
 
 void output(std::vector<OpenMPDirective *> *omp_ast_list) {
 
@@ -68,14 +69,22 @@ int openFile(std::ifstream &file, const char *filename) {
 
 int main(int argc, const char *argv[]) {
   const char *filename = NULL;
+  bool normalize_clauses = true; // Default: normalization enabled
   int result;
   unsigned int i;
   auto omp_ast_list = std::make_unique<std::vector<OpenMPDirective *>>();
   OpenMPDirective *omp_ast = NULL;
   auto omp_directive_list = std::make_unique<std::vector<std::string>>();
-  if (argc > 1) {
-    filename = argv[1];
-  };
+
+  // Parse command line arguments
+  for (int arg_idx = 1; arg_idx < argc; arg_idx++) {
+    if (strcmp(argv[arg_idx], "--no-normalize") == 0) {
+      normalize_clauses = false;
+    } else if (filename == NULL) {
+      filename = argv[arg_idx];
+    }
+  }
+
   std::ifstream input_file;
 
   if (filename == NULL) {
@@ -92,8 +101,21 @@ int main(int argc, const char *argv[]) {
   std::unique_ptr<std::vector<std::string>> omp_pragmas =
       preProcessCManaged(input_file);
 
+  // Set normalization flag globally before parsing
+  setNormalizeClauses(normalize_clauses);
+
+  // Regex to detect Fortran directives
+  std::regex fortran_regex("^[[:blank:]]*[!cC*]\\$omp");
+
   // parse the preprocessed inputs
   for (i = 0; i < omp_pragmas->size(); i++) {
+    // Detect if this is a Fortran directive and set language accordingly
+    if (std::regex_search(omp_pragmas->at(i), fortran_regex)) {
+      setLang(Lang_Fortran);
+    } else {
+      setLang(Lang_C);
+    }
+
     omp_ast = parseOpenMP(omp_pragmas->at(i).c_str(), NULL);
     omp_ast_list->push_back(omp_ast);
     if (omp_ast != NULL) {

@@ -14,19 +14,19 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp parallel master taskloop private (a, b) private (a, c)
-PASS: !$omp parallel master taskloop private (a, b, c)
+PASS: !$omp parallel master taskloop private(a, b, c)
   
 !$omp parallel master taskloop num_threads (3*5+4/(7+10))
-PASS: !$omp parallel master taskloop num_threads (3*5+4/(7+10))
+PASS: !$omp parallel master taskloop num_threads(3*5+4/(7+10))
 
 !$omp parallel master taskloop firstprivate (x, y)
-PASS: !$omp parallel master taskloop firstprivate (x, y)
+PASS: !$omp parallel master taskloop firstprivate(x, y)
 
 !$omp parallel master taskloop shared (a, b, c[1:10])
-PASS: !$omp parallel master taskloop shared (a, b, c[1:10])
+PASS: !$omp parallel master taskloop shared(a, b, c[1 : 10])
 
 !$omp parallel master taskloop copyin (a[foo(goo(x)):20],a,y)
-PASS: !$omp parallel master taskloop copyin (a[foo(goo(x)):20], a, y)
+PASS: !$omp parallel master taskloop copyin(a[foo(goo(x)) : 20], a, y)
 
 !$omp parallel master taskloop default (shared)
 PASS: !$omp parallel master taskloop default (shared)
@@ -47,13 +47,13 @@ PASS: !$omp parallel master taskloop proc_bind (close) default (private)
 PASS: !$omp parallel master taskloop proc_bind (spread)
 
 !$omp parallel master taskloop reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
-PASS: !$omp parallel master taskloop reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
+PASS: !$omp parallel master taskloop reduction(inscan, + : a, foo(x)) reduction(abc : x, y, z) reduction(task, user_defined_value : x, y, z) reduction(inscan, max : a, foo(x))
 
 !$omp parallel master taskloop allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
-PASS: !$omp parallel master taskloop allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
+PASS: !$omp parallel master taskloop allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1 : 5])
 
 !$omp parallel master taskloop shared (a, b, c[1:10])
-PASS: !$omp parallel master taskloop shared (a, b, c[1:10])
+PASS: !$omp parallel master taskloop shared(a, b, c[1 : 10])
 
 !$omp parallel master taskloop lastprivate(conditional:a,b,c)
 PASS: !$omp parallel master taskloop lastprivate (conditional: a, b, c)
@@ -68,13 +68,13 @@ PASS: !$omp parallel master taskloop num_tasks (3*5+4/(7+10))
 PASS: !$omp parallel master taskloop num_tasks (3*5+4/(7+10))
 
 !$omp parallel master taskloop collapse (asd)
-PASS: !$omp parallel master taskloop collapse (asd)
+PASS: !$omp parallel master taskloop collapse(asd)
 
 !$omp parallel master taskloop final (2839/9823)
-PASS: !$omp parallel master taskloop final (2839/9823)
+PASS: !$omp parallel master taskloop final(2839/9823)
 
 !$omp parallel master taskloop priority (256)
-PASS: !$omp parallel master taskloop priority (256)
+PASS: !$omp parallel master taskloop priority(256)
 
 !$omp parallel master taskloop untied
 PASS: !$omp parallel master taskloop untied
@@ -86,7 +86,7 @@ PASS: !$omp parallel master taskloop mergeable
 PASS: !$omp parallel master taskloop nogroup
 
 !$omp parallel master taskloop allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
-PASS: !$omp parallel master taskloop allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
+PASS: !$omp parallel master taskloop allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1 : 5])
 
 // invalid test without paired validation.
 EXPECT: invalid

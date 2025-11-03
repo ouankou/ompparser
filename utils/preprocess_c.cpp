@@ -24,6 +24,9 @@ preProcessCManaged(std::ifstream &input_file) {
   std::string current_line;
   std::regex c_regex(
       "^([[:blank:]]*#pragma)([[:blank:]]+)(omp)[[:blank:]]+(.*)");
+  std::regex fortran_regex(
+      "^([[:blank:]]*[!cC*]\\$omp)([[:blank:]]+)(.*)",
+      std::regex_constants::icase);
   std::regex comment_regex("[/][*]([^*]|[*][^/])*[*][/]");
   std::regex continue_regex("([\\\\]+[[:blank:]]*$)");
 
@@ -50,6 +53,10 @@ preProcessCManaged(std::ifstream &input_file) {
           current_line = std::regex_replace(current_line, comment_regex, "");
         };
         input_pragma += current_line;
+        omp_pragmas->push_back(input_pragma);
+      } else if (std::regex_match(current_line, fortran_regex)) {
+        // Fortran directive found
+        input_pragma = current_line;
         omp_pragmas->push_back(input_pragma);
       }
     };

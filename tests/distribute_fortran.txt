@@ -14,16 +14,16 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp distribute private(a,b,c)
-PASS: !$omp distribute private (a, b, c)
+PASS: !$omp distribute private(a, b, c)
 
 !$omp distribute firstprivate(a,b,c)
-PASS: !$omp distribute firstprivate (a, b, c)
+PASS: !$omp distribute firstprivate(a, b, c)
 
 !$omp distribute lastprivate(a,b,c)
 PASS: !$omp distribute lastprivate (a, b, c)
 
 !$omp distribute collapse(a)
-PASS: !$omp distribute collapse (a)
+PASS: !$omp distribute collapse(a)
 
 !$omp distribute allocate(a,b,c)
 PASS: !$omp distribute allocate (a, b, c)
@@ -41,7 +41,7 @@ PASS: !$omp distribute dist_schedule (static, 2)
 PASS: !$omp distribute dist_schedule (static)
 
 !$omp end distribute
-PASS: !$omp end distribute 
+PASS: !$omp end distribute
 
 // invalid test without paired validation.
 EXPECT: invalid

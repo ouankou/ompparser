@@ -22,6 +22,11 @@
 %x ATOMIC_DEFAULT_MEM_ORDER_STATE
 %x BIND_STATE
 %x COLLAPSE_STATE
+%x SIZES_STATE
+%x LOOPRANGE_STATE
+%x INIT_STATE
+%x APPLY_STATE
+%x ADJUST_ARGS_STATE
 %x CONDITION_STATE
 %x COPYIN_STATE
 %x COPYPRIVATE_STATE
@@ -30,6 +35,7 @@
 %x DEPEND_EXPR_STATE
 %x DEPEND_ITERATOR_STATE
 %x DEPEND_STATE
+%x DOACROSS_STATE
 %x DEVICE_STATE
 %x DEVICE_TYPE_STATE
 %x DIST_SCHEDULE_STATE
@@ -49,6 +55,8 @@
 %x LINEAR_STATE
 %x MAPPER_STATE
 %x MAP_MAPPER_STATE
+%x MAP_ITERATOR_STATE
+%x MAP_ITER_EXPR_STATE
 %x MAP_STATE
 %x MATCH_STATE
 %x NONTEMPORAL_STATE
@@ -68,6 +76,8 @@
 %x TASK_REDUCTION_STATE
 %x THREADPRIVATE_STATE
 %x TO_MAPPER_STATE
+%x TO_ITERATOR_STATE
+%x TO_ITER_EXPR_STATE
 %x TO_STATE
 %x TYPE_STR_STATE
 %x UPDATE_STATE
@@ -101,12 +111,18 @@ extern void *(*exprParse)(const char *);
 #define YY_NO_TOP_STATE
 #define YY_NO_POP_STATE
 
+/* Forward declaration - actual token values will be available after parser header */
+static inline int emit_expr_string_and_unput(char ch);
+static inline int emit_expr_string_no_unput();
+
 static const char *ompparserinput = nullptr;
 static std::string current_string;
 static int parenthesis_local_count = 0;
 static int parenthesis_global_count = 1;
 static int bracket_count;
 static int brace_count = 0;
+static int ternary_count = 0;
+static bool inside_quotes = false;
 static char current_char;
 
 /* Helper functions for expression state management */
@@ -115,6 +131,8 @@ static inline void reset_expression_counters() {
   parenthesis_global_count = 1;
   bracket_count = 0;
   brace_count = 0;
+  ternary_count = 0;
+  inside_quotes = false;
 }
 
 static inline void clear_expression_buffer() {
@@ -129,18 +147,14 @@ static inline void prepare_expression_capture() {
 static inline void prepare_expression_capture(char initial_char) {
   clear_expression_buffer();
   current_string.push_back(initial_char);
+  if (initial_char == '"') {
+    inside_quotes = true;
+  }
 }
 
-#define emit_expr_string_and_unput(ch) \
-  (openmp_lval.stype = strdup(current_string.c_str()), \
-   clear_expression_buffer(), \
-   unput(ch), \
-   EXPR_STRING)
-
-static inline int emit_expr_string_no_unput() {
-  openmp_lval.stype = strdup(current_string.c_str());
+static inline void prepare_expression_capture_str(const char* initial_str) {
   clear_expression_buffer();
-  return EXPR_STRING;
+  current_string = initial_str;
 }
 
 /* Liao 6/11/2010, OpenMP does not preclude the use of clause names as regular
@@ -179,12 +193,13 @@ extern bool b_within_variable_list; /* = false; */
 blank           [ ]
 newline         [\n]
 comment         [\/\/].*
+id_char         [a-zA-Z0-9_]
 
 %%
 
 [!c*]$omp       { ; }
 #pragma         { ; }
-omp             { ; }
+omp/{blank}     { ; }
 parallel        { return PARALLEL; }
 metadirective   { return METADIRECTIVE; }
 task            { return TASK; }
@@ -194,7 +209,8 @@ simd/{blank}*\( { yy_push_state(SIMD_STATE); return SIMD; }
 simd            { return SIMD; }
 num_threads     { yy_push_state(NUM_THREADS_STATE); return NUM_THREADS; }
 num_teams       { yy_push_state(NUM_TEAMS_STATE); return NUM_TEAMS; }
-thread_limit    { return THREAD_LIMIT; }
+thread_limit/{blank}    { return THREAD_LIMIT; }
+thread_limit/"("        { return THREAD_LIMIT; }
 default         { yy_push_state(DEFAULT_STATE); return DEFAULT; }
 private         { yy_push_state(PRIVATE_STATE); return PRIVATE; }
 firstprivate    { yy_push_state(FIRSTPRIVATE_STATE); return FIRSTPRIVATE; }
@@ -255,11 +271,41 @@ mapper          { yy_push_state(MAPPER_STATE); return MAPPER; }
 unroll          { return UNROLL;}
 tile            { return TILE;}
 
+error           { return ERROR_DIR; }
+nothing         { return NOTHING; }
+masked          { return MASKED; }
+scope           { return SCOPE; }
+interop         { return INTEROP; }
+
+assume          { return ASSUME; }
+assumes         { return ASSUMES; }
+begin           { return BEGIN_DIR; }
+
+allocators      { return ALLOCATORS; }
+taskgraph       { return TASKGRAPH; }
+task_iteration  { return TASK_ITERATION; }
+dispatch        { return DISPATCH; }
+groupprivate    { return GROUPPRIVATE; }
+workdistribute  { return WORKDISTRIBUTE; }
+fuse            { return FUSE; }
+interchange     { return INTERCHANGE; }
+reverse         { return REVERSE; }
+split           { return SPLIT; }
+stripe          { return STRIPE; }
+induction/{blank}      { return INDUCTION; }
+induction/"("          { return INDUCTION; }
+
 end             { return END; }
 score           { return SCORE; }
 condition       { yy_push_state(CONDITION_STATE); return CONDITION; }
 kind            { return KIND; }
-host            { return HOST; }
+device_num/"("  { return DEVICE_NUM; }
+host{id_char}+  { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
+host/{blank}    { return HOST; }
+host/"("        { return HOST; }
+host/","        { return HOST; }
+host/")"        { return HOST; }
+host/":"        { return HOST; }
 nohost          { return NOHOST; }
 any             { return ANY; }
 cpu             { return CPU; }
@@ -275,6 +321,7 @@ untied          { return UNTIED; }
 mergeable       { return MERGEABLE; }
 in_reduction    { yy_push_state(IN_REDUCTION_STATE); return IN_REDUCTION; }
 depend          { yy_push_state(DEPEND_STATE); return DEPEND; }
+doacross        { yy_push_state(DOACROSS_STATE); return DOACROSS; }
 priority        { return PRIORITY; }
 affinity        { yy_push_state(AFFINITY_STATE); return AFFINITY; }
 detach          { return DETACH; }
@@ -289,16 +336,35 @@ requires                  { return REQUIRES; }
 reverse_offload           { return REVERSE_OFFLOAD; }
 unified_address           { return UNIFIED_ADDRESS; }
 unified_shared_memory     { return UNIFIED_SHARED_MEMORY; }
-atomic_default_mem_order  { yy_push_state(ATOMIC_DEFAULT_MEM_ORDER_STATE); return ATOMIC_DEFAULT_MEM_ORDER; } 
+atomic_default_mem_order  { yy_push_state(ATOMIC_DEFAULT_MEM_ORDER_STATE); return ATOMIC_DEFAULT_MEM_ORDER; }
 dynamic_allocators        { return DYNAMIC_ALLOCATORS; }
+self_maps                 { return SELF_MAPS; }
 seq_cst                   { return SEQ_CST; }
 acq_rel                   { return ACQ_REL; }
 relaxed                   { return RELAXED; }
-target                    { return TARGET; }
-data                      { return DATA; }
-device                    { yy_push_state(DEVICE_STATE); return DEVICE; }
 use_device_ptr            { return USE_DEVICE_PTR; }
-use_device_addr           { return USE_DEVICE_ADDR; }  
+use_device_addr           { return USE_DEVICE_ADDR; }
+target/{blank}            { return TARGET; }
+target/{newline}          { return TARGET; }
+target/"("                { return TARGET; }
+target/","                { return TARGET; }
+target/")"                { return TARGET; }
+target/":"                { return TARGET; }
+target                    { return TARGET; }
+data/{blank}              { return DATA; }
+data/{newline}            { return DATA; }
+data/"("                  { return DATA; }
+data/","                  { return DATA; }
+data/")"                  { return DATA; }
+data/":"                  { return DATA; }
+data                      { return DATA; }
+device/{blank}            { yy_push_state(DEVICE_STATE); return DEVICE; }
+device/{newline}          { yy_push_state(DEVICE_STATE); return DEVICE; }
+device/"("                { yy_push_state(DEVICE_STATE); return DEVICE; }
+device/","                { yy_push_state(DEVICE_STATE); return DEVICE; }
+device/")"                { yy_push_state(DEVICE_STATE); return DEVICE; }
+device/":"                { yy_push_state(DEVICE_STATE); return DEVICE; }
+device                    { yy_push_state(DEVICE_STATE); return DEVICE; }  
 enter                     { return ENTER; }
 exit                      { return EXIT; }
 is_device_ptr             { return IS_DEVICE_PTR; }
@@ -328,7 +394,70 @@ critical                  { return CRITICAL; }
 depobj                    { return DEPOBJ; }
 destroy                   { return DESTROY; }
 threads                   { return THREADS; }
-sizes                     { return SIZES; }
+sizes                     { yy_push_state(SIZES_STATE); return SIZES; }
+
+filter                    { return FILTER; }
+compare                   { return COMPARE; }
+fail                      { return FAIL; }
+weak                      { return WEAK; }
+at                        { return AT; }
+severity                  { return SEVERITY; }
+message                   { return MESSAGE; }
+compilation               { return COMPILATION; }
+execution                 { return EXECUTION; }
+fatal                     { return FATAL; }
+warning                   { return WARNING; }
+
+absent                    { return ABSENT; }
+present                   { return PRESENT; }
+contains                  { return CONTAINS; }
+holds                     { return HOLDS; }
+otherwise                 { return OTHERWISE; }
+
+graph_id                  { return GRAPH_ID; }
+graph_reset               { return GRAPH_RESET; }
+transparent               { return TRANSPARENT; }
+replayable                { return REPLAYABLE; }
+threadset                 { return THREADSET; }
+indirect                  { return INDIRECT; }
+local/{blank}             { return LOCAL; }
+local/"("                 { return LOCAL; }
+init/{blank}              { yy_push_state(INIT_STATE); return INIT; }
+init/"("                  { yy_push_state(INIT_STATE); return INIT; }
+init_complete             { return INIT_COMPLETE; }
+safesync                  { return SAFESYNC; }
+device_safesync           { return DEVICE_SAFESYNC; }
+target_data/{blank}       { return TARGET_DATA_COMPOSITE; }  /* OpenMP 6.0 task-generating construct */
+target_enter_data/{blank} { yyless(7); return TARGET; }
+target_exit_data/{blank}  { yyless(7); return TARGET; }
+target{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
+data{id_char}+            { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
+device{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
+memscope                  { return MEMSCOPE; }
+looprange                 { yy_push_state(LOOPRANGE_STATE); return LOOPRANGE; }
+permutation               { return PERMUTATION; }
+counts                    { return COUNTS; }
+inductor                  { return INDUCTOR; }
+collector                 { return COLLECTOR; }
+combiner                  { return COMBINER; }
+adjust_args/{blank}       { yy_push_state(ADJUST_ARGS_STATE); return ADJUST_ARGS; }
+adjust_args/"("           { yy_push_state(ADJUST_ARGS_STATE); return ADJUST_ARGS; }
+append_args               { return APPEND_ARGS; }
+apply/{blank}             { yy_push_state(APPLY_STATE); return APPLY; }
+apply/"("                 { yy_push_state(APPLY_STATE); return APPLY; }
+no_openmp                 { return NO_OPENMP; }
+no_openmp_constructs      { return NO_OPENMP_CONSTRUCTS; }
+no_openmp_routines        { return NO_OPENMP_ROUTINES; }
+no_parallelism            { return NO_PARALLELISM; }
+nocontext/{blank}         { return NOCONTEXT; }
+nocontext/"("             { return NOCONTEXT; }
+novariants/{blank}        { return NOVARIANTS; }
+novariants/"("            { return NOVARIANTS; }
+use                       { return USE; }
+system                    { return SYSTEM; }
+warp                      { return WARP; }
+wavefront                 { return WAVEFRONT; }
+block                     { return BLOCK; }
 
 
 "("             { return '('; }
@@ -394,7 +523,10 @@ sizes                     { return SIZES; }
 <DEFAULT_STATE>{blank}*                     { ; }
 <DEFAULT_STATE>.                            { yy_push_state(INITIAL); unput(yytext[0]); } /* So far, only for default in metadirective meaning that a new directive is coming up. */
 
+<ORDER_STATE>reproducible                   { return REPRODUCIBLE; }
+<ORDER_STATE>unconstrained                  { return UNCONSTRAINED; }
 <ORDER_STATE>concurrent                     { return CONCURRENT; }
+<ORDER_STATE>":"                            { return ':'; }
 <ORDER_STATE>"("                            { return '('; }
 <ORDER_STATE>")"                            { yy_pop_state(); return ')'; }
 <ORDER_STATE>{blank}*                       { ; }
@@ -489,6 +621,36 @@ sizes                     { return SIZES; }
 <COLLAPSE_STATE>")"                         { yy_pop_state(); return ')'; }
 <COLLAPSE_STATE>{blank}*                    { ; }
 <COLLAPSE_STATE>.                           { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<SIZES_STATE>"("                            { return '('; }
+<SIZES_STATE>")"                            { yy_pop_state(); return ')'; }
+<SIZES_STATE>","                            { return ','; }
+<SIZES_STATE>{blank}*                       { ; }
+<SIZES_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<LOOPRANGE_STATE>"("                        { return '('; }
+<LOOPRANGE_STATE>")"                        { yy_pop_state(); return ')'; }
+<LOOPRANGE_STATE>","                        { return ','; }
+<LOOPRANGE_STATE>{blank}*                   { ; }
+<LOOPRANGE_STATE>.                          { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<INIT_STATE>"("                             { return '('; }
+<INIT_STATE>")"                             { yy_pop_state(); return ')'; }
+<INIT_STATE>":"                             { return ':'; }
+<INIT_STATE>{blank}*                        { ; }
+<INIT_STATE>.                               { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<APPLY_STATE>"("                            { return '('; }
+<APPLY_STATE>")"                            { yy_pop_state(); return ')'; }
+<APPLY_STATE>":"                            { return ':'; }
+<APPLY_STATE>{blank}*                       { ; }
+<APPLY_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<ADJUST_ARGS_STATE>"("                      { return '('; }
+<ADJUST_ARGS_STATE>")"                      { yy_pop_state(); return ')'; }
+<ADJUST_ARGS_STATE>":"                      { return ':'; }
+<ADJUST_ARGS_STATE>{blank}*                 { ; }
+<ADJUST_ARGS_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ORDERED_STATE>"("                          { yy_push_state(EXPR_STATE); return '('; }
 <ORDERED_STATE>")"                          { yy_pop_state(); return ')'; }
@@ -612,6 +774,7 @@ sizes                     { return SIZES; }
 <WHEN_STATE>user                            { return USER; }
 <WHEN_STATE>construct                       { return CONSTRUCT; }
 <WHEN_STATE>device                          { return DEVICE; }
+<WHEN_STATE>target_device                   { return TARGET_DEVICE; }
 <WHEN_STATE>implementation                  { yy_push_state(IMPLEMENTATION_STATE); return IMPLEMENTATION; }
 <WHEN_STATE>{blank}*                        { ; }
 <WHEN_STATE>.                               { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
@@ -636,6 +799,7 @@ sizes                     { return SIZES; }
 <MATCH_STATE>user                           { return USER; }
 <MATCH_STATE>construct                      { return CONSTRUCT; }
 <MATCH_STATE>device                         { return DEVICE; }
+<MATCH_STATE>target_device                  { return TARGET_DEVICE; }
 <MATCH_STATE>implementation                 { yy_push_state(IMPLEMENTATION_STATE); return IMPLEMENTATION; }
 <MATCH_STATE>{blank}*                       { ; }
 <MATCH_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
@@ -678,6 +842,7 @@ sizes                     { return SIZES; }
 <VENDOR_STATE>ibm/{blank}*\)                { return IBM; }
 <VENDOR_STATE>intel/{blank}*\)              { return INTEL; }
 <VENDOR_STATE>llvm/{blank}*\)               { return LLVM; }
+<VENDOR_STATE>nvidia/{blank}*\)             { return NVIDIA; }
 <VENDOR_STATE>pgi/{blank}*\)                { return PGI; }
 <VENDOR_STATE>ti/{blank}*\)                 { return TI; }
 <VENDOR_STATE>unknown/{blank}*\)            { return UNKNOWN; }
@@ -715,12 +880,21 @@ sizes                     { return SIZES; }
 <DEPEND_STATE>in                            { return IN; }
 <DEPEND_STATE>out                           { return OUT; }
 <DEPEND_STATE>inout                         { return INOUT; }
+<DEPEND_STATE>inoutset                      { return INOUTSET; }
 <DEPEND_STATE>mutexinoutset                 { return MUTEXINOUTSET; }
 <DEPEND_STATE>depobj                        { return DEPOBJ; }
 <DEPEND_STATE>source                        { return SOURCE; }
 <DEPEND_STATE>sink                          { return SINK; }
 <DEPEND_STATE>{blank}*                      { ; }
 <DEPEND_STATE>.                             { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+
+<DOACROSS_STATE>"("                         { return '('; }
+<DOACROSS_STATE>")"                         { yy_pop_state(); return ')'; }
+<DOACROSS_STATE>":"                         { return ':'; }
+<DOACROSS_STATE>source                      { return SOURCE; }
+<DOACROSS_STATE>sink                        { return SINK; }
+<DOACROSS_STATE>{blank}*                    { ; }
+<DOACROSS_STATE>.                           { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
 <DEPEND_ITERATOR_STATE>"("                  { return '('; }
 <DEPEND_ITERATOR_STATE>"="                  { return '='; }
@@ -789,6 +963,7 @@ sizes                     { return SIZES; }
 <DEFAULTMAP_STATE>firstprivate/{blank}*     { return BEHAVIOR_FIRSTPRIVATE; }
 <DEFAULTMAP_STATE>none/{blank}*             { return BEHAVIOR_NONE; }
 <DEFAULTMAP_STATE>default/{blank}*          { return BEHAVIOR_DEFAULT; }
+<DEFAULTMAP_STATE>present/{blank}*          { return BEHAVIOR_PRESENT; }
 <DEFAULTMAP_STATE>scalar/{blank}*           { return CATEGORY_SCALAR; }
 <DEFAULTMAP_STATE>aggregate/{blank}*        { return CATEGORY_AGGREGATE; }
 <DEFAULTMAP_STATE>pointer/{blank}*          { return CATEGORY_POINTER; }
@@ -802,7 +977,9 @@ sizes                     { return SIZES; }
 <TO_STATE>")"                               { yy_pop_state(); return ')'; }
 <TO_STATE>","                               { return ','; }
 <TO_STATE>":"                               { return ':'; }
+<TO_STATE>iterator/{blank}*"("              { prepare_expression_capture(); yy_push_state(TO_ITERATOR_STATE);return TO_ITERATOR; }
 <TO_STATE>mapper/{blank}*"("                { prepare_expression_capture(); yy_push_state(TO_MAPPER_STATE);return TO_MAPPER; }
+<TO_STATE>present                           { return PRESENT; }
 <TO_STATE>{blank}*                          { ; }
 <TO_STATE>.                                 { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
@@ -811,11 +988,28 @@ sizes                     { return SIZES; }
 <TO_MAPPER_STATE>")"                        { yy_pop_state(); return ')'; }
 <TO_MAPPER_STATE>.                          { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
+<TO_ITERATOR_STATE>"("                      { return '('; }
+<TO_ITERATOR_STATE>"="                      { return '='; }
+<TO_ITERATOR_STATE>","                      { return ','; }
+<TO_ITERATOR_STATE>":"                      { return ':'; }
+<TO_ITERATOR_STATE>")"                      { yy_pop_state(); return ')'; }
+<TO_ITERATOR_STATE>{blank}*                 { ; }
+<TO_ITERATOR_STATE>.                        { yy_push_state(TO_ITER_EXPR_STATE); unput(yytext[0]); }
+
+<TO_ITER_EXPR_STATE>"("{blank}*             { return '('; }
+<TO_ITER_EXPR_STATE>{blank}*")"             { yy_pop_state(); return emit_expr_string_and_unput(')'); }
+<TO_ITER_EXPR_STATE>","                     { yy_pop_state(); return emit_expr_string_and_unput(','); }
+<TO_ITER_EXPR_STATE>{blank}                 { yy_pop_state(); return emit_expr_string_no_unput(); }
+<TO_ITER_EXPR_STATE>"="                     { yy_pop_state(); return emit_expr_string_and_unput('='); }
+<TO_ITER_EXPR_STATE>":"                     { yy_pop_state(); return emit_expr_string_and_unput(':'); }
+<TO_ITER_EXPR_STATE>.                       { current_string.push_back(yytext[0]); }
+
 <FROM_STATE>"("                             { return '('; }
 <FROM_STATE>")"                             { yy_pop_state(); return ')'; }
 <FROM_STATE>","                             { return ','; }
 <FROM_STATE>":"                             { return ':'; }
 <FROM_STATE>mapper/{blank}*"("              { prepare_expression_capture(); yy_push_state(FROM_MAPPER_STATE);return FROM_MAPPER; }
+<FROM_STATE>present                         { return PRESENT; }
 <FROM_STATE>{blank}*                        { ; }
 <FROM_STATE>.                               { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
@@ -825,8 +1019,7 @@ sizes                     { return SIZES; }
 
 <USES_ALLOCATORS_STATE>"("                                     { return '('; }
 <USES_ALLOCATORS_STATE>","                                     { return ','; }
-<USES_ALLOCATORS_STATE>")"/{blank}*")"                         { yy_pop_state(); return ')'; }
-<USES_ALLOCATORS_STATE>")"                                     { return ')'; }
+<USES_ALLOCATORS_STATE>")"                                     { yy_pop_state(); return ')'; }
 <USES_ALLOCATORS_STATE>omp_default_mem_alloc/{blank}*"("       { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return DEFAULT_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_large_cap_mem_alloc/{blank}*"("     { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return LARGE_CAP_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_const_mem_alloc/{blank}*"("         { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return CONST_MEM_ALLOC; }
@@ -835,6 +1028,14 @@ sizes                     { return SIZES; }
 <USES_ALLOCATORS_STATE>omp_cgroup_mem_alloc/{blank}*"("        { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return CGROUP_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_pteam_mem_alloc/{blank}*"("         { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return PTEAM_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_thread_mem_alloc/{blank}*"("        { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return THREAD_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_default_mem_alloc       { return DEFAULT_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_large_cap_mem_alloc     { return LARGE_CAP_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_const_mem_alloc         { return CONST_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_high_bw_mem_alloc       { return HIGH_BW_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_low_lat_mem_alloc       { return LOW_LAT_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_cgroup_mem_alloc        { return CGROUP_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_pteam_mem_alloc         { return PTEAM_MEM_ALLOC; }
+<USES_ALLOCATORS_STATE>omp_thread_mem_alloc        { return THREAD_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>{blank}*                                { ; }
 <USES_ALLOCATORS_STATE>.                                       { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
@@ -853,7 +1054,10 @@ sizes                     { return SIZES; }
 
 <MAP_STATE>always/{blank}*,                  { return MAP_MODIFIER_ALWAYS; }
 <MAP_STATE>close/{blank}*,                   { return MAP_MODIFIER_CLOSE; }
+<MAP_STATE>present/{blank}*,                 { return MAP_MODIFIER_PRESENT; }
+<MAP_STATE>self/{blank}*,                    { return MAP_MODIFIER_SELF; }
 <MAP_STATE>mapper/{blank}*"("                { prepare_expression_capture(); yy_push_state(MAP_MAPPER_STATE);return MAP_MODIFIER_MAPPER; }
+<MAP_STATE>iterator/{blank}*"("              { prepare_expression_capture(); yy_push_state(MAP_ITERATOR_STATE);return MAP_MODIFIER_ITERATOR; }
 <MAP_STATE>"("                               { return '('; }
 <MAP_STATE>")"                               { yy_pop_state(); return ')'; }
 <MAP_STATE>","                               { return ','; }
@@ -864,12 +1068,30 @@ sizes                     { return SIZES; }
 <MAP_STATE>alloc/{blank}*:                   { return MAP_TYPE_ALLOC; }
 <MAP_STATE>release/{blank}*:                 { return MAP_TYPE_RELEASE; }
 <MAP_STATE>delete                            { return MAP_TYPE_DELETE; }
+<MAP_STATE>present/{blank}*:                 { return MAP_TYPE_PRESENT; }
+<MAP_STATE>self/{blank}*:                    { return MAP_TYPE_SELF; }
 <MAP_STATE>{blank}*                          { ; }
 <MAP_STATE>.                                 { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <MAP_MAPPER_STATE>"("                        { return '('; }
 <MAP_MAPPER_STATE>")"                        { yy_pop_state(); return ')'; }
 <MAP_MAPPER_STATE>.                          { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+
+<MAP_ITERATOR_STATE>"("                      { return '('; }
+<MAP_ITERATOR_STATE>"="                      { return '='; }
+<MAP_ITERATOR_STATE>","                      { return ','; }
+<MAP_ITERATOR_STATE>":"                      { return ':'; }
+<MAP_ITERATOR_STATE>")"                      { yy_pop_state(); return ')'; }
+<MAP_ITERATOR_STATE>{blank}*                 { ; }
+<MAP_ITERATOR_STATE>.                        { yy_push_state(MAP_ITER_EXPR_STATE); unput(yytext[0]); }
+
+<MAP_ITER_EXPR_STATE>"("{blank}*             { return '('; }
+<MAP_ITER_EXPR_STATE>{blank}*")"             { yy_pop_state(); return emit_expr_string_and_unput(')'); }
+<MAP_ITER_EXPR_STATE>","                     { yy_pop_state(); return emit_expr_string_and_unput(','); }
+<MAP_ITER_EXPR_STATE>{blank}                 { yy_pop_state(); return emit_expr_string_no_unput(); }
+<MAP_ITER_EXPR_STATE>"="                     { yy_pop_state(); return emit_expr_string_and_unput('='); }
+<MAP_ITER_EXPR_STATE>":"                     { yy_pop_state(); return emit_expr_string_and_unput(':'); }
+<MAP_ITER_EXPR_STATE>.                       { current_string.push_back(yytext[0]); }
 
 <TASK_REDUCTION_STATE>"("                     { return '('; }
 <TASK_REDUCTION_STATE>")"                     { yy_pop_state(); return ')'; }
@@ -964,10 +1186,18 @@ sizes                     { return SIZES; }
                                                     }
                                                     break;
                                                 }
+                                                case '?': {
+                                                    ternary_count++;
+                                                    current_string.push_back(current_char);
+                                                    break;
+                                                }
                                                 case ':': {
                                                     if (current_string.empty()) {
                                                         clear_expression_buffer();
                                                         return ':';
+                                                    } else if (ternary_count > 0) {
+                                                        ternary_count--;
+                                                        current_string.push_back(current_char);
                                                     } else if (bracket_count == 0) {
                                                         yy_pop_state();
                                                         return emit_expr_string_and_unput(':');
@@ -977,14 +1207,21 @@ sizes                     { return SIZES; }
                                                     break;
                                                 }
                                                 case ' ': {
-                                                    if (parenthesis_global_count == 0) {
+                                                    if (parenthesis_global_count == 0 && !inside_quotes) {
                                                         yy_pop_state();
                                                         return emit_expr_string_no_unput();
+                                                    } else if (inside_quotes) {
+                                                        current_string.push_back(current_char);
                                                     }
                                                     break;
                                                 }
+                                                case '"': {
+                                                    inside_quotes = !inside_quotes;
+                                                    current_string.push_back(current_char);
+                                                    break;
+                                                }
                                                 default: {
-                                                    if (current_char != ' ' || parenthesis_local_count != 0) {
+                                                    if (current_char != ' ' || parenthesis_local_count != 0 || inside_quotes) {
                                                         current_string.push_back(current_char);
                                                     }
                                                     break;
@@ -1012,10 +1249,18 @@ sizes                     { return SIZES; }
                                                     }
                                                     break;
                                                 }
+                                                case '?': {
+                                                    ternary_count++;
+                                                    current_string.push_back(current_char);
+                                                    break;
+                                                }
                                                 case ':': {
                                                     if (current_string.empty()) {
                                                         clear_expression_buffer();
                                                         return ':';
+                                                    } else if (ternary_count > 0) {
+                                                        ternary_count--;
+                                                        current_string.push_back(current_char);
                                                     } else if (bracket_count == 0) {
                                                         yy_pop_state();
                                                         return emit_expr_string_and_unput(':');
@@ -1025,13 +1270,14 @@ sizes                     { return SIZES; }
                                                     break;
                                                 }
                                                 case ' ': {
-                                                    if (parenthesis_global_count == 0) {
+                                                    if (parenthesis_global_count == 0 && !inside_quotes) {
                                                         yy_pop_state();
                                                         openmp_lval.stype = strdup(current_string.c_str());
                                                         current_string.clear();
                                                         parenthesis_local_count = 0;
                                                         parenthesis_global_count = 1;
                                                         bracket_count = 0;
+                                                        inside_quotes = false;
                                                         return EXPR_STRING;
                                                     }
                                                     else {
@@ -1039,8 +1285,13 @@ sizes                     { return SIZES; }
                                                     }
                                                     break;
                                                 }
+                                                case '"': {
+                                                    inside_quotes = !inside_quotes;
+                                                    current_string.push_back(current_char);
+                                                    break;
+                                                }
                                                 default: {
-                                                    if (current_char != ' ' || parenthesis_local_count != 0) {
+                                                    if (current_char != ' ' || parenthesis_local_count != 0 || inside_quotes) {
                                                         current_string.push_back(current_char);
                                                     }
                                                     break;
@@ -1062,6 +1313,19 @@ expr            {return (EXPRESSION); }
 
 %%
 
+/* Implementation of inline functions that use parser tokens */
+static inline int emit_expr_string_and_unput(char ch) {
+  openmp_lval.stype = strdup(current_string.c_str());
+  clear_expression_buffer();
+  unput(ch);
+  return EXPR_STRING;
+}
+
+static inline int emit_expr_string_no_unput() {
+  openmp_lval.stype = strdup(current_string.c_str());
+  clear_expression_buffer();
+  return EXPR_STRING;
+}
 
 /* yy_push_state can't be called outside of this file, provide a wrapper */
 extern void openmp_parse_expr() { yy_push_state(EXPR_STATE); }

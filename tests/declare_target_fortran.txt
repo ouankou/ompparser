@@ -14,7 +14,7 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp declare target to(x,y,z) link(b,n,m) device_type(nohost)
-PASS: !$omp declare target to (x, y, z) link (b, n, m) device_type (nohost)
+PASS: !$omp declare target to (x, y, z) link(b, n, m) device_type (nohost)
 
 !$omp declare target(s,t,f)
-PASS: !$omp declare target (s,t,f) 
+PASS: !$omp declare target (s,t,f)

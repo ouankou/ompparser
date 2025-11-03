@@ -14,10 +14,10 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp workshare 
-PASS: !$omp workshare 
+PASS: !$omp workshare
 
 !$omp end workshare
-PASS: !$omp end workshare 
+PASS: !$omp end workshare
 
 !$omp end workshare nowait
 PASS: !$omp end workshare nowait

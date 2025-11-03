@@ -14,10 +14,10 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp do private(for,b,c)
-PASS: !$omp do private (for, b, c)
+PASS: !$omp do private(for, b, c)
 
 !$omp do firstprivate(tol,b,c)
-PASS: !$omp do firstprivate (tol, b, c)
+PASS: !$omp do firstprivate(tol, b, c)
 
 !$omp do lastprivate(conditional:a,b,c)
 PASS: !$omp do lastprivate (conditional: a, b, c)
@@ -38,19 +38,19 @@ PASS: !$omp do linear (ref( a, b, c) :2)
 PASS: !$omp do linear (a)
 
 !$omp do reduction(task,max:a,b,c)
-PASS: !$omp do reduction (task, max : a, b, c)
+PASS: !$omp do reduction(task, max : a, b, c)
 
 !$omp do schedule(monotonic,simd:runtime,2)
-PASS: !$omp do schedule (monotonic,simd:runtime, 2)
+PASS: !$omp do schedule(monotonic,simd:runtime, 2)
 
 !$omp do schedule(runtime,2)
-PASS: !$omp do schedule (runtime, 2)
+PASS: !$omp do schedule(runtime, 2)
 
 !$omp do collapse(tol)
-PASS: !$omp do collapse (tol)
+PASS: !$omp do collapse(tol)
 
 !$omp do ordered(tol)
-PASS: !$omp do ordered (tol)
+PASS: !$omp do ordered(tol)
 
 !$omp do allocate(a,b,c)
 PASS: !$omp do allocate (a, b, c)
@@ -65,7 +65,7 @@ PASS: !$omp do allocate (omp_default_mem_alloc: a, b, c)
 PASS: !$omp do order (concurrent)
 
 !$omp end do 
-PASS: !$omp end do 
+PASS: !$omp end do
 
 !$omp end do nowait
 PASS: !$omp end do nowait

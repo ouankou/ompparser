@@ -67,17 +67,21 @@ enum OpenMPDirectiveKind {
     OPENMP_DIRECTIVE(teams)
     OPENMP_DIRECTIVE(metadirective)
     OPENMP_DIRECTIVE(declare_variant)
+    OPENMP_DIRECTIVE(begin_declare_variant)
+    OPENMP_DIRECTIVE(end_declare_variant)
     OPENMP_DIRECTIVE(task)
     OPENMP_DIRECTIVE(taskloop)
     OPENMP_DIRECTIVE(taskloop_simd)
     OPENMP_DIRECTIVE(taskyield)
     OPENMP_DIRECTIVE(requires)
     OPENMP_DIRECTIVE(target_data)
+    OPENMP_DIRECTIVE(target_data_composite)  // OpenMP 6.0 task-generating construct
     OPENMP_DIRECTIVE(target_enter_data)
     OPENMP_DIRECTIVE(target_update)
     OPENMP_DIRECTIVE(target_exit_data)
     OPENMP_DIRECTIVE(target)
     OPENMP_DIRECTIVE(declare_target)
+    OPENMP_DIRECTIVE(begin_declare_target)
     OPENMP_DIRECTIVE(end_declare_target)
     OPENMP_DIRECTIVE(master)
     OPENMP_DIRECTIVE(end)
@@ -234,6 +238,7 @@ enum OpenMPClauseKind {
     OPENMP_CLAUSE(unified_shared_memory, OMPUnifiedShared_memoryClause)
     OPENMP_CLAUSE(atomic_default_mem_order, OMPAtomicDefaultMemOrderClause)
     OPENMP_CLAUSE(dynamic_allocators, OMPDynamicAllocatorsClause)
+    OPENMP_CLAUSE(self_maps, OMPSelfMapsClause)
     OPENMP_CLAUSE(ext_implementation_defined_requirement, OMPExtImplementationDefinedRequirementClause)
 
     OPENMP_CLAUSE(device, OMPDeviceClause)
@@ -359,8 +364,9 @@ enum OpenMPClauseContextVendor {
       OPENMP_CONTEXT_VENDOR(bsc) OPENMP_CONTEXT_VENDOR(cray)
           OPENMP_CONTEXT_VENDOR(fujitsu) OPENMP_CONTEXT_VENDOR(gnu)
               OPENMP_CONTEXT_VENDOR(ibm) OPENMP_CONTEXT_VENDOR(intel)
-                  OPENMP_CONTEXT_VENDOR(llvm) OPENMP_CONTEXT_VENDOR(pgi)
-                      OPENMP_CONTEXT_VENDOR(ti) OPENMP_CONTEXT_VENDOR(user)
+                  OPENMP_CONTEXT_VENDOR(llvm) OPENMP_CONTEXT_VENDOR(nvidia)
+                      OPENMP_CONTEXT_VENDOR(pgi) OPENMP_CONTEXT_VENDOR(ti)
+                          OPENMP_CONTEXT_VENDOR(user)
                           OPENMP_CONTEXT_VENDOR(unknown) OPENMP_CONTEXT_VENDOR(
                               unspecified) // default enum for vendor list
 #undef OPENMP_CONTEXT_VENDOR
@@ -390,6 +396,15 @@ enum OpenMPDefaultClauseKind {
 
               OPENMP_DEFAULT_KIND(unknown)
 #undef OPENMP_DEFAULT_KIND
+};
+
+/// modifiers for 'order' clause.
+enum OpenMPOrderClauseModifier {
+#define OPENMP_ORDER_MODIFIER(Name) OMPC_ORDER_MODIFIER_##Name,
+  OPENMP_ORDER_MODIFIER(reproducible)
+  OPENMP_ORDER_MODIFIER(unconstrained)
+  OPENMP_ORDER_MODIFIER(unspecified)
+#undef OPENMP_ORDER_MODIFIER
 };
 
 /// OpenMP attributes for 'order' clause.
@@ -534,6 +549,22 @@ enum OpenMPDistScheduleClauseKind {
 #undef OPENMP_DIST_SCHEDULE_KIND
 };
 
+/// OpenMP attributes for 'grainsize' clause modifier (OpenMP 5.1).
+enum OpenMPGrainsizeClauseModifier {
+#define OPENMP_GRAINSIZE_MODIFIER(Name) OMPC_GRAINSIZE_MODIFIER_##Name,
+  OPENMP_GRAINSIZE_MODIFIER(strict)
+  OPENMP_GRAINSIZE_MODIFIER(unspecified)
+#undef OPENMP_GRAINSIZE_MODIFIER
+};
+
+/// OpenMP attributes for 'num_tasks' clause modifier (OpenMP 5.1).
+enum OpenMPNumTasksClauseModifier {
+#define OPENMP_NUM_TASKS_MODIFIER(Name) OMPC_NUM_TASKS_MODIFIER_##Name,
+  OPENMP_NUM_TASKS_MODIFIER(strict)
+  OPENMP_NUM_TASKS_MODIFIER(unspecified)
+#undef OPENMP_NUM_TASKS_MODIFIER
+};
+
 /// OpenMP attributes for 'bind' clause.
 enum OpenMPBindClauseBinding {
 #define OPENMP_BIND_BINDING(Name) OMPC_BIND_##Name,
@@ -630,9 +661,10 @@ enum OpenMPDeclareMapperDirectiveIdentifier {
 enum OpenMPDependClauseType {
 #define OPENMP_DEPENDENCE_TYPE(Name) OMPC_DEPENDENCE_TYPE_##Name,
   OPENMP_DEPENDENCE_TYPE(in) OPENMP_DEPENDENCE_TYPE(out)
-      OPENMP_DEPENDENCE_TYPE(inout) OPENMP_DEPENDENCE_TYPE(mutexinoutset)
-          OPENMP_DEPENDENCE_TYPE(depobj) OPENMP_DEPENDENCE_TYPE(source)
-              OPENMP_DEPENDENCE_TYPE(sink) OPENMP_DEPENDENCE_TYPE(unknown)
+      OPENMP_DEPENDENCE_TYPE(inout) OPENMP_DEPENDENCE_TYPE(inoutset)
+          OPENMP_DEPENDENCE_TYPE(mutexinoutset)
+              OPENMP_DEPENDENCE_TYPE(depobj) OPENMP_DEPENDENCE_TYPE(source)
+                  OPENMP_DEPENDENCE_TYPE(sink) OPENMP_DEPENDENCE_TYPE(unknown)
 #undef OPENMP_DEPENDENCE_TYPE
 };
 
@@ -644,13 +676,13 @@ enum OpenMPAffinityClauseModifier {
 
 enum OpenMPToClauseKind {
 #define OPENMP_TO_KIND(Name) OMPC_TO_##Name,
-  OPENMP_TO_KIND(mapper) OPENMP_TO_KIND(unspecified)
+  OPENMP_TO_KIND(mapper) OPENMP_TO_KIND(iterator) OPENMP_TO_KIND(present) OPENMP_TO_KIND(unspecified)
 #undef OPENMP_TO_KIND
 };
 
 enum OpenMPFromClauseKind {
 #define OPENMP_FROM_KIND(Name) OMPC_FROM_##Name,
-  OPENMP_FROM_KIND(mapper) OPENMP_FROM_KIND(unspecified)
+  OPENMP_FROM_KIND(mapper) OPENMP_FROM_KIND(iterator) OPENMP_FROM_KIND(present) OPENMP_FROM_KIND(unspecified)
 #undef OPENMP_FROM_KIND
 };
 
@@ -663,7 +695,8 @@ enum OpenMPDefaultmapClauseBehavior {
               OPENMP_DEFAULTMAP_BEHAVIOR(firstprivate)
                   OPENMP_DEFAULTMAP_BEHAVIOR(none)
                       OPENMP_DEFAULTMAP_BEHAVIOR(default)
-                          OPENMP_DEFAULTMAP_BEHAVIOR(unknown)
+                          OPENMP_DEFAULTMAP_BEHAVIOR(present)
+                              OPENMP_DEFAULTMAP_BEHAVIOR(unknown)
 #undef OPENMP_DEFAULTMAP_BEHAVIOR
 };
 
@@ -687,14 +720,16 @@ enum OpenMPDeviceTypeClauseKind {
 enum OpenMPMapClauseModifier {
 #define OPENMP_MAP_MODIFIER(Name) OMPC_MAP_MODIFIER_##Name,
   OPENMP_MAP_MODIFIER(always) OPENMP_MAP_MODIFIER(close)
-      OPENMP_MAP_MODIFIER(mapper) OPENMP_MAP_MODIFIER(unspecified)
+      OPENMP_MAP_MODIFIER(present) OPENMP_MAP_MODIFIER(self)
+          OPENMP_MAP_MODIFIER(mapper) OPENMP_MAP_MODIFIER(iterator) OPENMP_MAP_MODIFIER(unspecified)
 #undef OPENMP_MAP_MODIFIER
 };
 enum OpenMPMapClauseType {
 #define OPENMP_MAP_TYPE(Name) OMPC_MAP_TYPE_##Name,
   OPENMP_MAP_TYPE(to) OPENMP_MAP_TYPE(from) OPENMP_MAP_TYPE(tofrom)
       OPENMP_MAP_TYPE(alloc) OPENMP_MAP_TYPE(release) OPENMP_MAP_TYPE(delete)
-          OPENMP_MAP_TYPE(unknown) OPENMP_MAP_TYPE(unspecified)
+          OPENMP_MAP_TYPE(present) OPENMP_MAP_TYPE(self)
+              OPENMP_MAP_TYPE(unknown) OPENMP_MAP_TYPE(unspecified)
 #undef OPENMP_MAP_TYPE
 };
 enum OpenMPTaskReductionClauseIdentifier {
@@ -720,11 +755,12 @@ enum OpenMPDepobjUpdateClauseDependeceType {
   OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(in)
       OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(out)
           OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(inout)
-              OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(mutexinoutset)
-                  OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(depobj)
-                      OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(sink)
-                          OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(source)
-                              OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(unknown)
+              OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(inoutset)
+                  OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(mutexinoutset)
+                      OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(depobj)
+                          OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(sink)
+                              OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(source)
+                                  OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(unknown)
 #undef OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE
 };
 

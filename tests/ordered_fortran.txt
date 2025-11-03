@@ -20,4 +20,4 @@ PASS: !$omp ordered depend (source) depend (sink : erty)
 PASS: !$omp ordered threads simd
 
 !$omp end ordered
-PASS: !$omp end ordered 
+PASS: !$omp end ordered

@@ -14,19 +14,19 @@
 //The other one is starting with "PASS: ", which is the result for simd validation.
 
 !$omp parallel do simd private (a, b) private (a, c)
-PASS: !$omp parallel do simd private (a, b, c)
+PASS: !$omp parallel do simd private(a, b, c)
 
 !$omp parallel do simd private(a,b,c)
-PASS: !$omp parallel do simd private (a, b, c)
+PASS: !$omp parallel do simd private(a, b, c)
 
 !$omp parallel do simd firstprivate(tol,b,c)
-PASS: !$omp parallel do simd firstprivate (tol, b, c)
+PASS: !$omp parallel do simd firstprivate(tol, b, c)
 
 !$omp parallel do simd num_threads (3*5+4/(7+10))
-PASS: !$omp parallel do simd num_threads (3*5+4/(7+10))
+PASS: !$omp parallel do simd num_threads(3*5+4/(7+10))
 
 !$omp parallel do simd firstprivate (x, y)
-PASS: !$omp parallel do simd firstprivate (x, y)
+PASS: !$omp parallel do simd firstprivate(x, y)
 
 !$omp parallel do simd lastprivate(conditional:a,b,c)
 PASS: !$omp parallel do simd lastprivate (conditional: a, b, c)
@@ -35,19 +35,19 @@ PASS: !$omp parallel do simd lastprivate (conditional: a, b, c)
 PASS: !$omp parallel do simd linear (a, b, c:2)
 
 !$omp parallel do simd schedule(monotonic,simd:runtime,2)
-PASS: !$omp parallel do simd schedule (monotonic,simd:runtime, 2)
+PASS: !$omp parallel do simd schedule(monotonic,simd:runtime, 2)
 
 !$omp parallel do simd collapse(a)
-PASS: !$omp parallel do simd collapse (a)
+PASS: !$omp parallel do simd collapse(a)
 
 !$omp parallel do simd ordered(a)
-PASS: !$omp parallel do simd ordered (a)
+PASS: !$omp parallel do simd ordered(a)
 
 !$omp parallel do simd shared (a, b, c[1:10])
-PASS: !$omp parallel do simd shared (a, b, c[1:10])
+PASS: !$omp parallel do simd shared(a, b, c[1 : 10])
 
 !$omp parallel do simd copyin (a[foo(goo(x)):20],a,y)
-PASS: !$omp parallel do simd copyin (a[foo(goo(x)):20], a, y)
+PASS: !$omp parallel do simd copyin(a[foo(goo(x)) : 20], a, y)
 
 !$omp parallel do simd default (shared)
 PASS: !$omp parallel do simd default (shared)
@@ -68,22 +68,22 @@ PASS: !$omp parallel do simd proc_bind (close) default (private)
 PASS: !$omp parallel do simd proc_bind (spread)
 
 !$omp parallel do simd reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
-PASS: !$omp parallel do simd reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
+PASS: !$omp parallel do simd reduction(inscan, + : a, foo(x)) reduction(abc : x, y, z) reduction(task, user_defined_value : x, y, z) reduction(inscan, max : a, foo(x))
 
 !$omp parallel do simd allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
-PASS: !$omp parallel do simd allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
+PASS: !$omp parallel do simd allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1 : 5])
 
 !$omp parallel do simd safelen(4)
-PASS: !$omp parallel do simd safelen (4)
+PASS: !$omp parallel do simd safelen(4)
 
 !$omp parallel do simd simdlen(4)
-PASS: !$omp parallel do simd simdlen (4)
+PASS: !$omp parallel do simd simdlen(4)
 
 !$omp parallel do simd aligned(*a,&b,c:2)
 PASS: !$omp parallel do simd aligned (*a, &b, c:2)
 
 !$omp parallel do simd nontemporal(a)
-PASS: !$omp parallel do simd nontemporal (a)
+PASS: !$omp parallel do simd nontemporal(a)
 
 
 // invalid test without paired validation.

@@ -14,19 +14,19 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp parallel workshare private (a, b) private (a, c)
-PASS: !$omp parallel workshare private (a, b, c)
+PASS: !$omp parallel workshare private(a, b, c)
   
 !$omp parallel workshare num_threads (3*5+4/(7+10))
-PASS: !$omp parallel workshare num_threads (3*5+4/(7+10))
+PASS: !$omp parallel workshare num_threads(3*5+4/(7+10))
 
 !$omp parallel workshare firstprivate (x, y)
-PASS: !$omp parallel workshare firstprivate (x, y)
+PASS: !$omp parallel workshare firstprivate(x, y)
 
 !$omp parallel workshare shared (a, b, c[1:10])
-PASS: !$omp parallel workshare shared (a, b, c[1:10])
+PASS: !$omp parallel workshare shared(a, b, c[1 : 10])
 
 !$omp parallel workshare copyin (a[foo(goo(x)):20],a,y)
-PASS: !$omp parallel workshare copyin (a[foo(goo(x)):20], a, y)
+PASS: !$omp parallel workshare copyin(a[foo(goo(x)) : 20], a, y)
 
 !$omp parallel workshare default (shared)
 PASS: !$omp parallel workshare default (shared)
@@ -47,10 +47,10 @@ PASS: !$omp parallel workshare proc_bind (close) default (private)
 PASS: !$omp parallel workshare proc_bind (spread)
 
 !$omp parallel workshare reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
-PASS: !$omp parallel workshare reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
+PASS: !$omp parallel workshare reduction(inscan, + : a, foo(x)) reduction(abc : x, y, z) reduction(task, user_defined_value : x, y, z) reduction(inscan, max : a, foo(x))
 
 !$omp parallel workshare allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
-PASS: !$omp parallel workshare allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
+PASS: !$omp parallel workshare allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1 : 5])
 
 // invalid test without paired validation.
 EXPECT: invalid

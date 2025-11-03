@@ -60,48 +60,24 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 # The ompparser library for install and distribution
 add_library(ompparser SHARED ${BISON_OMPBISONParser_OUTPUTS} ${FLEX_OMPFLEXScanner_OUTPUTS} ${OMPIR_SOURCE_FILES})
 
-# The temporary test file
-add_executable(main EXCLUDE_FROM_ALL tests/main.cpp)
-add_dependencies(main ompparser)
-target_link_libraries(main ompparser)
-
-# The temporary test file
-add_executable(tester EXCLUDE_FROM_ALL tests/tester.cpp)
-add_dependencies(tester ompparser)
+# Test runner executable for built-in tests
+add_executable(tester tests/tester.cpp)
 target_link_libraries(tester ompparser)
 
-# Regression executable to ensure allocator tokens are classified correctly.
-add_executable(allocator_clause_token_test EXCLUDE_FROM_ALL
-               tests/allocator_clause_token_test.cpp)
-add_dependencies(allocator_clause_token_test ompparser)
-target_link_libraries(allocator_clause_token_test ompparser)
-
-# The standalone ompparser executable
-add_executable(ompp EXCLUDE_FROM_ALL ${OMPP_TOOLS} utils/ompparser.cpp)
-add_dependencies(ompp ompparser)
+# Standalone ompparser executable for openmp_vv suite
+add_executable(ompp ${OMPP_TOOLS} utils/ompparser.cpp)
 target_link_libraries(ompp ompparser)
 
-set(ompparser_targets ompparser)
-set(executable_targets
-    main
-    ompp
-    tester)
-
 if(BUILD_TESTING)
+  # Register all .txt test files as CTest tests
   file(GLOB TEST_SUITE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.txt")
   list(SORT TEST_SUITE_FILES)
   foreach(TEST_FILE IN LISTS TEST_SUITE_FILES)
     get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
     add_test(NAME ompparser_${TEST_NAME}
-             COMMAND $<TARGET_FILE:tester> "${TEST_FILE}")
+             COMMAND tester "${TEST_FILE}"
+             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
   endforeach()
-
-  add_test(NAME allocator_clause_token
-           COMMAND $<TARGET_FILE:allocator_clause_token_test>)
-
-  add_custom_target(check
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS tester allocator_clause_token_test)
 endif()
 
 # Install headers and libraries

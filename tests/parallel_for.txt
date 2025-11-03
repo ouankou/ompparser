@@ -14,13 +14,13 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp parallel for private (a, b) private (a, c)
-PASS: #pragma omp parallel for private (a, b, c)
+PASS: #pragma omp parallel for private(a, b, c)
   
 #pragma omp parallel for num_threads (3*5+4/(7+10))
-PASS: #pragma omp parallel for num_threads (3*5+4/(7+10))
+PASS: #pragma omp parallel for num_threads(3*5+4/(7+10))
 
 #pragma omp parallel for firstprivate (x, y)
-PASS: #pragma omp parallel for firstprivate (x, y)
+PASS: #pragma omp parallel for firstprivate(x, y)
 
 #pragma omp parallel for lastprivate(conditional:a,b,c)
 PASS: #pragma omp parallel for lastprivate (conditional: a, b, c)
@@ -29,28 +29,28 @@ PASS: #pragma omp parallel for lastprivate (conditional: a, b, c)
 PASS: #pragma omp parallel for linear (a, b, c:2)
 
 #pragma omp parallel for schedule(monotonic,simd:runtime,2)
-PASS: #pragma omp parallel for schedule (monotonic,simd:runtime, 2)
+PASS: #pragma omp parallel for schedule(monotonic,simd:runtime, 2)
 
 #pragma omp parallel for collapse(a)
-PASS: #pragma omp parallel for collapse (a)
+PASS: #pragma omp parallel for collapse(a)
 
 #pragma omp parallel for ordered(a)
-PASS: #pragma omp parallel for ordered (a)
+PASS: #pragma omp parallel for ordered(a)
 
 #pragma omp parallel for nowait
 PASS: #pragma omp parallel for nowait
 
 #pragma omp parallel for shared (a, b, c[1:10])
-PASS: #pragma omp parallel for shared (a, b, c[1:10])
+PASS: #pragma omp parallel for shared(a, b, c[1 : 10])
 
 #pragma omp parallel for shared (to)
-PASS: #pragma omp parallel for shared (to)
+PASS: #pragma omp parallel for shared(to)
 
 #pragma omp parallel for copyin (from)
-PASS: #pragma omp parallel for copyin (from)
+PASS: #pragma omp parallel for copyin(from)
 
 #pragma omp parallel for copyin (a[foo(goo(x)):20],a,y)
-PASS: #pragma omp parallel for copyin (a[foo(goo(x)):20], a, y)
+PASS: #pragma omp parallel for copyin(a[foo(goo(x)) : 20], a, y)
 
 #pragma omp parallel for default (shared)
 PASS: #pragma omp parallel for default (shared)
@@ -71,10 +71,10 @@ PASS: #pragma omp parallel for proc_bind (close) default (private)
 PASS: #pragma omp parallel for proc_bind (spread)
 
 #pragma omp parallel for reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
-PASS: #pragma omp parallel for reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
+PASS: #pragma omp parallel for reduction(inscan, + : a, foo(x)) reduction(abc : x, y, z) reduction(task, user_defined_value : x, y, z) reduction(inscan, max : a, foo(x))
 
 #pragma omp parallel for allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
-PASS: #pragma omp parallel for allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
+PASS: #pragma omp parallel for allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1 : 5])
 
 // invalid test without paired validation.
 EXPECT: invalid

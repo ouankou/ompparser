@@ -25,6 +25,9 @@ using namespace std;
 
 enum OpenMPBaseLang { Lang_C, Lang_Cplusplus, Lang_Fortran, Lang_unknown };
 
+// Global flag for clause normalization control
+extern bool normalize_clauses_global;
+
 class SourceLocation {
   int line;
   int column;
@@ -57,6 +60,8 @@ protected:
   OpenMPClauseKind kind;
   // the clause position in the vector of clauses in original order
   int clause_position = -1;
+  // flag to allow duplicate expressions (e.g., sizes(4, 4))
+  bool allow_duplicates = false;
 
   /* consider this is a struct of array, i.e.
    * the expression/localtionLine/locationColumn are the same index are one
@@ -72,7 +77,12 @@ protected:
 
 public:
   OpenMPClause(OpenMPClauseKind k, int _line = 0, int _col = 0)
-      : SourceLocation(_line, _col), kind(k) {};
+      : SourceLocation(_line, _col), kind(k) {
+    // Allow duplicates for clauses where order matters
+    if (k == OMPC_sizes || k == OMPC_looprange) {
+      allow_duplicates = true;
+    }
+  };
 
   virtual ~OpenMPClause() = default;
 
@@ -105,6 +115,7 @@ class OpenMPDirective : public SourceLocation {
 protected:
   OpenMPDirectiveKind kind;
   OpenMPBaseLang lang;
+  bool normalize_clauses = true;  // Control clause normalization
 
   /* The vector is used to store the pointers of clauses in original order.
    * While unparsing, the generated pragma keeps the clauses in the same order
@@ -183,7 +194,9 @@ protected:
 public:
   OpenMPDirective(OpenMPDirectiveKind k, OpenMPBaseLang _lang = Lang_unknown,
                   int _line = 0, int _col = 0)
-      : SourceLocation(_line, _col), kind(k), lang(_lang) {};
+      : SourceLocation(_line, _col), kind(k), lang(_lang) {
+    normalize_clauses = normalize_clauses_global;
+  };
 
   OpenMPDirectiveKind getKind() { return kind; };
 
@@ -216,6 +229,8 @@ public:
   OpenMPClause *addOpenMPClause(int, ...);
   void setBaseLang(OpenMPBaseLang _lang) { lang = _lang; };
   OpenMPBaseLang getBaseLang() { return lang; };
+  void setNormalizeClauses(bool normalize) { normalize_clauses = normalize; };
+  bool getNormalizeClauses() { return normalize_clauses; };
 
   // Registers a clause for automatic lifetime management
   // Takes ownership of the clause and returns a raw pointer for use
@@ -254,6 +269,46 @@ public:
   map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *getAllAtomicClauses() {
     return &clauses_atomic_clauses;
   };
+};
+
+// fail clause for atomic compare (OpenMP 5.1)
+class OpenMPFailClause : public OpenMPClause {
+protected:
+  OpenMPFailClauseMemoryOrder memory_order;
+
+public:
+  OpenMPFailClause(OpenMPFailClauseMemoryOrder _memory_order)
+      : OpenMPClause(OMPC_fail), memory_order(_memory_order) {};
+
+  OpenMPFailClauseMemoryOrder getMemoryOrder() { return memory_order; };
+
+  std::string toString();
+};
+
+class OpenMPSeverityClause : public OpenMPClause {
+protected:
+  OpenMPSeverityClauseKind severity_kind;
+
+public:
+  OpenMPSeverityClause(OpenMPSeverityClauseKind _severity_kind)
+      : OpenMPClause(OMPC_severity), severity_kind(_severity_kind) {};
+
+  OpenMPSeverityClauseKind getSeverityKind() { return severity_kind; };
+
+  std::string toString();
+};
+
+class OpenMPAtClause : public OpenMPClause {
+protected:
+  OpenMPAtClauseKind at_kind;
+
+public:
+  OpenMPAtClause(OpenMPAtClauseKind _at_kind)
+      : OpenMPClause(OMPC_at), at_kind(_at_kind) {};
+
+  OpenMPAtClauseKind getAtKind() { return at_kind; };
+
+  std::string toString();
 };
 
 class OpenMPEndDirective : public OpenMPDirective {
@@ -312,6 +367,21 @@ public:
   };
   std::vector<const char *> *getThreadprivateList() {
     return &threadprivate_list;
+  };
+};
+
+// groupprivate directive
+class OpenMPGroupprivateDirective : public OpenMPDirective {
+protected:
+  std::vector<const char *> groupprivate_list;
+
+public:
+  OpenMPGroupprivateDirective() : OpenMPDirective(OMPD_groupprivate) {};
+  void addGroupprivateList(const char *_groupprivate_list) {
+    groupprivate_list.push_back(_groupprivate_list);
+  };
+  std::vector<const char *> *getGroupprivateList() {
+    return &groupprivate_list;
   };
 };
 
@@ -649,6 +719,38 @@ public:
   void generateDOT(std::ofstream &, int, int, std::string);
 };
 
+// grainsize clause with optional strict modifier (OpenMP 5.1)
+class OpenMPGrainsizeClause : public OpenMPClause {
+protected:
+  OpenMPGrainsizeClauseModifier modifier;
+
+public:
+  OpenMPGrainsizeClause() : OpenMPClause(OMPC_grainsize), modifier(OMPC_GRAINSIZE_MODIFIER_unspecified) {}
+
+  OpenMPGrainsizeClause(OpenMPGrainsizeClauseModifier _modifier)
+      : OpenMPClause(OMPC_grainsize), modifier(_modifier) {};
+
+  OpenMPGrainsizeClauseModifier getModifier() { return modifier; };
+
+  std::string toString();
+};
+
+// num_tasks clause with optional strict modifier (OpenMP 5.1)
+class OpenMPNumTasksClause : public OpenMPClause {
+protected:
+  OpenMPNumTasksClauseModifier modifier;
+
+public:
+  OpenMPNumTasksClause() : OpenMPClause(OMPC_num_tasks), modifier(OMPC_NUM_TASKS_MODIFIER_unspecified) {}
+
+  OpenMPNumTasksClause(OpenMPNumTasksClauseModifier _modifier)
+      : OpenMPClause(OMPC_num_tasks), modifier(_modifier) {};
+
+  OpenMPNumTasksClauseModifier getModifier() { return modifier; };
+
+  std::string toString();
+};
+
 // OpenMP clauses with variant directives, such as WHEN and MATCH clauses.
 class OpenMPVariantClause : public OpenMPClause {
 protected:
@@ -658,10 +760,12 @@ protected:
   std::pair<std::string, std::string> isa_expression;
   std::pair<std::string, OpenMPClauseContextKind> context_kind_name =
       std::make_pair("", OMPC_CONTEXT_KIND_unknown);
+  std::pair<std::string, std::string> device_num_expression;
   std::pair<std::string, std::string> extension_expression;
   std::pair<std::string, OpenMPClauseContextVendor> context_vendor_name =
       std::make_pair("", OMPC_CONTEXT_VENDOR_unspecified);
   std::pair<std::string, std::string> implementation_user_defined_expression;
+  bool is_target_device_selector = false;
 
 public:
   OpenMPVariantClause(OpenMPClauseKind _kind) : OpenMPClause(_kind) {};
@@ -704,6 +808,13 @@ public:
   std::pair<std::string, OpenMPClauseContextKind> *getContextKind() {
     return &context_kind_name;
   };
+  void setDeviceNumExpression(const char *_score, const char *_device_num_expression) {
+    device_num_expression =
+        std::make_pair(std::string(_score), std::string(_device_num_expression));
+  };
+  std::pair<std::string, std::string> *getDeviceNumExpression() {
+    return &device_num_expression;
+  };
   void setExtensionExpression(const char *_score,
                               const char *_extension_expression) {
     extension_expression =
@@ -729,6 +840,12 @@ public:
   std::pair<std::string, std::string> *getImplementationExpression() {
     return &implementation_user_defined_expression;
   };
+  void setIsTargetDeviceSelector(bool _is_target_device) {
+    is_target_device_selector = _is_target_device;
+  };
+  bool getIsTargetDeviceSelector() {
+    return is_target_device_selector;
+  };
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
 };
@@ -748,6 +865,22 @@ public:
 
   static OpenMPClause *addWhenClause(OpenMPDirective *directive);
   // void generateDOT(std::ofstream&, int, int, std::string);
+};
+
+// Otherwise Clause
+class OpenMPOtherwiseClause : public OpenMPVariantClause {
+protected:
+  OpenMPDirective *variant_directive =
+      NULL; // variant directive inside the OTHERWISE clause
+
+public:
+  OpenMPOtherwiseClause() : OpenMPVariantClause(OMPC_otherwise) {};
+  OpenMPDirective *getVariantDirective() { return variant_directive; };
+  void setVariantDirective(OpenMPDirective *_variant_directive) {
+    variant_directive = _variant_directive;
+  };
+
+  static OpenMPClause *addOtherwiseClause(OpenMPDirective *directive);
 };
 
 // Match Clause
@@ -822,14 +955,20 @@ public:
 class OpenMPOrderClause : public OpenMPClause {
 
 protected:
+  OpenMPOrderClauseModifier order_modifier = OMPC_ORDER_MODIFIER_unspecified;
   OpenMPOrderClauseKind order_kind = OMPC_ORDER_unspecified;
 
 public:
+  OpenMPOrderClause(OpenMPOrderClauseModifier _order_modifier, OpenMPOrderClauseKind _order_kind)
+      : OpenMPClause(OMPC_order), order_modifier(_order_modifier), order_kind(_order_kind) {};
+
   OpenMPOrderClause(OpenMPOrderClauseKind _order_kind)
       : OpenMPClause(OMPC_order), order_kind(_order_kind) {};
 
+  OpenMPOrderClauseModifier getOrderClauseModifier() { return order_modifier; };
   OpenMPOrderClauseKind getOrderClauseKind() { return order_kind; };
 
+  static OpenMPClause *addOrderClause(OpenMPDirective *, OpenMPOrderClauseModifier, OpenMPOrderClauseKind);
   static OpenMPClause *addOrderClause(OpenMPDirective *, OpenMPOrderClauseKind);
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
@@ -926,6 +1065,23 @@ public:
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
   void mergeDepend(OpenMPDirective *, OpenMPClause *);
+};
+
+// doacross clause (OpenMP 5.2)
+class OpenMPDoacrossClause : public OpenMPClause {
+
+protected:
+  OpenMPDoacrossClauseType type; // source or sink
+
+public:
+  OpenMPDoacrossClause() : OpenMPClause(OMPC_doacross) {}
+
+  OpenMPDoacrossClause(OpenMPDoacrossClauseType _type)
+      : OpenMPClause(OMPC_doacross), type(_type) {};
+
+  OpenMPDoacrossClauseType getType() { return type; };
+
+  std::string toString();
 };
 
 // affinity clause

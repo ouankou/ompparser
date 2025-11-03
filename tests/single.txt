@@ -14,13 +14,13 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp single private(a,b,c)
-PASS: #pragma omp single private (a, b, c)
+PASS: #pragma omp single private(a, b, c)
 
 #pragma omp single firstprivate(a,b,c)
-PASS: #pragma omp single firstprivate (a, b, c)
+PASS: #pragma omp single firstprivate(a, b, c)
 
 #pragma omp single copyprivate(a,b,c)
-PASS: #pragma omp single copyprivate (a, b, c)
+PASS: #pragma omp single copyprivate(a, b, c)
 
 #pragma omp single nowait
 PASS: #pragma omp single nowait

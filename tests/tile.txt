@@ -14,5 +14,5 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp tile sizes(1,2,3)
-PASS: #pragma omp tile sizes (1, 2, 3)
+PASS: #pragma omp tile sizes(1, 2, 3)
 

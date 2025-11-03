@@ -14,7 +14,7 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp declare simd simdlen(4)
-PASS: !$omp declare simd simdlen (4)
+PASS: !$omp declare simd simdlen(4)
 
 !$omp declare simd linear(a,b,c:2)
 PASS: !$omp declare simd linear (a, b, c:2)
@@ -23,7 +23,7 @@ PASS: !$omp declare simd linear (a, b, c:2)
 PASS: !$omp declare simd aligned (*a, &b, c:2)
 
 !$omp declare simd uniform(*a,&b)
-PASS: !$omp declare simd uniform (*a, &b)
+PASS: !$omp declare simd uniform(*a, &b)
 
 !$omp declare simd inbranch
 PASS: !$omp declare simd inbranch
@@ -32,10 +32,10 @@ PASS: !$omp declare simd inbranch
 PASS: !$omp declare simd notinbranch
 
 !$omp declare simd uniform(i) linear(k) notinbranch
-PASS: !$omp declare simd uniform (i) linear (k) notinbranch
+PASS: !$omp declare simd uniform(i) linear (k) notinbranch
 
 !$omp declare simd (id) simdlen(4)
-PASS: !$omp declare simd (id) simdlen (4)
+PASS: !$omp declare simd (id) simdlen(4)
 
 !$omp declare simd (user) linear(a,b,c:2)
 PASS: !$omp declare simd (user) linear (a, b, c:2)
@@ -44,7 +44,7 @@ PASS: !$omp declare simd (user) linear (a, b, c:2)
 PASS: !$omp declare simd (name) aligned (*a, &b, c:2)
 
 !$omp declare simd (a) uniform(*a,&b)
-PASS: !$omp declare simd (a) uniform (*a, &b)
+PASS: !$omp declare simd (a) uniform(*a, &b)
 
 !$omp declare simd (d) inbranch
 PASS: !$omp declare simd (d) inbranch
@@ -53,7 +53,7 @@ PASS: !$omp declare simd (d) inbranch
 PASS: !$omp declare simd (#ljlkfds) notinbranch
 
 !$omp declare simd (tol) uniform(i) linear(k) notinbranch
-PASS: !$omp declare simd (tol) uniform (i) linear (k) notinbranch
+PASS: !$omp declare simd (tol) uniform(i) linear (k) notinbranch
 
 // invalid test without paired validation.
 EXPECT: invalid

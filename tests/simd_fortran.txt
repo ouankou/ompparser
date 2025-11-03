@@ -20,22 +20,22 @@ PASS: !$omp simd if (a)
 PASS: !$omp simd if (simd: a)
 
 !$omp simd safelen(4)
-PASS: !$omp simd safelen (4)
+PASS: !$omp simd safelen(4)
 
 !$omp simd simdlen(4)
-PASS: !$omp simd simdlen (4)
+PASS: !$omp simd simdlen(4)
 
 !$omp simd safelen(tol)
-PASS: !$omp simd safelen (tol)
+PASS: !$omp simd safelen(tol)
 
 !$omp simd simdlen(tol)
-PASS: !$omp simd simdlen (tol)
+PASS: !$omp simd simdlen(tol)
 
 !$omp simd lastprivate(conditional:a,b,c)
 PASS: !$omp simd lastprivate (conditional: a, b, c)
 
 !$omp simd private(a,b,c)
-PASS: !$omp simd private (a, b, c)
+PASS: !$omp simd private(a, b, c)
 
 !$omp simd linear(a,b,c:2)
 PASS: !$omp simd linear (a, b, c:2)
@@ -44,22 +44,22 @@ PASS: !$omp simd linear (a, b, c:2)
 PASS: !$omp simd aligned (*a, &b, c:2)
 
 !$omp simd reduction(task,max:a,b,c)
-PASS: !$omp simd reduction (task, max : a, b, c)
+PASS: !$omp simd reduction(task, max : a, b, c)
 
 !$omp simd nontemporal(a)
-PASS: !$omp simd nontemporal (a)
+PASS: !$omp simd nontemporal(a)
 
 !$omp simd nontemporal(private)
-PASS: !$omp simd nontemporal (private)
+PASS: !$omp simd nontemporal(private)
 
 !$omp simd collapse(a)
-PASS: !$omp simd collapse (a)
+PASS: !$omp simd collapse(a)
 
 !$omp simd order(concurrent)
 PASS: !$omp simd order (concurrent)
 
 !$omp end simd
-PASS: !$omp end simd 
+PASS: !$omp end simd
 
 // invalid test without paired validation.
 EXPECT: invalid
