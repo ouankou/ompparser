@@ -14,25 +14,25 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp parallel loop private (a, b) private (a, c)
-PASS: #pragma omp parallel loop private (a, b, c)
+PASS: #pragma omp parallel loop private(a, b, c)
   
 #pragma omp parallel loop num_threads (3*5+4/(7+10))
-PASS: #pragma omp parallel loop num_threads (3*5+4/(7+10))
+PASS: #pragma omp parallel loop num_threads(3*5+4/(7+10))
 
 #pragma omp parallel loop firstprivate (x, y)
-PASS: #pragma omp parallel loop firstprivate (x, y)
+PASS: #pragma omp parallel loop firstprivate(x, y)
 
 #pragma omp parallel loop lastprivate(conditional:a,b,c)
 PASS: #pragma omp parallel loop lastprivate (conditional: a, b, c)
 
 #pragma omp parallel loop collapse(a)
-PASS: #pragma omp parallel loop collapse (a)
+PASS: #pragma omp parallel loop collapse(a)
 
 #pragma omp parallel loop shared (a, b, c[1:10])
-PASS: #pragma omp parallel loop shared (a, b, c[1:10])
+PASS: #pragma omp parallel loop shared(a, b, c[1 : 10])
 
 #pragma omp parallel loop copyin (a[foo(goo(x)):20],a,y)
-PASS: #pragma omp parallel loop copyin (a[foo(goo(x)):20], a, y)
+PASS: #pragma omp parallel loop copyin(a[foo(goo(x)) : 20], a, y)
 
 #pragma omp parallel loop default (shared)
 PASS: #pragma omp parallel loop default (shared)
@@ -53,10 +53,10 @@ PASS: #pragma omp parallel loop proc_bind (close) default (none)
 PASS: #pragma omp parallel loop proc_bind (spread)
 
 #pragma omp parallel loop reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
-PASS: #pragma omp parallel loop reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
+PASS: #pragma omp parallel loop reduction(inscan, + : a, foo(x)) reduction(abc : x, y, z) reduction(task, user_defined_value : x, y, z) reduction(inscan, max : a, foo(x))
 
 #pragma omp parallel loop allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
-PASS: #pragma omp parallel loop allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
+PASS: #pragma omp parallel loop allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1 : 5])
 
 #pragma omp parallel loop bind(thread)
 PASS: #pragma omp parallel loop bind (thread)

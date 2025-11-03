@@ -77,7 +77,27 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     std::string id = ((OpenMPDeclareReductionDirective *)this)->getIdentifier();
     std::string combiner =
         ((OpenMPDeclareReductionDirective *)this)->getCombiner();
-    result += "( ";
+
+    // Add spaces around operators in combiner to match clang-format
+    std::string formatted_combiner = combiner;
+    // Add spaces around +=, -=, *=, /=, =, etc.
+    size_t pos = 0;
+    while ((pos = formatted_combiner.find("+=", pos)) != std::string::npos) {
+      if (pos > 0 && formatted_combiner[pos-1] != ' ') {
+        formatted_combiner.insert(pos, " ");
+        pos++;
+      }
+      if (pos + 2 < formatted_combiner.size() && formatted_combiner[pos+2] != ' ') {
+        formatted_combiner.insert(pos + 2, " ");
+      }
+      pos += 3;
+    }
+
+    // Remove trailing space from directive name before adding opening paren
+    if (!result.empty() && result.back() == ' ') {
+      result.pop_back();
+    }
+    result += "(";
     result += id;
     result += " : ";
     for (list_item = list->begin(); list_item != list->end(); list_item++) {
@@ -86,43 +106,50 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     }
     result = result.substr(0, result.size() - 1);
     result += " : ";
-    result += combiner;
-    result += " ) ";
+    result += formatted_combiner;
+    result += ")";
     break;
   }
   case OMPD_declare_mapper: {
     OpenMPDeclareMapperDirectiveIdentifier identifier =
         ((OpenMPDeclareMapperDirective *)this)->getIdentifier();
-    result += "( ";
+    // Remove trailing space from directive name before adding opening paren
+    if (!result.empty() && result.back() == ' ') {
+      result.pop_back();
+    }
+    result += "(";
     if (identifier != OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified) {
       switch (identifier) {
       case OMPD_DECLARE_MAPPER_IDENTIFIER_default: {
-        result += "default ";
+        result += "default";
         break;
       }
       case OMPD_DECLARE_MAPPER_IDENTIFIER_user: {
         std::string id =
             ((OpenMPDeclareMapperDirective *)this)->getUserDefinedIdentifier();
-        cout << "id:" << id << endl;
+        // Trim trailing space from user-defined identifier (parser may include it)
+        while (!id.empty() && (id.back() == ' ' || id.back() == '\t')) {
+          id.pop_back();
+        }
         result += id;
         break;
       }
       default:;
       };
-      result += ":";
+      result += " : ";
     }
 
     std::string declare_mapper_type =
         ((OpenMPDeclareMapperDirective *)this)->getDeclareMapperType();
+    // Trim leading space from type (parser may include it)
+    if (!declare_mapper_type.empty() && declare_mapper_type[0] == ' ') {
+      declare_mapper_type = declare_mapper_type.substr(1);
+    }
     result += declare_mapper_type;
-    if (this->getBaseLang() == Lang_Fortran)
-      result += " :: ";
-    else
-      result += " ";
     std::string declare_mapper_variable =
         ((OpenMPDeclareMapperDirective *)this)->getDeclareMapperVar();
     result += declare_mapper_variable;
-    result += " )";
+    result += ")";
     break;
   }
   case OMPD_declare_simd: {
@@ -198,6 +225,11 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       result += (*iter)->toString();
     }
     result = result.substr(0, result.size() - 1);
+  } else {
+    // No clauses - remove trailing space from directive name to match clang-format
+    if (!result.empty() && result.back() == ' ') {
+      result.pop_back();
+    }
   }
   result += ending_symbol;
 
@@ -570,12 +602,54 @@ std::string OpenMPDirective::toString() {
 
 std::string OpenMPClause::expressionToString() {
 
+  // Helper function to add spaces around colons in array subscripts for clang-format
+  auto formatArraySubscripts = [](const std::string &expr) -> std::string {
+    std::string formatted = expr;
+    size_t pos = 0;
+    int bracket_depth = 0;  // Tracks [] for C/C++
+    int paren_depth = 0;    // Tracks () for Fortran arrays
+
+    while (pos < formatted.size()) {
+      if (formatted[pos] == '[') {
+        bracket_depth++;
+        pos++;
+      } else if (formatted[pos] == ']') {
+        bracket_depth--;
+        pos++;
+      } else if (formatted[pos] == '(') {
+        paren_depth++;
+        pos++;
+      } else if (formatted[pos] == ')') {
+        paren_depth--;
+        pos++;
+      } else if (formatted[pos] == ':' && (bracket_depth > 0 || paren_depth > 0)) {
+        // Found a colon inside array subscripts
+        bool space_before = (pos > 0 && formatted[pos-1] == ' ');
+        bool space_after = (pos + 1 < formatted.size() && formatted[pos+1] == ' ');
+
+        // For C/C++ arrays []: add spaces on both sides for clang-format
+        // For Fortran arrays (): add spaces on both sides (matching pattern from test files)
+        if (!space_after && pos + 1 < formatted.size()) {
+          formatted.insert(pos + 1, " ");
+        }
+        if (!space_before && pos > 0) {
+          formatted.insert(pos, " ");
+          pos++;  // Adjust position after insertion
+        }
+        pos++;
+      } else {
+        pos++;
+      }
+    }
+    return formatted;
+  };
+
   std::string result;
   std::vector<const char *> *expr = this->getExpressions();
   if (expr != NULL) {
     // For init/apply/adjust_args clauses with 2 expressions, use ":" separator
     if ((this->getKind() == OMPC_init || this->getKind() == OMPC_apply || this->getKind() == OMPC_adjust_args) && expr->size() == 2) {
-      result = std::string((*expr)[0]) + ": " + std::string((*expr)[1]);
+      result = formatArraySubscripts(std::string((*expr)[0])) + ": " + formatArraySubscripts(std::string((*expr)[1]));
     }
     // For induction clause with 3+ expressions, use colon before last expression
     else if (this->getKind() == OMPC_induction && expr->size() >= 3) {
@@ -587,12 +661,12 @@ std::string OpenMPClause::expressionToString() {
             result += ", ";
           }
         }
-        result += std::string((*expr)[i]);
+        result += formatArraySubscripts(std::string((*expr)[i]));
       }
     } else {
       std::vector<const char *>::iterator it;
       for (it = expr->begin(); it != expr->end(); it++) {
-        result += std::string(*it) + ", ";
+        result += formatArraySubscripts(std::string(*it)) + ", ";
       };
       result = result.substr(0, result.size() - 2);
     }
@@ -928,9 +1002,14 @@ std::string OpenMPClause::toString() {
 
   std::string clause_string = "(";
   clause_string += this->expressionToString();
-  clause_string += ") ";
-  if (clause_string.size() > 3) {
+  clause_string += ")";
+  if (clause_string.size() > 2) {
+    // clang-format: space before ( only for 'if' clause
+    if (this->getKind() != OMPC_if && !result.empty() && result.back() == ' ') {
+      result.pop_back();  // Remove trailing space before (
+    }
     result += clause_string;
+    result += " ";  // Add space after )
   }
 
   return result;
@@ -1508,7 +1587,7 @@ std::string OpenMPMapClause::toString() {
     clause_string += "(";
     std::vector<const char *> *expr = this->getExpressions();
     if (expr != NULL && expr->size() >= 3) {
-      clause_string += std::string((*expr)[0]) + " = " + std::string((*expr)[1]) + ":" + std::string((*expr)[2]);
+      clause_string += std::string((*expr)[0]) + " = " + std::string((*expr)[1]) + " : " + std::string((*expr)[2]);
     }
     clause_string += ")";
     has_content = true;
@@ -1629,9 +1708,14 @@ std::string OpenMPMapClause::toString() {
   } else {
     clause_string += this->expressionToString();
   }
-  clause_string += ") ";
-  if (clause_string.size() > 3) {
+  clause_string += ")";
+  if (clause_string.size() > 2) {
+    // clang-format: no space before ( for map clause
+    if (!result.empty() && result.back() == ' ') {
+      result.pop_back();
+    }
     result += clause_string;
+    result += " ";
   };
 
   return result;
@@ -1698,9 +1782,14 @@ std::string OpenMPReductionClause::toString() {
     clause_string += " : ";
   };
   clause_string += this->expressionToString();
-  clause_string += ") ";
-  if (clause_string.size() > 3) {
+  clause_string += ")";
+  if (clause_string.size() > 2) {
+    // clang-format: no space before ( for reduction clause
+    if (!result.empty() && result.back() == ' ') {
+      result.pop_back();
+    }
     result += clause_string;
+    result += " ";
   };
 
   return result;
@@ -1856,9 +1945,14 @@ std::string OpenMPScheduleClause::toString() {
     clause_string += ", ";
     clause_string += this->getChunkSize();
   }
-  clause_string += ") ";
-  if (clause_string.size() > 3) {
+  clause_string += ")";
+  if (clause_string.size() > 2) {
+    // clang-format: no space before ( for schedule clause
+    if (!result.empty() && result.back() == ' ') {
+      result.pop_back();
+    }
     result += clause_string;
+    result += " ";
   };
 
   return result;

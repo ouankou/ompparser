@@ -20,22 +20,22 @@ PASS: !$omp distribute simd if (a)
 PASS: !$omp distribute simd if (simd: a)
 
 !$omp distribute simd safelen(4)
-PASS: !$omp distribute simd safelen (4)
+PASS: !$omp distribute simd safelen(4)
 
 !$omp distribute simd simdlen(4)
-PASS: !$omp distribute simd simdlen (4)
+PASS: !$omp distribute simd simdlen(4)
 
 !$omp distribute simd private(a,b,c)
-PASS: !$omp distribute simd private (a, b, c)
+PASS: !$omp distribute simd private(a, b, c)
 
 !$omp distribute simd firstprivate(a,b,c)
-PASS: !$omp distribute simd firstprivate (a, b, c)
+PASS: !$omp distribute simd firstprivate(a, b, c)
 
 !$omp distribute simd lastprivate(conditional:a,b,c)
 PASS: !$omp distribute simd lastprivate (conditional: a, b, c)
 
 !$omp distribute simd collapse(a)
-PASS: !$omp distribute simd collapse (a)
+PASS: !$omp distribute simd collapse(a)
 
 !$omp distribute simd allocate(a,b,c)
 PASS: !$omp distribute simd allocate (a, b, c)
@@ -59,19 +59,19 @@ PASS: !$omp distribute simd linear (a, b, c:2)
 PASS: !$omp distribute simd aligned (*a, &b, c:2)
 
 !$omp distribute simd reduction(task,max:a,b,c)
-PASS: !$omp distribute simd reduction (task, max : a, b, c)
+PASS: !$omp distribute simd reduction(task, max : a, b, c)
 
 !$omp distribute simd nontemporal(a)
-PASS: !$omp distribute simd nontemporal (a)
+PASS: !$omp distribute simd nontemporal(a)
 
 !$omp distribute simd collapse(a)
-PASS: !$omp distribute simd collapse (a)
+PASS: !$omp distribute simd collapse(a)
 
 !$omp simd order(concurrent)
 PASS: !$omp simd order (concurrent)
 
 !$omp end simd 
-PASS: !$omp end simd 
+PASS: !$omp end simd
 
 // invalid test without paired validation.
 EXPECT: invalid

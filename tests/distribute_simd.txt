@@ -20,22 +20,22 @@ PASS: #pragma omp distribute simd if (a)
 PASS: #pragma omp distribute simd if (simd: a)
 
 #pragma omp distribute simd safelen(4)
-PASS: #pragma omp distribute simd safelen (4)
+PASS: #pragma omp distribute simd safelen(4)
 
 #pragma omp distribute simd simdlen(4)
-PASS: #pragma omp distribute simd simdlen (4)
+PASS: #pragma omp distribute simd simdlen(4)
 
 #pragma omp distribute simd private(a,b,c)
-PASS: #pragma omp distribute simd private (a, b, c)
+PASS: #pragma omp distribute simd private(a, b, c)
 
 #pragma omp distribute simd firstprivate(a,b,c)
-PASS: #pragma omp distribute simd firstprivate (a, b, c)
+PASS: #pragma omp distribute simd firstprivate(a, b, c)
 
 #pragma omp distribute simd lastprivate(conditional:a,b,c)
 PASS: #pragma omp distribute simd lastprivate (conditional: a, b, c)
 
 #pragma omp distribute simd collapse(a)
-PASS: #pragma omp distribute simd collapse (a)
+PASS: #pragma omp distribute simd collapse(a)
 
 #pragma omp distribute simd allocate(a,b,c)
 PASS: #pragma omp distribute simd allocate (a, b, c)
@@ -59,13 +59,13 @@ PASS: #pragma omp distribute simd linear (a, b, c:2)
 PASS: #pragma omp distribute simd aligned (*a, &b, c:2)
 
 #pragma omp distribute simd reduction(task,max:a,b,c)
-PASS: #pragma omp distribute simd reduction (task, max : a, b, c)
+PASS: #pragma omp distribute simd reduction(task, max : a, b, c)
 
 #pragma omp distribute simd nontemporal(a)
-PASS: #pragma omp distribute simd nontemporal (a)
+PASS: #pragma omp distribute simd nontemporal(a)
 
 #pragma omp distribute simd collapse(a)
-PASS: #pragma omp distribute simd collapse (a)
+PASS: #pragma omp distribute simd collapse(a)
 
 #pragma omp simd order(concurrent)
 PASS: #pragma omp simd order (concurrent)

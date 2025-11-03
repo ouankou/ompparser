@@ -14,16 +14,16 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp loop private(a,b,c)
-PASS: !$omp loop private (a, b, c)
+PASS: !$omp loop private(a, b, c)
 
 !$omp loop lastprivate(conditional:a,b,c)
 PASS: !$omp loop lastprivate (conditional: a, b, c)
 
 !$omp loop reduction(default,max:a,b,c)
-PASS: !$omp loop reduction (default, max : a, b, c)
+PASS: !$omp loop reduction(default, max : a, b, c)
 
 !$omp loop collapse(a)
-PASS: !$omp loop collapse (a)
+PASS: !$omp loop collapse(a)
 
 !$omp loop order(concurrent)
 PASS: !$omp loop order (concurrent)
@@ -38,7 +38,7 @@ PASS: !$omp loop bind (parallel)
 PASS: !$omp loop bind (thread)
 
 !$omp end loop
-PASS: !$omp end loop 
+PASS: !$omp end loop
 
 // invalid test without paired validation.
 EXPECT: invalid

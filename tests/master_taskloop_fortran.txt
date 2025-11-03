@@ -17,19 +17,19 @@
 PASS: !$omp master taskloop if (a) if (taskloop: b)
 
 !$omp master taskloop shared (a, b, c[1:10])
-PASS: !$omp master taskloop shared (a, b, c[1:10])
+PASS: !$omp master taskloop shared(a, b, c[1 : 10])
 
 !$omp master taskloop private (a, b) private (a, c)
-PASS: !$omp master taskloop private (a, b, c)
+PASS: !$omp master taskloop private(a, b, c)
  
 !$omp master taskloop firstprivate (x, y)
-PASS: !$omp master taskloop firstprivate (x, y)
+PASS: !$omp master taskloop firstprivate(x, y)
 
 !$omp master taskloop lastprivate(conditional:a,b,c)
 PASS: !$omp master taskloop lastprivate (conditional: a, b, c)
 
 !$omp master taskloop reduction (default, + : a, foo(x))
-PASS: !$omp master taskloop reduction (default, + : a, foo(x))
+PASS: !$omp master taskloop reduction(default, + : a, foo(x))
 
 !$omp master taskloop in_reduction (+ : a, foo(x)) in_reduction (abc : x, y, z) in_reduction (user_defined_value : x, y, z) in_reduction (max : a, foo(x))
 PASS: !$omp master taskloop in_reduction (+ : a, foo(x)) in_reduction (abc : x, y, z) in_reduction (user_defined_value : x, y, z) in_reduction (max : a, foo(x))
@@ -50,13 +50,13 @@ PASS: !$omp master taskloop num_tasks (3*5+4/(7+10))
 PASS: !$omp master taskloop num_tasks (3*5+4/(7+10))
 
 !$omp master taskloop collapse (asd)
-PASS: !$omp master taskloop collapse (asd)
+PASS: !$omp master taskloop collapse(asd)
 
 !$omp master taskloop final (2839/9823)
-PASS: !$omp master taskloop final (2839/9823)
+PASS: !$omp master taskloop final(2839/9823)
 
 !$omp master taskloop priority (256)
-PASS: !$omp master taskloop priority (256)
+PASS: !$omp master taskloop priority(256)
 
 !$omp master taskloop untied
 PASS: !$omp master taskloop untied
@@ -68,7 +68,7 @@ PASS: !$omp master taskloop mergeable
 PASS: !$omp master taskloop nogroup
 
 !$omp master taskloop allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
-PASS: !$omp master taskloop allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
+PASS: !$omp master taskloop allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1 : 5])
 
 // invalid test without paired validation.
 EXPECT: invalid

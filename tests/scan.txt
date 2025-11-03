@@ -14,10 +14,10 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp scan inclusive(a,b,c)
-PASS: #pragma omp scan inclusive (a, b, c)
+PASS: #pragma omp scan inclusive(a, b, c)
 
 #pragma omp scan exclusive(a,b,c)
-PASS: #pragma omp scan exclusive (a, b, c)
+PASS: #pragma omp scan exclusive(a, b, c)
 
 
 // invalid test without paired validation.

@@ -14,19 +14,19 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp atomic
-PASS: !$omp atomic 
+PASS: !$omp atomic
 
 !$omp atomic hint(abc)
-PASS: !$omp atomic hint (abc)
+PASS: !$omp atomic hint(abc)
 
 !$omp atomic read
 PASS: !$omp atomic read
 
 !$omp atomic hint(abc) read
-PASS: !$omp atomic hint (abc) read
+PASS: !$omp atomic hint(abc) read
 
 !$omp atomic write hint(abc)
-PASS: !$omp atomic write hint (abc)
+PASS: !$omp atomic write hint(abc)
 
 !$omp atomic write seq_cst
 PASS: !$omp atomic write seq_cst
@@ -36,5 +36,5 @@ PASS: !$omp atomic write seq_cst
 PASS: !$omp atomic release
 
 !$omp end atomic
-PASS: !$omp end atomic 
+PASS: !$omp end atomic
 

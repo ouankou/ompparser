@@ -69,8 +69,8 @@ int main(int argc, const char *argv[]) {
     return -1;
   }
 
-  // open the result table file
-  output_file.open("./results.md", std::ios_base::app);
+  // open the result table file in /tmp to avoid cluttering source tree
+  output_file.open("/tmp/ompparser_results.md", std::ios_base::app);
   if (!output_file.is_open()) {
     std::cout << "No output file is available.\n";
     return -1;

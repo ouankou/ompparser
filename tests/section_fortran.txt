@@ -14,19 +14,19 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp sections private(a,b,c)
-PASS: !$omp sections private (a, b, c)
+PASS: !$omp sections private(a, b, c)
 
 !$omp sections firstprivate(a,b,c)
-PASS: !$omp sections firstprivate (a, b, c)
+PASS: !$omp sections firstprivate(a, b, c)
 
 !$omp sections firstprivate( ection_count )
-PASS: !$omp sections firstprivate (ection_count)
+PASS: !$omp sections firstprivate(ection_count)
 
 !$omp sections lastprivate(conditional:a,b,c)
 PASS: !$omp sections lastprivate (conditional: a, b, c)
 
 !$omp sections reduction(task,max:a,b,c)
-PASS: !$omp sections reduction (task, max : a, b, c)
+PASS: !$omp sections reduction(task, max : a, b, c)
 
 !$omp sections allocate(a,b,c)
 PASS: !$omp sections allocate (a, b, c)
@@ -38,10 +38,10 @@ PASS: !$omp sections allocate (omp_allocator_handle_t: a, b, c)
 PASS: !$omp sections allocate (omp_default_mem_alloc: a, b, c)
 
 !$omp section
-PASS: !$omp section 
+PASS: !$omp section
 
 !$omp end section
-PASS: !$omp end section 
+PASS: !$omp end section
 
 <<<<<<< HEAD
 !$omp end sections nowait
@@ -49,7 +49,7 @@ PASS: !$omp end sections nowait
  
 =======
 !$omp end sections
-PASS: !$omp end sections 
+PASS: !$omp end sections
 
 !$omp end sections nowait
 PASS: !$omp end sections nowait

@@ -14,7 +14,7 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp unroll
-PASS: #pragma omp unroll 
+PASS: #pragma omp unroll
 
 #pragma omp unroll full
 PASS: #pragma omp unroll full
@@ -23,4 +23,4 @@ PASS: #pragma omp unroll full
 PASS: #pragma omp unroll partial
 
 #pragma omp unroll partial(5)
-PASS: #pragma omp unroll partial (5)
+PASS: #pragma omp unroll partial(5)

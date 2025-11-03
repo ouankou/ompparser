@@ -21,4 +21,4 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp taskyield
-PASS: #pragma omp taskyield 
+PASS: #pragma omp taskyield

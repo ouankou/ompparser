@@ -17,5 +17,5 @@
 PASS: !$omp taskgroup task_reduction (abc : x, y, z)
 
 !$omp end taskgroup
-PASS: !$omp end taskgroup 
+PASS: !$omp end taskgroup
 

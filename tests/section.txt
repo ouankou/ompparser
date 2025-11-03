@@ -14,19 +14,19 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp sections private(a,b,c)
-PASS: #pragma omp sections private (a, b, c)
+PASS: #pragma omp sections private(a, b, c)
 
 #pragma omp sections firstprivate(a,b,c)
-PASS: #pragma omp sections firstprivate (a, b, c)
+PASS: #pragma omp sections firstprivate(a, b, c)
 
 #pragma omp sections firstprivate( ection_count )
-PASS: #pragma omp sections firstprivate (ection_count)
+PASS: #pragma omp sections firstprivate(ection_count)
 
 #pragma omp sections lastprivate(conditional:a,b,c)
 PASS: #pragma omp sections lastprivate (conditional: a, b, c)
 
 #pragma omp sections reduction(task,max:a,b,c)
-PASS: #pragma omp sections reduction (task, max : a, b, c)
+PASS: #pragma omp sections reduction(task, max : a, b, c)
 
 #pragma omp sections nowait
 PASS: #pragma omp sections nowait
@@ -41,7 +41,7 @@ PASS: #pragma omp sections allocate (omp_allocator_handle_t: a, b, c)
 PASS: #pragma omp sections allocate (omp_default_mem_alloc: a, b, c)
 
 #pragma omp section
-PASS: #pragma omp section 
+PASS: #pragma omp section
 
 // invalid test without paired validation.
 EXPECT: invalid

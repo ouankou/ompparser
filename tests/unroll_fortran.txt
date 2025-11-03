@@ -14,7 +14,7 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp unroll
-PASS: !$omp unroll 
+PASS: !$omp unroll
 
 !$omp unroll full
 PASS: !$omp unroll full
@@ -23,7 +23,7 @@ PASS: !$omp unroll full
 PASS: !$omp unroll partial
 
 !$omp unroll partial(5)
-PASS: !$omp unroll partial (5)
+PASS: !$omp unroll partial(5)
 
 !$omp end unroll
-PASS: !$omp end unroll 
+PASS: !$omp end unroll

@@ -14,25 +14,25 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 !$omp parallel loop private (a, b) private (a, c)
-PASS: !$omp parallel loop private (a, b, c)
+PASS: !$omp parallel loop private(a, b, c)
   
 !$omp parallel loop num_threads (3*5+4/(7+10))
-PASS: !$omp parallel loop num_threads (3*5+4/(7+10))
+PASS: !$omp parallel loop num_threads(3*5+4/(7+10))
 
 !$omp parallel loop firstprivate (x, y)
-PASS: !$omp parallel loop firstprivate (x, y)
+PASS: !$omp parallel loop firstprivate(x, y)
 
 !$omp parallel loop lastprivate(conditional:a,b,c)
 PASS: !$omp parallel loop lastprivate (conditional: a, b, c)
 
 !$omp parallel loop collapse(a)
-PASS: !$omp parallel loop collapse (a)
+PASS: !$omp parallel loop collapse(a)
 
 !$omp parallel loop shared (a, b, c[1:10])
-PASS: !$omp parallel loop shared (a, b, c[1:10])
+PASS: !$omp parallel loop shared(a, b, c[1 : 10])
 
 !$omp parallel loop copyin (a[foo(goo(x)):20],a,y)
-PASS: !$omp parallel loop copyin (a[foo(goo(x)):20], a, y)
+PASS: !$omp parallel loop copyin(a[foo(goo(x)) : 20], a, y)
 
 !$omp parallel loop default (shared)
 PASS: !$omp parallel loop default (shared)
@@ -56,10 +56,10 @@ PASS: !$omp parallel loop proc_bind (close) default (private)
 PASS: !$omp parallel loop proc_bind (spread)
 
 !$omp parallel loop reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
-PASS: !$omp parallel loop reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
+PASS: !$omp parallel loop reduction(inscan, + : a, foo(x)) reduction(abc : x, y, z) reduction(task, user_defined_value : x, y, z) reduction(inscan, max : a, foo(x))
 
 !$omp parallel loop allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
-PASS: !$omp parallel loop allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
+PASS: !$omp parallel loop allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1 : 5])
 
 !$omp parallel loop bind(thread)
 PASS: !$omp parallel loop bind (thread)

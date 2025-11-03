@@ -14,16 +14,16 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp loop private(a,b,c)
-PASS: #pragma omp loop private (a, b, c)
+PASS: #pragma omp loop private(a, b, c)
 
 #pragma omp loop lastprivate(conditional:a,b,c)
 PASS: #pragma omp loop lastprivate (conditional: a, b, c)
 
 #pragma omp loop reduction(default,max:a,b,c)
-PASS: #pragma omp loop reduction (default, max : a, b, c)
+PASS: #pragma omp loop reduction(default, max : a, b, c)
 
 #pragma omp loop collapse(a)
-PASS: #pragma omp loop collapse (a)
+PASS: #pragma omp loop collapse(a)
 
 #pragma omp loop order(concurrent)
 PASS: #pragma omp loop order (concurrent)

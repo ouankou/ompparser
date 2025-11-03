@@ -14,13 +14,13 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp critical(test1) hint(test2)
-PASS: #pragma omp critical (test1) hint (test2)
+PASS: #pragma omp critical (test1) hint(test2)
 
 #pragma omp critical
-PASS: #pragma omp critical 
+PASS: #pragma omp critical
 
 #pragma omp critical(test3)
-PASS: #pragma omp critical (test3) 
+PASS: #pragma omp critical (test3)
 
 
 
