@@ -128,6 +128,7 @@ echo ""
 if [ ! -d "$REPO_PATH" ]; then
     echo "OpenMP_VV not found at $REPO_PATH"
     echo "Cloning from $REPO_URL..."
+    mkdir -p "$(dirname "$REPO_PATH")"
     git clone --depth 1 "$REPO_URL" "$REPO_PATH" || {
         echo -e "${RED}Failed to clone OpenMP_VV${NC}"
         exit 1
