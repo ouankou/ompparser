@@ -15,7 +15,7 @@
 
 
 !$omp declare mapper(myvec_t :: v)
-PASS: !$omp declare mapper(myvec_t v)
+PASS: !$omp declare mapper(myvec_t :: v)
 
 !$omp declare mapper( left_id: dzmat_t :: v)
-PASS: !$omp declare mapper(left_id : dzmat_t v)
+PASS: !$omp declare mapper(left_id : dzmat_t :: v)

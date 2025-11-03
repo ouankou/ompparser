@@ -145,9 +145,20 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     if (!declare_mapper_type.empty() && declare_mapper_type[0] == ' ') {
       declare_mapper_type = declare_mapper_type.substr(1);
     }
+    // For Fortran, also trim trailing space before adding ::
+    if (this->getBaseLang() == Lang_Fortran) {
+      while (!declare_mapper_type.empty() &&
+             (declare_mapper_type.back() == ' ' || declare_mapper_type.back() == '\t')) {
+        declare_mapper_type.pop_back();
+      }
+    }
     result += declare_mapper_type;
     std::string declare_mapper_variable =
         ((OpenMPDeclareMapperDirective *)this)->getDeclareMapperVar();
+    // Fortran requires :: separator between type and variable
+    if (this->getBaseLang() == Lang_Fortran) {
+      result += " :: ";
+    }
     result += declare_mapper_variable;
     result += ")";
     break;
