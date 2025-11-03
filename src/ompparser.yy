@@ -1034,6 +1034,7 @@ atomic_clause : read_clause
               | update_clause
               | capture_clause
               | compare_clause
+              | weak_clause
               ;
 
 memory_order_clause : seq_cst_clause
@@ -1289,9 +1290,6 @@ fuse_clause_optseq : /* empty */
 interchange_clause_optseq : /* empty */
                           | interchange_clause_seq
                           ;
-reverse_directive_clause_optseq : /* empty */
-                   | reverse_clause_seq
-                   ;
 reverse_clause_optseq : /* empty */
                       | reverse_clause_seq
                       ;
