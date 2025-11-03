@@ -1186,10 +1186,12 @@ induction_clause : INDUCTION {
                    } '(' induction_parameter ')' {
                  }
                  ;
-induction_parameter : expression ':' expression
-                    | expression ',' expression ':' expression
-                    | var_list
+induction_parameter : var_list induction_parameter_suffix
                     ;
+
+induction_parameter_suffix : /* empty */
+                           | ':' expression
+                           ;
 inductor_clause : INDUCTOR '(' expression ')'
                 { current_clause = current_directive->addOpenMPClause(OMPC_inductor); }
                 ;
