@@ -511,8 +511,7 @@ device_selector : context_kind
                 | context_arch
                 ;
 
-target_device_selector : context_kind
-                       | context_device_num
+target_device_selector : context_device_num
                        ;
 
 context_kind : KIND '(' trait_score context_kind_name ')'
@@ -1187,12 +1186,9 @@ induction_clause : INDUCTION {
                    } '(' induction_parameter ')' {
                  }
                  ;
-induction_parameter : var_list
-                    | induction_modifiers ',' expression ':' expression
-                    | induction_modifiers ',' expression
-                    ;
-induction_modifiers : expression
-                    | induction_modifiers ',' expression
+induction_parameter : expression ':' expression
+                    | expression ',' expression ':' expression
+                    | var_list
                     ;
 inductor_clause : INDUCTOR '(' expression ')'
                 { current_clause = current_directive->addOpenMPClause(OMPC_inductor); }
@@ -2076,8 +2072,10 @@ to_mapper : TO_MAPPER { current_clause = current_directive->addOpenMPClause(OMPC
 to_iterator : TO_ITERATOR { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_iterator);
                                 }'(' to_iterator_args ')'
             ;
-to_iterator_args : EXPR_STRING { current_clause->addLangExpr($1); } '=' EXPR_STRING { current_clause->addLangExpr($4); } ':' EXPR_STRING { current_clause->addLangExpr($7); }
-                 | EXPR_STRING { current_clause->addLangExpr($1); } '=' EXPR_STRING { current_clause->addLangExpr($4); } ':' EXPR_STRING { current_clause->addLangExpr($7); } ':' EXPR_STRING { current_clause->addLangExpr($10); }
+to_iterator_args : EXPR_STRING { current_clause->addLangExpr($1); } '=' EXPR_STRING { current_clause->addLangExpr($4); } ':' EXPR_STRING { current_clause->addLangExpr($7); } to_iterator_step
+                 ;
+to_iterator_step : /* empty */
+                 | ':' EXPR_STRING { current_clause->addLangExpr($2); }
                  ;
 
 from_clause: FROM '(' from_parameter ')' ;
@@ -2191,9 +2189,11 @@ map_modifier_iterator : MAP_MODIFIER_ITERATOR {
                           map_iterator_args->clear();
                         } '(' map_iterator_argument_list ')'
                       ;
-map_iterator_argument_list : EXPR_STRING { map_iterator_args->push_back($1); } '=' EXPR_STRING { map_iterator_args->push_back($4); } ':' EXPR_STRING { map_iterator_args->push_back($7); }
-                           | EXPR_STRING { map_iterator_args->push_back($1); } '=' EXPR_STRING { map_iterator_args->push_back($4); } ':' EXPR_STRING { map_iterator_args->push_back($7); } ':' EXPR_STRING { map_iterator_args->push_back($10); }
+map_iterator_argument_list : EXPR_STRING { map_iterator_args->push_back($1); } '=' EXPR_STRING { map_iterator_args->push_back($4); } ':' EXPR_STRING { map_iterator_args->push_back($7); } map_iterator_step
                            ;
+map_iterator_step : /* empty */
+                  | ':' EXPR_STRING { map_iterator_args->push_back($2); }
+                  ;
 
 task_reduction_clause : TASK_REDUCTION '(' task_reduction_identifier ':' var_list ')' {
                       }
