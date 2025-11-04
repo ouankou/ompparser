@@ -106,7 +106,7 @@ preProcessCManaged(std::ifstream &input_file) {
           }
 
           std::string continuation_body = continuation_match[3].str();
-          combined_body += continuation_body;
+          combined_body += " " + continuation_body;
           continue_line = strip_trailing_ampersand(combined_body);
         }
 
