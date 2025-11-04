@@ -1191,12 +1191,14 @@ block                     { return BLOCK; }
                                                     current_string.push_back(current_char);
                                                     break;
                                                 }
-                                                case ':': {
+                    case ':': {
                                                     if (current_string.empty()) {
                                                         clear_expression_buffer();
                                                         return ':';
                                                     } else if (ternary_count > 0) {
                                                         ternary_count--;
+                                                        current_string.push_back(current_char);
+                                                    } else if (parenthesis_local_count > 0 || brace_count > 0) {
                                                         current_string.push_back(current_char);
                                                     } else if (bracket_count == 0) {
                                                         yy_pop_state();
@@ -1349,4 +1351,3 @@ void end_lexer(void) {
   };
   yy_delete_buffer(YY_CURRENT_BUFFER);
 }
-

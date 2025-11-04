@@ -161,7 +161,7 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     }
     result += declare_mapper_variable;
     result += ")";
-    break;
+    goto default_case;
   }
   case OMPD_declare_simd: {
     std::string proc_name = ((OpenMPDeclareSimdDirective *)this)->getProcName();
