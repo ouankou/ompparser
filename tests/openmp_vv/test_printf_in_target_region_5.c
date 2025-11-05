@@ -1,1 +1,0 @@
-#pragma omp target map(tofrom: integer, floater, doubler, single_char, shortie, unsigned_shortie, long_one, unsigned_long, long_long)

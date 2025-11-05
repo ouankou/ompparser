@@ -1,0 +1,12 @@
+!$omp requires reverse_offload
+!$omp target map(from:ompvv_isHost)
+!$omp end target
+!$omp target map(to: isSharedProb)
+!$omp end target
+!$omp   requires reverse_offload
+!$omp   target map(tofrom: errors2) map(to:a, which_device, is_shared_env)
+!$omp     target device(ancestor: 1) map(to: a) map(to: which_device)
+!$omp     end target
+!$omp   end target
+!$omp     target device(device_num: first_device_num) map(tofrom: b, target_device_num)
+!$omp     end target

@@ -1,0 +1,10 @@
+!$omp target map(from:ompvv_isHost)
+!$omp end target
+!$omp target map(to: isSharedProb)
+!$omp end target
+!$omp         declare mapper(custom: newvec :: v) map(to: v, v%data(1:v%len))
+!$omp         target data map(mapper(custom), to:s)
+!$omp         target
+!$omp         end target
+!$omp         target update from(s%data(1:s%len:2))
+!$omp         end target data

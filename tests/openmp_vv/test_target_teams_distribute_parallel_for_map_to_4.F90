@@ -1,1 +1,0 @@
-!$omp        target teams distribute parallel do map(to: a, b, scalar) map(tofrom: d)

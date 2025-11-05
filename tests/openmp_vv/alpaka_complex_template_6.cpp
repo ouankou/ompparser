@@ -1,1 +1,0 @@
-#pragma omp target map(from: version_set[0:2])

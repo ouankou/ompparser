@@ -1,1 +1,0 @@
-#pragma omp target parallel loop collapse(3) map(tofrom: arr)

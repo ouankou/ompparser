@@ -1,0 +1,12 @@
+!$omp target map(from:ompvv_isHost)
+!$omp end target
+!$omp target map(to: isSharedProb)
+!$omp end target
+!$omp   parallel master
+!$omp   taskgroup task_reduction(+:sum)
+!$omp   target in_reduction(+:sum)
+!$omp   end target
+!$omp   task in_reduction(+:sum)
+!$omp   end task
+!$omp   end taskgroup
+!$omp   end parallel master

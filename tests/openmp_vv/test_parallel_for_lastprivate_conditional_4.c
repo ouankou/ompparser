@@ -1,1 +1,0 @@
-#pragma omp parallel for lastprivate(conditional: x)

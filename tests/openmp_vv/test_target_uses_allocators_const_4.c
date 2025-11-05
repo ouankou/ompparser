@@ -1,1 +1,0 @@
-#pragma omp target uses_allocators(omp_const_mem_alloc) allocate(omp_const_mem_alloc: x) firstprivate(x) map(tofrom: device_result)

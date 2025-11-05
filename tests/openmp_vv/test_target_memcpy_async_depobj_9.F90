@@ -1,1 +1,0 @@
-!$omp     depobj(obj) destroy

@@ -1,1 +1,0 @@
-#pragma omp threadprivate(GlobalVar)

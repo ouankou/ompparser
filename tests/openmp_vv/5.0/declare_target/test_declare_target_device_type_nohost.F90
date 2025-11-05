@@ -1,0 +1,11 @@
+!$omp target map(from:ompvv_isHost)
+!$omp end target
+!$omp target map(to: isSharedProb)
+!$omp end target
+!$omp     declare target to(a, b, c, i)
+!$omp       declare target to(target_function) device_type(nohost)
+!$omp       declare variant(target_function) match(device={kind(nohost)})
+!$omp       target update to(a, b, c)
+!$omp       target
+!$omp       end target
+!$omp       target update from(a, b, c)

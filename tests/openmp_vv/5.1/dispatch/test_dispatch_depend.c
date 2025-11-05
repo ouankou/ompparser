@@ -1,0 +1,10 @@
+#pragma omp begin declare variant match(device={kind(host)})
+#pragma omp end declare variant
+#pragma omp begin declare variant match(device={kind(nohost)})
+#pragma omp end declare variant
+#pragma omp declare variant(add_a) match(construct={dispatch})
+#pragma omp task
+#pragma omp taskwait depend(out:a) nowait
+#pragma omp dispatch depend(in: a)
+#pragma omp taskwait
+#pragma omp target map (from: _ompvv_isOffloadingOn)

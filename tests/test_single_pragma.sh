@@ -1,15 +1,15 @@
 #!/bin/bash
 #
-# test_single_pragma.sh - Test a single extracted pragma file
+# test_single_pragma.sh - Test pragma file(s)
 #
 # This script validates that a pragma file can be successfully parsed.
-# It reads the pragma from the file and passes it through the parser.
+# Handles both single-pragma and multi-pragma files.
 #
 # Usage: ./test_single_pragma.sh <pragma_file> <ompp_binary>
 #
 # Exit codes:
-#   0: Parse succeeded
-#   1: Parse failed or NULL output
+#   0: All pragmas parsed successfully
+#   1: One or more pragmas failed to parse
 #
 
 set -euo pipefail
@@ -32,22 +32,24 @@ if [ ! -x "$OMPP_BIN" ]; then
     exit 1
 fi
 
-# Run ompp and capture output
+# Run ompp on the file (handles multi-pragma files automatically)
 OUTPUT=$("$OMPP_BIN" --no-normalize "$PRAGMA_FILE" 2>&1)
 
-# Check if output contains "NULL" which indicates parse failure
-if echo "$OUTPUT" | grep -q "^NULL$"; then
-    echo "Parse failed: NULL output"
+# Count NULL outputs (indicates parse failures)
+NULL_COUNT=$(echo "$OUTPUT" | grep -c "^NULL$" || true)
+
+if [ "$NULL_COUNT" -gt 0 ]; then
+    echo "Parse failed: $NULL_COUNT pragma(s) returned NULL"
     echo "$OUTPUT"
     exit 1
 fi
 
-# Check if stderr contains actual error messages (not just the word "error" in pragmas)
+# Check if stderr contains actual error messages
 if echo "$OUTPUT" | grep -E "^error:" > /dev/null; then
     echo "Parse error detected"
     echo "$OUTPUT"
     exit 1
 fi
 
-# If we got here, parsing succeeded
+# If we got here, all pragmas parsed successfully
 exit 0

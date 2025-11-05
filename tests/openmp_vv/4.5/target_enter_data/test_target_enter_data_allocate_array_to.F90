@@ -1,0 +1,16 @@
+!$omp target map(from:ompvv_isHost)
+!$omp end target
+!$omp target map(to: isSharedProb)
+!$omp end target
+!$omp             target enter data map(to: my1DPtr(:))
+!$omp             target map(tofrom: my1DArr)
+!$omp             end target
+!$omp             target exit data map(delete: my1DPtr(:))
+!$omp             target enter data map(to: my2DPtr(:,:))
+!$omp             target map(from: my2DArr)
+!$omp             end target
+!$omp             target exit data map(delete: my2DPtr(:,:))
+!$omp             target enter data map(to: my3DPtr(:,:,:))
+!$omp             target map(from: my3DArr)
+!$omp             end target
+!$omp             target exit data map(delete: my3DPtr(:,:,:))

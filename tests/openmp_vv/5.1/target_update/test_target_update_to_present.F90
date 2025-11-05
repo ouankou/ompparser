@@ -1,0 +1,10 @@
+!$omp target map(from:ompvv_isHost)
+!$omp end target
+!$omp target map(to: isSharedProb)
+!$omp end target
+!$omp         target update to(scalar_var, A, new_struct)
+!$omp         target enter data map(alloc: scalar_var, A, new_struct)
+!$omp         target update to(present: scalar_var, A, new_struct)
+!$omp         target map(tofrom: errors) defaultmap(none) map(to: scalar_var, A, new_struct)
+!$omp         end target
+!$omp         target exit data map(release: scalar_var, A, new_struct)

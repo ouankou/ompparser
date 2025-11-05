@@ -1,0 +1,10 @@
+!$omp target map(from:ompvv_isHost)
+!$omp end target
+!$omp target map(to: isSharedProb)
+!$omp end target
+!$omp     depobj(obj) depend(inout: devRect)
+!$omp     taskwait depend(depobj: obj)
+!$omp     target is_device_ptr(devRect) device(t) depend(depobj: obj)
+!$omp     end target
+!$omp     taskwait depend(depobj: obj)
+!$omp     depobj(obj) destroy

@@ -1,1 +1,0 @@
-#pragma omp target parallel loop collapse(3) lastprivate(i, j, k) map(tofrom: arr)

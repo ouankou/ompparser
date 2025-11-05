@@ -1,0 +1,14 @@
+#pragma omp begin declare variant match(device={kind(host)})
+#pragma omp end declare variant
+#pragma omp begin declare variant match(device={kind(nohost)})
+#pragma omp end declare variant
+#pragma omp target teams loop defaultmap(tofrom)
+#pragma omp target teams loop defaultmap(from)
+#pragma omp target teams loop defaultmap(to) map(tofrom: host_data)
+#pragma omp target teams loop defaultmap(default)
+#pragma omp target teams loop defaultmap(firstprivate)
+#pragma omp target teams loop defaultmap(tofrom:aggregate) map(tofrom: host_data)
+#pragma omp target teams loop defaultmap(tofrom:scalar) reduction(+:x)
+#pragma omp target teams loop defaultmap(tofrom:aggregate)
+#pragma omp target teams loop defaultmap(tofrom:pointer)
+#pragma omp target teams loop defaultmap(alloc) map(to: device_data[0:1024])

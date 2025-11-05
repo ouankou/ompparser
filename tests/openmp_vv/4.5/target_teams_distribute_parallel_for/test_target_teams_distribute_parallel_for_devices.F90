@@ -1,0 +1,7 @@
+!$omp target map(from:ompvv_isHost)
+!$omp end target
+!$omp target map(to: isSharedProb)
+!$omp end target
+!$omp          target enter data map(to: a) device(dev2)
+!$omp          target teams distribute parallel do device(dev2) map(tofrom: isHost)
+!$omp          target exit data map(from: a) device(dev2)

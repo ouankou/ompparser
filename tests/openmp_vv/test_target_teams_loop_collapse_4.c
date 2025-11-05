@@ -1,1 +1,0 @@
-#pragma omp target teams loop map(to: a, b) map(from: c) collapse(2)

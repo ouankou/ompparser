@@ -1,1 +1,0 @@
-!$omp     target map(from: cptr_scalar3, cptr_arr3) has_device_addr(x, arr) has_device_addr(first_scalar_device_addr, first_arr_device_addr) has_device_addr(second_scalar_device_addr, second_arr_device_addr) map(errors)

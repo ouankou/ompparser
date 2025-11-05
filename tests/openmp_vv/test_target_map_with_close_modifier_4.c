@@ -1,1 +1,0 @@
-#pragma omp target map (close, tofrom: scalar, a, member)

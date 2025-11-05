@@ -1,1 +1,0 @@
-#pragma omp metadirective when(device = {kind(nohost)}: nothing) otherwise(target map(tofrom : on_host))

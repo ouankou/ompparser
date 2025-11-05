@@ -23,7 +23,7 @@
 # Commit: 49ad6cbd5281c461447c3c18272e4371496b8981
 # Date:   2025-10-23 13:16:43
 #
-# Last extraction: 2025-11-05 08:41:19
+# Last extraction: 2025-11-05 21:25:59
 #
 
 set -euo pipefail
@@ -145,7 +145,6 @@ echo ""
 # Extract pragmas
 echo "Extracting pragmas..."
 total_pragmas=0
-declare -A pragma_counts  # Track count per basename for duplicate handling
 
 for file in "${source_files[@]}"; do
     # Detect file type
@@ -227,23 +226,21 @@ for file in "${source_files[@]}"; do
         mapfile -t pragmas < <(echo "$preprocessed" | grep -E '^[[:space:]]*#pragma[[:space:]]+omp' || true)
     fi
 
-    # Save each pragma to a file
+    # Save all pragmas to a file matching upstream structure
     if [ ${#pragmas[@]} -gt 0 ]; then
-        basename=$(basename "$file")
-        basename_noext="${basename%.*}"
+        # Get relative path from upstream tests directory
+        relative_path="${file#$REPO_PATH/$TESTS_DIR/}"
 
+        # Create output path preserving directory structure
+        output_file="$OUTPUT_DIR/$relative_path"
+        output_dir=$(dirname "$output_file")
+
+        # Create directory structure if it doesn't exist
+        mkdir -p "$output_dir"
+
+        # Write all pragmas to single file (one per line)
         for pragma in "${pragmas[@]}"; do
-            # Determine output filename with duplicate handling
-            count=${pragma_counts[$basename]:-0}
-            if [ $count -eq 0 ]; then
-                output_file="$OUTPUT_DIR/${basename}"
-            else
-                output_file="$OUTPUT_DIR/${basename_noext}_${count}.${ext}"
-            fi
-            pragma_counts[$basename]=$((count + 1))
-
-            # Write pragma to file
-            echo "$pragma" > "$output_file"
+            echo "$pragma" >> "$output_file"
             total_pragmas=$((total_pragmas + 1))
         done
     fi
