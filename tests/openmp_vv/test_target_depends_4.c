@@ -1,0 +1,1 @@
+#pragma omp target depend(out: dep_1) map(tofrom: dep_1[0:1000])

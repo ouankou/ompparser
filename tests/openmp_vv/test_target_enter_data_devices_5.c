@@ -1,0 +1,1 @@
+#pragma omp target map(alloc: h_matrix[dev][0:1000]) map(tofrom: isHost[dev:1])

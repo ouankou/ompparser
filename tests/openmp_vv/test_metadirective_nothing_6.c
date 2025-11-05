@@ -1,0 +1,1 @@
+#pragma omp metadirective when( device={kind(nohost)}: nothing ) when( device={arch("nvptx")}: nothing) when( implementation={vendor(amd)}: nothing ) default( teams distribute parallel for thread_limit(thread_limit_target+1) )

@@ -1,0 +1,1 @@
+!$omp         atomic compare capture

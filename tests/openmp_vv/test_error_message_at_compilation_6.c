@@ -1,0 +1,1 @@
+#pragma omp error severity(warning) at(compilation) message("error message success")

@@ -69,13 +69,32 @@ add_executable(ompp ${OMPP_TOOLS} utils/ompparser.cpp)
 target_link_libraries(ompp ompparser)
 
 if(BUILD_TESTING)
-  # Register all .txt test files as CTest tests
-  file(GLOB TEST_SUITE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.txt")
+  # Register built-in .txt test files as CTest tests
+  file(GLOB TEST_SUITE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/tests/builtin/*.txt")
   list(SORT TEST_SUITE_FILES)
   foreach(TEST_FILE IN LISTS TEST_SUITE_FILES)
     get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
-    add_test(NAME ompparser_${TEST_NAME}
+    add_test(NAME builtin_${TEST_NAME}
              COMMAND tester "${TEST_FILE}"
+             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+  endforeach()
+
+  # Register OpenMP VV extracted pragma files as CTest tests
+  file(GLOB OPENMP_VV_FILES
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.c"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.cpp"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.cc"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.cxx"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.f"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.f90"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.f95"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.F"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.F90")
+  list(SORT OPENMP_VV_FILES)
+  foreach(TEST_FILE IN LISTS OPENMP_VV_FILES)
+    get_filename_component(TEST_NAME "${TEST_FILE}" NAME)
+    add_test(NAME openmp_vv_${TEST_NAME}
+             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_single_pragma.sh" "${TEST_FILE}" "$<TARGET_FILE:ompp>"
              WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
   endforeach()
 endif()

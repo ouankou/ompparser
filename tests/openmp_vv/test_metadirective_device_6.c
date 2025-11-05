@@ -1,0 +1,1 @@
+#pragma omp metadirective when( device={arch("nvptx")}: masked ) when( implementation={vendor(amd)}: masked ) when (implementation={vendor(nvidia)}: masked) when( device={kind(nohost)}: masked ) default( for)

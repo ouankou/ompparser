@@ -1,0 +1,1 @@
+#pragma omp target map(from: target_device_num) map(to: b, c) map(tofrom: a)

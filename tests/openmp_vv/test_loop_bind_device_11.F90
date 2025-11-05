@@ -1,0 +1,1 @@
+!$omp     loop bind(parallel)
