@@ -1,0 +1,1 @@
+!$omp     target allocate(omp_default_mem_alloc:x) firstprivate(x) map(from: device_result)

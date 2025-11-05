@@ -1,0 +1,1 @@
+!$omp     target map(to:v1,v2) map(from:v3,target_device_num) device(default_device)

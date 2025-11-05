@@ -1,0 +1,1 @@
+!$omp     target teams distribute defaultmap(tofrom: scalar) map(tofrom:byte_array(1:1024), short_array(1:1024), int_array(1:1024), long_int_array(1:1024), float_array(1:1024), double_array(1:1024), logical_array(1:1024), logical_kind4_array(1:1024), logical_kind8_array(1:1024), complex_array(1:1024))

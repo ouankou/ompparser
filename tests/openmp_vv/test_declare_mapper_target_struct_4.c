@@ -1,0 +1,1 @@
+#pragma omp declare mapper(myvec_t v) map(v, v.data[0:v.len])

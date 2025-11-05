@@ -1,0 +1,1 @@
+#pragma omp target teams distribute parallel for num_teams(2) thread_limit(10) default(private) shared(ErrCount) firstprivate(Arr) map(to: Arr[0:32]) map(tofrom: ErrCount)

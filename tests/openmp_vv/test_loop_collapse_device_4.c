@@ -1,0 +1,1 @@
+#pragma omp target parallel num_threads(8) map(tofrom: a[:128 /*Array Size of 128 uses 16MB target memory and*/][:128 /*Array Size of 128 uses 16MB target memory and*/], b[:128 /*Array Size of 128 uses 16MB target memory and*/][:128 /*Array Size of 128 uses 16MB target memory and*/+1])
