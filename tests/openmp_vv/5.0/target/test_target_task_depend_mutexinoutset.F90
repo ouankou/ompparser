@@ -1,0 +1,22 @@
+!$omp target map(from:ompvv_isHost)
+!$omp end target
+!$omp target map(to: isSharedProb)
+!$omp end target
+!$omp     target map(from: d)
+!$omp     parallel
+!$omp     single
+!$omp       task depend(out: c)
+!$omp       end task
+!$omp       task depend(out: a)
+!$omp       end task
+!$omp       task depend(out: b)
+!$omp       end task
+!$omp       task depend(in: a) depend(mutexinoutset: c)
+!$omp       end task
+!$omp       task depend(in: b) depend(mutexinoutset: c)
+!$omp       end task
+!$omp       task depend(out: c)
+!$omp       end task
+!$omp     end single
+!$omp     end parallel
+!$omp     end target

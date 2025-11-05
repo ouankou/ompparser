@@ -1,1 +1,0 @@
-!$omp          target teams distribute parallel do map(tofrom: num_teams) num_teams(tested_num_teams(nt))

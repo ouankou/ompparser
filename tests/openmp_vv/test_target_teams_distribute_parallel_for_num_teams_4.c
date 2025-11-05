@@ -1,1 +1,0 @@
-#pragma omp target teams distribute parallel for map(tofrom: num_teams) num_teams(tested_num_teams[nt])

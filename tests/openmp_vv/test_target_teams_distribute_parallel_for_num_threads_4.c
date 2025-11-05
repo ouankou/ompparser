@@ -1,1 +1,0 @@
-#pragma omp target teams distribute parallel for map(tofrom: num_threads) num_threads(tested_num_threads[nt])

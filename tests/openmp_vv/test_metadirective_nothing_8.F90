@@ -1,1 +1,0 @@
-!$omp     begin metadirective when(device={kind(nohost)}: parallel do num_threads(max_num_threads_initial+1)) when(device={arch("nvptx")}:parallel do num_threads(max_num_threads_initial+1)) when(implementation={vendor(amd)}: parallel do num_threads(max_num_threads_initial+1)) default(nothing)

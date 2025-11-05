@@ -1,1 +1,0 @@
-!$omp        distribute parallel do

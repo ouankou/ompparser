@@ -1,1 +1,0 @@
-!$omp     loop private(j)

@@ -1,1 +1,0 @@
-#pragma omp target map(tofrom: on_init_dev, scalar, x)

@@ -1,1 +1,0 @@
-!$omp   simd nontemporal(a, b, c)

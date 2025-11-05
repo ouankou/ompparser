@@ -1,1 +1,0 @@
-#pragma omp target map(tofrom: compute_array[0:10000])

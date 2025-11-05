@@ -1,0 +1,11 @@
+#pragma omp begin declare variant match(device={kind(host)})
+#pragma omp end declare variant
+#pragma omp begin declare variant match(device={kind(nohost)})
+#pragma omp end declare variant
+#pragma omp depobj(obj) depend(inout: a)
+#pragma omp depobj(obj) update(in)
+#pragma omp depobj(obj) destroy
+#pragma omp parallel num_threads(2)
+#pragma omp single
+#pragma omp task depend(depobj: *obj)
+#pragma omp task depend(in: a[:1028])

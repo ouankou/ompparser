@@ -1,0 +1,13 @@
+!$omp target map(from:ompvv_isHost)
+!$omp end target
+!$omp target map(to: isSharedProb)
+!$omp end target
+!$omp     declare variant(p_fn) match(construct = {parallel})
+!$omp     declare variant(t_fn) match(construct = {target})
+!$omp     do
+!$omp     declare target
+!$omp     distribute simd
+!$omp     parallel
+!$omp     end parallel
+!$omp     target teams map(tofrom: c)
+!$omp     end target teams

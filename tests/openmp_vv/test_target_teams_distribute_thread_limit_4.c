@@ -1,1 +1,0 @@
-#pragma omp target teams distribute thread_limit(4) map(from: num_threads)

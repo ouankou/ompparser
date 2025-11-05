@@ -1,0 +1,15 @@
+#pragma omp begin declare variant match(device={kind(host)})
+#pragma omp end declare variant
+#pragma omp begin declare variant match(device={kind(nohost)})
+#pragma omp end declare variant
+#pragma omp target map (from: _ompvv_isOffloadingOn)
+#pragma omp target enter data map(alloc: b[0:1024])
+#pragma omp target teams distribute map(to: a[0:1024], b[0:1024])
+#pragma omp target exit data map(from: b[0:1024])
+#pragma omp target enter data map(to: a[0:1024])
+#pragma omp target teams distribute map(from: b[0:1024])
+#pragma omp target exit data map(delete: a[0:1024])
+#pragma omp target enter data map(to: a[0:1024]) map(alloc: b[0:1024])
+#pragma omp target teams distribute map(alloc: a[0:1024], b[0:1024], c[0:1024])
+#pragma omp target exit data map(delete: a[0:1024]) map(from: b[0:1024])
+#pragma omp target teams distribute map(tofrom: b[0:1024], a[0:1024])

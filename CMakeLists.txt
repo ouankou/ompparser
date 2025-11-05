@@ -80,7 +80,7 @@ if(BUILD_TESTING)
   endforeach()
 
   # Register OpenMP VV extracted pragma files as CTest tests
-  file(GLOB OPENMP_VV_FILES
+  file(GLOB_RECURSE OPENMP_VV_FILES
        "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.c"
        "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.cpp"
        "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.cc"
@@ -92,7 +92,10 @@ if(BUILD_TESTING)
        "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.F90")
   list(SORT OPENMP_VV_FILES)
   foreach(TEST_FILE IN LISTS OPENMP_VV_FILES)
-    get_filename_component(TEST_NAME "${TEST_FILE}" NAME)
+    # Get relative path from tests/openmp_vv/ to include directory structure in test name
+    file(RELATIVE_PATH TEST_REL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv" "${TEST_FILE}")
+    # Replace directory separators with underscores for test name
+    string(REPLACE "/" "_" TEST_NAME "${TEST_REL_PATH}")
     add_test(NAME openmp_vv_${TEST_NAME}
              COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_single_pragma.sh" "${TEST_FILE}" "$<TARGET_FILE:ompp>"
              WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")

@@ -1,1 +1,0 @@
-#pragma omp target is_device_ptr(array_device) map(tofrom: array_host[0:1000])

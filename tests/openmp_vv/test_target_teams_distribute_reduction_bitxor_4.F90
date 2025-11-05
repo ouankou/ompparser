@@ -1,1 +1,0 @@
-!$omp        target teams distribute defaultmap(tofrom:scalar) reduction(ieor:result)

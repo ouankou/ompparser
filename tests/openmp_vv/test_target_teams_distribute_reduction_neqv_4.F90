@@ -1,1 +1,0 @@
-!$omp        target teams distribute reduction(.neqv.: result) defaultmap(tofrom:scalar)

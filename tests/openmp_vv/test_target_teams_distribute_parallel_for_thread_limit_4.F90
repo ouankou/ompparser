@@ -1,1 +1,0 @@
-!$omp             target teams distribute parallel do map(tofrom:num_threads) num_threads(tested_num_threads(nt)) thread_limit(tested_thread_limit(tl))

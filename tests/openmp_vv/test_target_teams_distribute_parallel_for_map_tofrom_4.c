@@ -1,1 +1,0 @@
-#pragma omp target teams distribute parallel for map(tofrom: a, b, c, d, scalar_to, scalar_from)

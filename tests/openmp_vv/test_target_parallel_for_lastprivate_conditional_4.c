@@ -1,1 +1,0 @@
-#pragma omp target parallel for lastprivate(conditional: x) map(tofrom: x)
