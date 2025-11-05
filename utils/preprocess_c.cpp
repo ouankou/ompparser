@@ -25,7 +25,7 @@ preProcessCManaged(std::ifstream &input_file) {
   std::regex c_regex(
       "^([[:blank:]]*#pragma)([[:blank:]]+)(omp)[[:blank:]]+(.*)");
   std::regex fortran_regex(
-      "^([[:blank:]]*[!cC*]\\$omp)([[:blank:]]+)(.*)",
+      "^([[:blank:]]*[!cC*]\\$omp&?)([[:blank:]]*)(.*)",
       std::regex_constants::icase);
   std::regex comment_regex("[/][*]([^*]|[*][^/])*[*][/]");
   std::regex continue_regex("([\\\\]+[[:blank:]]*$)");
@@ -55,8 +55,62 @@ preProcessCManaged(std::ifstream &input_file) {
         input_pragma += current_line;
         omp_pragmas->push_back(input_pragma);
       } else if (std::regex_match(current_line, fortran_regex)) {
-        // Fortran directive found
-        input_pragma = current_line;
+        // Fortran directive found (may span multiple continuation lines)
+        std::smatch fortran_match;
+        std::string combined_body;
+        std::string sentinel;
+        std::string spacing;
+
+        std::regex_match(current_line, fortran_match, fortran_regex);
+        sentinel = fortran_match[1].str();
+        spacing = fortran_match[2].str();
+        combined_body = fortran_match[3].str();
+
+        auto strip_trailing_ampersand = [](std::string &text) -> bool {
+          size_t end = text.find_last_not_of(" \t");
+          if (end == std::string::npos) {
+            text.clear();
+            return false;
+          }
+          bool has_ampersand = text[end] == '&';
+          if (has_ampersand) {
+            text.erase(end);
+            end = text.find_last_not_of(" \t");
+            if (end != std::string::npos) {
+              text.erase(end + 1);
+            } else {
+              text.clear();
+            }
+          }
+          return has_ampersand;
+        };
+
+        bool continue_line = strip_trailing_ampersand(combined_body);
+
+        while (continue_line) {
+          std::streampos next_pos = input_file.tellg();
+          std::string continuation_line;
+          if (!std::getline(input_file, continuation_line)) {
+            break;
+          }
+          continuation_line =
+              std::regex_replace(continuation_line, comment_regex, "");
+
+          std::smatch continuation_match;
+          if (!std::regex_match(continuation_line, continuation_match,
+                                fortran_regex)) {
+            // Not an OpenMP continuation - rewind and stop
+            input_file.clear();
+            input_file.seekg(next_pos);
+            break;
+          }
+
+          std::string continuation_body = continuation_match[3].str();
+          combined_body += " " + continuation_body;
+          continue_line = strip_trailing_ampersand(combined_body);
+        }
+
+        input_pragma = sentinel + spacing + combined_body;
         omp_pragmas->push_back(input_pragma);
       }
     };

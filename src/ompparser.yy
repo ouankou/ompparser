@@ -331,8 +331,11 @@ openmp_directive : parallel_directive
                  | declare_induction_directive
                  ;
 
-variant_directive : parallel_directive
+variant_directive : parallel_do_directive
+                  | parallel_do_simd_directive
                   | parallel_for_directive
+                  | teams_distribute_parallel_do_directive
+                  | teams_distribute_parallel_do_simd_directive
                   | metadirective_directive
                   | declare_variant_directive
                   | for_directive
@@ -357,6 +360,7 @@ variant_directive : parallel_directive
                   | master_directive
                   | masked_directive
                   | nothing_directive
+                  | parallel_directive
                   | target_directive
                   | target_teams_directive
                   | target_teams_distribute_parallel_for_directive
@@ -365,7 +369,14 @@ variant_directive : parallel_directive
 fortran_paired_directive : parallel_directive
                          | do_paired_directive
                          | metadirective_directive
+                         | begin_metadirective_directive
                          | master_directive
+                         | masked_directive
+                         | masked_taskloop_directive
+                         | masked_taskloop_simd_directive
+                         | parallel_masked_directive
+                         | parallel_masked_taskloop_directive
+                         | parallel_masked_taskloop_simd_directive
                          | teams_directive
                          | section_directive
                          | sections_paired_directive
@@ -951,7 +962,8 @@ taskloop_simd_clause_optseq : /* empty */
                             ;
 requires_clause_optseq : requires_clause_seq
                        ;
-target_data_clause_optseq :target_data_clause_seq
+target_data_clause_optseq : /* empty */
+                          | target_data_clause_seq
                           ;
 target_enter_data_clause_optseq :/* empty */
                                 |target_enter_data_clause_seq
@@ -1008,7 +1020,9 @@ atomic_clause_optseq : memory_order_clause_seq
                      | hint_clause ','atomic_clause_seq
                      ;
 
-atomic_clause_seq : atomic_clause memory_order_clause_seq_after
+atomic_clause_seq : compare_clause capture_clause memory_order_clause_seq_after
+                  | compare_clause capture_clause ',' memory_order_clause_seq_after
+                  | atomic_clause memory_order_clause_seq_after
                   | atomic_clause ',' memory_order_clause_seq_after
                   ;
 
@@ -1562,6 +1576,7 @@ begin_metadirective_clause_seq : begin_metadirective_clause
                                | begin_metadirective_clause_seq ',' begin_metadirective_clause
                                ;
 begin_metadirective_clause : when_clause
+                           | default_variant_clause
                            | otherwise_clause
                            ;
 // OpenMP 6.0 clause sequences and clauses
