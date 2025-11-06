@@ -128,6 +128,12 @@ corresponding C type is union name defaults to YYSTYPE.
 %left '<' '>' '='
 %left '+' '-'
 %left '*' '/' '%'
+%nonassoc LOWER_THAN_LOOP
+%nonassoc LOOP
+%nonassoc LOWER_THAN_PAREN
+%nonassoc ')'
+%nonassoc LOWER_THAN_COLON
+%nonassoc ':'
 
 %type <stype> expression
 
@@ -400,8 +406,6 @@ fortran_paired_directive : parallel_directive
                          | parallel_sections_directive
                          | parallel_single_directive
                          | do_paired_directive
-                         | assume_directive
-                         | end_assume_directive
                          | metadirective_directive
                          | begin_metadirective_directive
                          | master_directive
@@ -617,7 +621,7 @@ construct_selector : parallel_selector
 
 parallel_selector : PARALLEL LOOP parallel_loop_selector_suffix
                 | PARALLEL '(' { current_directive = new OpenMPDirective(OMPD_parallel); } parallel_selector_parameter ')'
-                | PARALLEL { current_directive = new OpenMPDirective(OMPD_parallel); }
+                | PARALLEL { current_directive = new OpenMPDirective(OMPD_parallel); } %prec LOWER_THAN_LOOP
                 ;
 
 parallel_loop_selector_suffix : '(' { current_directive = new OpenMPDirective(OMPD_parallel_loop); } parallel_loop_construct_selector_parameter ')'
@@ -642,7 +646,7 @@ target_construct_selector_parameter : trait_score target_clause_optseq
 
 teams_construct_selector : TEAMS LOOP teams_loop_selector_suffix
                          | TEAMS '(' { current_directive = new OpenMPDirective(OMPD_teams); } teams_construct_selector_parameter ')'
-                         | TEAMS { current_directive = new OpenMPDirective(OMPD_teams); }
+                         | TEAMS { current_directive = new OpenMPDirective(OMPD_teams); } %prec LOWER_THAN_LOOP
                          ;
 
 teams_loop_selector_suffix : '(' { current_directive = new OpenMPDirective(OMPD_teams_loop); } teams_loop_construct_selector_parameter ')'
@@ -1279,13 +1283,15 @@ apply_parameter_list : apply_parameter
                      | apply_parameter_list ',' apply_parameter
                      ;
 apply_parameter : apply_transformation
-                | apply_scope ':' apply_transformation_seq
+                | EXPR_STRING ':' apply_transformation_seq
+                | EXPR_STRING '(' apply_parameter_suffix
                 ;
-apply_scope : EXPR_STRING
-            | EXPR_STRING '(' EXPR_STRING ')'
-            ;
+apply_parameter_suffix : EXPR_STRING ')' apply_parameter_suffix_tail
+                      ;
+apply_parameter_suffix_tail : ':' apply_transformation_seq
+                           | /* empty */
+                           ;
 apply_transformation_seq : apply_transformation
-                         | apply_transformation_seq ',' apply_transformation
                          | apply_transformation_seq apply_transformation
                          ;
 apply_transformation : UNROLL
@@ -1297,7 +1303,6 @@ apply_transformation : UNROLL
                      | TILE SIZES '(' expression ')'
                      | apply_clause
                      | EXPR_STRING
-                     | EXPR_STRING '(' expression ')'
                      ;
 induction_clause : INDUCTION {
                      current_clause = current_directive->addOpenMPClause(OMPC_induction);

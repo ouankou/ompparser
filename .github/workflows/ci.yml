@@ -33,10 +33,8 @@ jobs:
         run: cd $BUILD_DIR && ctest -R "^builtin_" --output-on-failure
       - name: Run OpenMP VV tests
         run: cd $BUILD_DIR && ctest -R "^openmp_vv_" --output-on-failure
-      # OpenMP Examples tests disabled - currently at 89% pass rate (538/602)
-      # TODO: Enable when 100% pass rate achieved
-      # - name: Run OpenMP Examples tests
-      #   run: cd $BUILD_DIR && ctest -R "^openmp_examples_" --output-on-failure
+      - name: Run OpenMP Examples tests
+        run: cd $BUILD_DIR && ctest -R "^openmp_examples_" --output-on-failure
 
   build-clang:
     name: Build & Test (Clang)
@@ -63,7 +61,5 @@ jobs:
         run: cd $BUILD_DIR && ctest -R "^builtin_" --output-on-failure
       - name: Run OpenMP VV tests
         run: cd $BUILD_DIR && ctest -R "^openmp_vv_" --output-on-failure
-      # OpenMP Examples tests disabled - currently at 89% pass rate (538/602)
-      # TODO: Enable when 100% pass rate achieved
-      # - name: Run OpenMP Examples tests
-      #   run: cd $BUILD_DIR && ctest -R "^openmp_examples_" --output-on-failure
+      - name: Run OpenMP Examples tests
+        run: cd $BUILD_DIR && ctest -R "^openmp_examples_" --output-on-failure
