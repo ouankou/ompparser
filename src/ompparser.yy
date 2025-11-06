@@ -1189,12 +1189,33 @@ counts_clause : COUNTS {
               ;
 apply_clause : APPLY {
                  current_clause = current_directive->addOpenMPClause(OMPC_apply);
-               } '(' apply_parameter ')' {
+               } '(' apply_parameter_list ')' {
              }
              ;
-apply_parameter : expression
-                | expression ':' expression
+apply_parameter_list : apply_parameter
+                     | apply_parameter_list ',' apply_parameter
+                     ;
+apply_parameter : apply_transformation
+                | apply_scope ':' apply_transformation_seq
                 ;
+apply_scope : EXPR_STRING
+            | EXPR_STRING '(' EXPR_STRING ')'
+            ;
+apply_transformation_seq : apply_transformation
+                         | apply_transformation_seq ',' apply_transformation
+                         | apply_transformation_seq apply_transformation
+                         ;
+apply_transformation : UNROLL
+                     | UNROLL PARTIAL '(' EXPR_STRING ')'
+                     | UNROLL FULL
+                     | REVERSE
+                     | INTERCHANGE
+                     | NOTHING
+                     | TILE SIZES '(' expression ')'
+                     | apply_clause
+                     | EXPR_STRING
+                     | EXPR_STRING '(' expression ')'
+                     ;
 induction_clause : INDUCTION {
                      current_clause = current_directive->addOpenMPClause(OMPC_induction);
                    } '(' induction_parameter ')' {
@@ -1364,8 +1385,10 @@ taskwait_clause_seq : taskwait_clause
                     | taskwait_clause_seq ',' taskwait_clause
                     ;
 unroll_clause_seq : unroll_clause
+                  | unroll_clause_seq unroll_clause
                   ;
 tile_clause_seq : tile_clause
+                | tile_clause_seq tile_clause
                 ;
 // OpenMP 5.1 clause sequences and clauses
 error_clause_seq : error_clause
@@ -1813,8 +1836,10 @@ taskwait_clause : depend_with_modifier_clause
                 ;
 unroll_clause : full_clause
               | partial_clause
+              | apply_clause
               ;
 tile_clause : sizes_clause
+            | apply_clause
             ;
 taskgroup_clause : task_reduction_clause
                  | allocate_clause
