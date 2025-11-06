@@ -16,6 +16,7 @@
 %x AFFINITY_STATE
 %x ALIGNED_STATE
 %x ALLOCATE_STATE
+%x ALLOCATOR_CALL_STATE
 %x ALLOCATOR_STATE
 %x ALLOC_EXPR_STATE
 %x ARCH_STATE
@@ -545,6 +546,12 @@ block                     {
 <ALLOCATE_STATE>omp_cgroup_mem_alloc/{blank}*:        { return CGROUP_MEM_ALLOC; }
 <ALLOCATE_STATE>omp_pteam_mem_alloc/{blank}*:         { return PTEAM_MEM_ALLOC; }
 <ALLOCATE_STATE>omp_thread_mem_alloc/{blank}*:        { return THREAD_MEM_ALLOC; }
+<ALLOCATE_STATE>allocator{blank}*\( {
+                                              prepare_expression_capture_str(yytext);
+                                              parenthesis_local_count = 1;
+                                              parenthesis_global_count = 1;
+                                              yy_push_state(ALLOCATOR_CALL_STATE);
+                                            }
 <ALLOCATE_STATE>[A-Za-z_][A-Za-z0-9_]*{blank}*/":" {
                                               size_t len = yyleng;
                                               while (len > 0 &&
@@ -560,6 +567,33 @@ block                     {
 <ALLOCATE_STATE>":"                                   { return ':'; }
 <ALLOCATE_STATE>{blank}*                              { ; }
 <ALLOCATE_STATE>.                                     { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<ALLOCATOR_CALL_STATE>"(" {
+                                              parenthesis_local_count++;
+                                              parenthesis_global_count++;
+                                              current_string.push_back('(');
+                                            }
+<ALLOCATOR_CALL_STATE>")" {
+                                              current_string.push_back(')');
+                                              parenthesis_local_count--;
+                                              parenthesis_global_count--;
+                                              if (parenthesis_global_count == 0) {
+                                                std::string allocator_expr = current_string;
+                                                clear_expression_buffer();
+                                                yy_pop_state();
+                                                openmp_lval.stype = strdup(allocator_expr.c_str());
+                                                return ALLOCATOR_IDENTIFIER;
+                                              }
+                                            }
+<ALLOCATOR_CALL_STATE>{blank}+ {
+                                              current_string.append(yytext, yyleng);
+                                            }
+<ALLOCATOR_CALL_STATE>{newline}+ {
+                                              current_string.append(yytext, yyleng);
+                                            }
+<ALLOCATOR_CALL_STATE>. {
+                                              current_string.push_back(yytext[0]);
+                                            }
 
 <IF_STATE>parallel{blank}*/:                { return PARALLEL; }
 <IF_STATE>simd{blank}*/:                    { return SIMD; }
@@ -881,6 +915,7 @@ block                     {
 <IMPLEMENTATION_STATE>"}"                            { yy_pop_state(); return '}'; }
 <IMPLEMENTATION_STATE>vendor/{blank}*\(              { yy_push_state(VENDOR_STATE); return VENDOR; }
 <IMPLEMENTATION_STATE>extension/{blank}*\(           { yy_push_state(EXTENSION_STATE); return EXTENSION; }
+<IMPLEMENTATION_STATE>requires/{blank}*\(            { return REQUIRES; }
 <IMPLEMENTATION_STATE>{blank}*                       { ; }
 <IMPLEMENTATION_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
