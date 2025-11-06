@@ -552,6 +552,12 @@ block                     {
                                               parenthesis_global_count = 1;
                                               yy_push_state(ALLOCATOR_CALL_STATE);
                                             }
+<ALLOCATE_STATE>align{blank}*\( {
+                                              prepare_expression_capture_str(yytext);
+                                              parenthesis_local_count = 1;
+                                              parenthesis_global_count = 1;
+                                              yy_push_state(ALLOCATOR_CALL_STATE);
+                                            }
 <ALLOCATE_STATE>[A-Za-z_][A-Za-z0-9_]*{blank}*/":" {
                                               size_t len = yyleng;
                                               while (len > 0 &&
@@ -564,6 +570,7 @@ block                     {
                                             }
 <ALLOCATE_STATE>"("                                   { return '('; }
 <ALLOCATE_STATE>")"                                   { yy_pop_state(); return ')'; }
+<ALLOCATE_STATE>","                                   { return ','; }
 <ALLOCATE_STATE>":"                                   { return ':'; }
 <ALLOCATE_STATE>{blank}*                              { ; }
 <ALLOCATE_STATE>.                                     { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
@@ -704,6 +711,12 @@ block                     {
 <LINEAR_STATE>val/{blank}*"("               { REWIND_LINEAR_DELIMITER('('); return MODOFIER_VAL; }
 <LINEAR_STATE>ref/{blank}*"("               { REWIND_LINEAR_DELIMITER('('); return MODOFIER_REF; }
 <LINEAR_STATE>uval/{blank}*"("              { REWIND_LINEAR_DELIMITER('('); return MODOFIER_UVAL; }
+<LINEAR_STATE>val/{blank}*","               { REWIND_LINEAR_DELIMITER(','); return MODOFIER_VAL; }
+<LINEAR_STATE>ref/{blank}*","               { REWIND_LINEAR_DELIMITER(','); return MODOFIER_REF; }
+<LINEAR_STATE>uval/{blank}*","              { REWIND_LINEAR_DELIMITER(','); return MODOFIER_UVAL; }
+<LINEAR_STATE>val/{blank}*")"               { REWIND_LINEAR_DELIMITER(')'); return MODOFIER_VAL; }
+<LINEAR_STATE>ref/{blank}*")"               { REWIND_LINEAR_DELIMITER(')'); return MODOFIER_REF; }
+<LINEAR_STATE>uval/{blank}*")"              { REWIND_LINEAR_DELIMITER(')'); return MODOFIER_UVAL; }
 <LINEAR_STATE>":"                           { return ':'; }
 <LINEAR_STATE>","                           { return ','; }
 <LINEAR_STATE>{blank}*                      { ; }

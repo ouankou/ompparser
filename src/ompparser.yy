@@ -1660,7 +1660,6 @@ scope_clause_seq : scope_clause
 scope_clause : private_clause
              | reduction_clause
              | firstprivate_clause
-             | reduction_clause
              | allocate_clause
              | nowait_clause
              ;
@@ -3751,9 +3750,28 @@ parallel_single_clause_seq : parallel_single_clause
                            | parallel_single_clause_seq parallel_single_clause
                            | parallel_single_clause_seq ',' parallel_single_clause
                            ;
-parallel_single_clause : parallel_clause
-                       | single_clause
+parallel_single_clause : parallel_only_clause
+                       | single_only_clause
+                       | parallel_single_common_clause
                        ;
+parallel_only_clause : if_parallel_clause
+                     | num_threads_clause
+                     | default_clause
+                     | shared_clause
+                     | copyin_clause
+                     | reduction_clause
+                     | proc_bind_clause
+                     | message_clause
+                     | severity_clause
+                     | safesync_clause
+                     ;
+single_only_clause : fortran_copyprivate_clause
+                   | fortran_nowait_clause
+                   ;
+parallel_single_common_clause : private_clause
+                              | firstprivate_clause
+                              | allocate_clause
+                              ;
 parallel_workshare_clause_seq : parallel_workshare_clause
                                | parallel_workshare_clause_seq parallel_workshare_clause
                                | parallel_workshare_clause_seq ',' parallel_workshare_clause
@@ -4502,7 +4520,7 @@ allocate_clause : ALLOCATE {
                     current_clause = nullptr;
                   } '(' allocate_parameter ')' ;
 
-allocate_parameter : allocator_parameter ':' var_list
+allocate_parameter : allocator_parameter_list ':' var_list
                    | allocate_parameter_no_allocator
                    ;
 
@@ -4513,6 +4531,9 @@ allocate_parameter_no_allocator : {
                                     }
                                   } var_list
                                 ;
+allocator_parameter_list : allocator_parameter
+                         | allocator_parameter_list ',' allocator_parameter
+                         ;
 allocator_parameter : DEFAULT_MEM_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_default); }
                     | LARGE_CAP_MEM_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_large_cap); }
                     | CONST_MEM_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_cons_mem); }
@@ -4522,7 +4543,9 @@ allocator_parameter : DEFAULT_MEM_ALLOC { current_clause = current_directive->ad
                     | PTEAM_MEM_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_pteam); }
                     | THREAD_MEM_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_thread); }
                     | ALLOCATOR_IDENTIFIER {
-                        current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_user, $1);
+                        if (current_clause == nullptr) {
+                          current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_user, $1);
+                        }
                         if (current_clause) {
                           ((OpenMPAllocateClause*)current_clause)->setUserDefinedAllocator(const_cast<char*>($1));
                         }
