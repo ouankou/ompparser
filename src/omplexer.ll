@@ -677,8 +677,10 @@ block                     { return BLOCK; }
 <NUM_TEAMS_STATE>{blank}*                   { ; }
 <NUM_TEAMS_STATE>.                          { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
+<NUM_THREADS_STATE>strict/{blank}*:         { return STRICT; }
 <NUM_THREADS_STATE>"("                      { return '('; }
 <NUM_THREADS_STATE>")"                      { yy_pop_state(); return ')'; }
+<NUM_THREADS_STATE>":"                      { return ':'; }
 <NUM_THREADS_STATE>{blank}*                 { ; }
 <NUM_THREADS_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 

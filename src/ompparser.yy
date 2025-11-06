@@ -107,7 +107,7 @@ corresponding C type is union name defaults to YYSTYPE.
         AMD ARM BSC CRAY FUJITSU GNU IBM INTEL LLVM NVIDIA PGI TI UNKNOWN
         FINAL UNTIED MERGEABLE IN_REDUCTION DEPEND PRIORITY AFFINITY DETACH MODIFIER_ITERATOR DEPOBJ FINAL_CLAUSE IN INOUT INOUTSET MUTEXINOUTSET OUT
         TASKLOOP GRAINSIZE NUM_TASKS NOGROUP TASKYIELD REQUIRES REVERSE_OFFLOAD UNIFIED_ADDRESS UNIFIED_SHARED_MEMORY ATOMIC_DEFAULT_MEM_ORDER DYNAMIC_ALLOCATORS SELF_MAPS SEQ_CST ACQ_REL RELAXED UNROLL TILE
-        USE_DEVICE_PTR USE_DEVICE_ADDR TARGET TARGET_DATA_COMPOSITE DATA ENTER EXIT ANCESTOR DEVICE_NUM IS_DEVICE_PTR HAS_DEVICE_ADDR SIZES
+        USE_DEVICE_PTR USE_DEVICE_ADDR TARGET TARGET_DATA_COMPOSITE DATA ENTER EXIT ANCESTOR DEVICE_NUM IS_DEVICE_PTR HAS_DEVICE_ADDR SIZES STRICT
         DEFAULTMAP BEHAVIOR_ALLOC BEHAVIOR_TO BEHAVIOR_FROM BEHAVIOR_TOFROM BEHAVIOR_FIRSTPRIVATE BEHAVIOR_NONE BEHAVIOR_DEFAULT BEHAVIOR_PRESENT CATEGORY_SCALAR CATEGORY_AGGREGATE CATEGORY_POINTER CATEGORY_ALLOCATABLE UPDATE TO FROM TO_MAPPER TO_ITERATOR FROM_MAPPER FROM_ITERATOR USES_ALLOCATORS
  LINK DEVICE_TYPE TARGET_DEVICE MAP MAP_MODIFIER_ALWAYS MAP_MODIFIER_CLOSE MAP_MODIFIER_PRESENT MAP_MODIFIER_SELF MAP_MODIFIER_MAPPER MAP_MODIFIER_ITERATOR MAP_TYPE_TO MAP_TYPE_FROM MAP_TYPE_TOFROM MAP_TYPE_ALLOC MAP_TYPE_RELEASE MAP_TYPE_DELETE MAP_TYPE_PRESENT MAP_TYPE_SELF EXT_ BARRIER TASKWAIT FLUSH RELEASE ACQUIRE ATOMIC READ WRITE CAPTURE HINT CRITICAL SOURCE SINK DESTROY THREADS
         CONCURRENT REPRODUCIBLE UNCONSTRAINED
@@ -4256,10 +4256,15 @@ if_parameter : EXPR_STRING {
                 }
              ;
 */
-num_threads_clause: NUM_THREADS {
-                            current_clause = current_directive->addOpenMPClause(OMPC_num_threads);
-                         } '(' expression ')'
+num_threads_clause: NUM_THREADS '(' num_threads_parameter ')'
                   ;
+num_threads_parameter : {
+                            current_clause = current_directive->addOpenMPClause(OMPC_num_threads);
+                         } expression
+                      | {
+                            current_clause = current_directive->addOpenMPClause(OMPC_num_threads);
+                         } STRICT ':' expression
+                      ;
 num_teams_clause: NUM_TEAMS {
                             current_clause = current_directive->addOpenMPClause(OMPC_num_teams);
                          } '(' expression ')'
@@ -4319,6 +4324,7 @@ allocate_clause : ALLOCATE '(' allocate_parameter ')' ;
 allocate_parameter : EXPR_STRING  { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_unspecified); current_clause->addLangExpr($1);  }
                    | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_unspecified); current_clause->addLangExpr($1); } var_list
                    | allocator_parameter ':' { ; } var_list
+                   | allocator_modifier_list ':' { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_unspecified); } var_list
                    ;
 allocator_parameter : DEFAULT_MEM_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_default); }
                     | LARGE_CAP_MEM_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_large_cap); }
@@ -4330,6 +4336,9 @@ allocator_parameter : DEFAULT_MEM_ALLOC { current_clause = current_directive->ad
                     | THREAD_MEM_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_thread); }
                     | EXPR_STRING { current_clause = current_directive->addOpenMPClause(OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_user, $1); }
                     ;
+allocator_modifier_list : EXPR_STRING
+                        | allocator_modifier_list ',' EXPR_STRING
+                        ;
 
 private_clause : PRIVATE {
                 current_clause = current_directive->addOpenMPClause(OMPC_private);
