@@ -616,6 +616,8 @@ public:
 
   OpenMPLinearClauseModifier getModifier() { return modifier; };
 
+  void setModifier(OpenMPLinearClauseModifier _modifier) { modifier = _modifier; };
+
   void setUserDefinedStep(const char *_step) { user_defined_step = _step; };
 
   std::string getUserDefinedStep() { return user_defined_step; };

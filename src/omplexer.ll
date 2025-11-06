@@ -507,6 +507,7 @@ block                     { return BLOCK; }
 
 
 <PROC_BIND_STATE>master                     { return MASTER; }
+<PROC_BIND_STATE>primary                    { return PRIMARY; }
 <PROC_BIND_STATE>close                      { return CLOSE; }
 <PROC_BIND_STATE>spread                     { return SPREAD; }
 <PROC_BIND_STATE>"("                        { return '('; }

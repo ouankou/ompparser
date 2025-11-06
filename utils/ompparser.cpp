@@ -104,8 +104,23 @@ int main(int argc, const char *argv[]) {
   // Set normalization flag globally before parsing
   setNormalizeClauses(normalize_clauses);
 
-  // Regex to detect Fortran directives
-  std::regex fortran_regex("^[[:blank:]]*[!cC*]\\$omp");
+  // Detect language from file extension
+  std::string filename_str(filename);
+  OpenMPBaseLang default_lang = Lang_C;
+  if (filename_str.length() >= 4) {
+    std::string ext = filename_str.substr(filename_str.length() - 4);
+    if (ext == ".cpp" || ext == ".cxx" || ext == ".c++" ||
+        filename_str.length() >= 3 && filename_str.substr(filename_str.length() - 3) == ".cc") {
+      default_lang = Lang_Cplusplus;
+    } else if (ext == ".f90" || ext == ".F90" || ext == ".f95" || ext == ".F95" ||
+               filename_str.length() >= 2 && (filename_str.substr(filename_str.length() - 2) == ".f" ||
+                                                filename_str.substr(filename_str.length() - 2) == ".F")) {
+      default_lang = Lang_Fortran;
+    }
+  }
+
+  // Regex to detect Fortran directives (case-insensitive for $omp/$OMP)
+  std::regex fortran_regex("^[[:blank:]]*[!cC\\*]\\$omp", std::regex_constants::icase);
 
   // parse the preprocessed inputs
   for (i = 0; i < omp_pragmas->size(); i++) {
@@ -113,7 +128,7 @@ int main(int argc, const char *argv[]) {
     if (std::regex_search(omp_pragmas->at(i), fortran_regex)) {
       setLang(Lang_Fortran);
     } else {
-      setLang(Lang_C);
+      setLang(default_lang);
     }
 
     omp_ast = parseOpenMP(omp_pragmas->at(i).c_str(), NULL);

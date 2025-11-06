@@ -1833,34 +1833,45 @@ std::string OpenMPLinearClause::toString() {
 
   std::string result = "linear ";
   std::string clause_string = "(";
-  bool flag = false;
   OpenMPLinearClauseModifier modifier = this->getModifier();
+  std::string modifier_str = "";
+
+  // Check if we have a modifier
   switch (modifier) {
   case OMPC_LINEAR_MODIFIER_val:
-    clause_string += "val";
-    flag = true;
+    modifier_str = "val";
     break;
   case OMPC_LINEAR_MODIFIER_ref:
-    clause_string += "ref";
-    flag = true;
+    modifier_str = "ref";
     break;
   case OMPC_LINEAR_MODIFIER_uval:
-    clause_string += "uval";
-    flag = true;
+    modifier_str = "uval";
     break;
   default:;
   }
-  if (clause_string.size() > 1) {
-    clause_string += "( ";
-  };
-  clause_string += this->expressionToString();
-  if (flag == true) {
-    clause_string += ") ";
-  };
-  if (this->getUserDefinedStep() != "") {
-    clause_string += ":";
-    clause_string += this->getUserDefinedStep();
+
+  // If we have expressions (variables)
+  std::string expr_str = this->expressionToString();
+
+  // OpenMP 5.1+ colon syntax: linear(vars: modifier) or linear(vars: step)
+  // Old syntax: linear(modifier(vars))
+  if (!expr_str.empty()) {
+    if (this->getUserDefinedStep() != "") {
+      // linear(vars: step)
+      clause_string += expr_str + ": " + this->getUserDefinedStep();
+    } else if (!modifier_str.empty()) {
+      // linear(vars: modifier) - OpenMP 5.1+ syntax
+      clause_string += expr_str + ": " + modifier_str;
+    } else {
+      // linear(vars) - no modifier or step
+      clause_string += expr_str;
+    }
+  } else if (!modifier_str.empty()) {
+    // Old syntax: modifier(vars) - but we have no variables stored yet
+    // This shouldn't happen in the new parsing approach
+    clause_string += modifier_str + "( " + ")";
   }
+
   clause_string += ") ";
   result += clause_string;
   return result;
@@ -2474,6 +2485,9 @@ std::string OpenMPProcBindClause::toString() {
     break;
   case OMPC_PROC_BIND_master:
     parameter_string = "master";
+    break;
+  case OMPC_PROC_BIND_primary:
+    parameter_string = "primary";
     break;
   case OMPC_PROC_BIND_spread:
     parameter_string = "spread";

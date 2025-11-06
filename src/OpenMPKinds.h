@@ -420,8 +420,8 @@ enum OpenMPOrderClauseKind {
 /// OpenMP attributes for 'proc_bind' clause.
 enum OpenMPProcBindClauseKind {
 #define OPENMP_PROC_BIND_KIND(Name) OMPC_PROC_BIND_##Name,
-  OPENMP_PROC_BIND_KIND(master) OPENMP_PROC_BIND_KIND(close)
-      OPENMP_PROC_BIND_KIND(spread)
+  OPENMP_PROC_BIND_KIND(master) OPENMP_PROC_BIND_KIND(primary)
+      OPENMP_PROC_BIND_KIND(close) OPENMP_PROC_BIND_KIND(spread)
 
           OPENMP_PROC_BIND_KIND(unknown)
 #undef OPENMP_PROC_BIND_KIND
