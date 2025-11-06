@@ -599,6 +599,7 @@ block                     { return BLOCK; }
 <LINEAR_STATE>ref/{blank}*                  { return MODOFIER_REF; }
 <LINEAR_STATE>uval/{blank}*                 { return MODOFIER_UVAL; }
 <LINEAR_STATE>":"                           { return ':'; }
+<LINEAR_STATE>","                           { return ','; }
 <LINEAR_STATE>{blank}*                      { ; }
 <LINEAR_STATE>.                             { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 

@@ -4380,6 +4380,7 @@ lastprivate_modifier : MODIFIER_CONDITIONAL { current_clause = current_directive
 linear_clause : LINEAR '(' linear_parameter ')'
               | LINEAR '(' linear_parameter ':' EXPR_STRING { ((OpenMPLinearClause*)current_clause)->setUserDefinedStep($5); ((OpenMPLinearClause*)current_clause)->mergeLinear(current_directive, current_clause); } ')'
               | LINEAR '(' linear_parameter ':' linear_modifier_kind { ((OpenMPLinearClause*)current_clause)->mergeLinear(current_directive, current_clause); } ')'
+              | LINEAR '(' linear_parameter ':' linear_modifier_kind ',' EXPR_STRING { ((OpenMPLinearClause*)current_clause)->setUserDefinedStep($7); ((OpenMPLinearClause*)current_clause)->mergeLinear(current_directive, current_clause); } ')'
               ;
 
 linear_parameter : EXPR_STRING  { current_clause = current_directive->addOpenMPClause(OMPC_linear, OMPC_LINEAR_MODIFIER_unspecified); current_clause->addLangExpr($1); }
