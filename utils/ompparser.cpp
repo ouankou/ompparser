@@ -110,11 +110,13 @@ int main(int argc, const char *argv[]) {
   if (filename_str.length() >= 4) {
     std::string ext = filename_str.substr(filename_str.length() - 4);
     if (ext == ".cpp" || ext == ".cxx" || ext == ".c++" ||
-        filename_str.length() >= 3 && filename_str.substr(filename_str.length() - 3) == ".cc") {
+        (filename_str.length() >= 3 &&
+         filename_str.substr(filename_str.length() - 3) == ".cc")) {
       default_lang = Lang_Cplusplus;
     } else if (ext == ".f90" || ext == ".F90" || ext == ".f95" || ext == ".F95" ||
-               filename_str.length() >= 2 && (filename_str.substr(filename_str.length() - 2) == ".f" ||
-                                                filename_str.substr(filename_str.length() - 2) == ".F")) {
+               (filename_str.length() >= 2 &&
+                (filename_str.substr(filename_str.length() - 2) == ".f" ||
+                 filename_str.substr(filename_str.length() - 2) == ".F"))) {
       default_lang = Lang_Fortran;
     }
   }
