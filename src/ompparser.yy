@@ -3316,6 +3316,9 @@ reduction_identifiers : '+'{ ((OpenMPDeclareReductionDirective*)current_directiv
                       | '^'{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("^"); }
                       | LOGAND{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("&&"); }
                       | LOGOR{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("||"); }
+                      | MIN{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("min"); }
+                      | MAX{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("max"); }
+                      | EXPR_STRING{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier($1); }
                       ; 
 
 typername_variable : EXPR_STRING { ((OpenMPDeclareReductionDirective*)current_directive)->addTypenameList($1); }
