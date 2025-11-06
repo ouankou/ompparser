@@ -1,0 +1,4 @@
+#pragma omp parallel
+#pragma omp single
+#pragma omp single
+#pragma omp single nowait

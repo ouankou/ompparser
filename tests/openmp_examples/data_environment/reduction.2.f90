@@ -1,0 +1,5 @@
+!$OMP     PARALLEL SHARED(X, Y, A, B, C, D, N) PRIVATE(A_P, B_P, C_P, D_P)
+!$OMP       DO PRIVATE(I)
+!$OMP       CRITICAL
+!$OMP       END CRITICAL
+!$OMP     END PARALLEL

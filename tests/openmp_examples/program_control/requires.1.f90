@@ -1,0 +1,4 @@
+!$omp requires unified_shared_memory
+!$omp   target
+!$omp   end target
+!$omp   declare target

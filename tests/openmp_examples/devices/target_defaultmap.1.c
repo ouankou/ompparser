@@ -1,0 +1,5 @@
+#pragma omp target defaultmap(firstprivate: scalar) defaultmap(tofrom: aggregate) defaultmap(default: pointer)
+#pragma omp target defaultmap(none) map(tofrom: s, A, S)
+#pragma omp target defaultmap(tofrom: scalar) firstprivate(s1,s2)
+#pragma omp target defaultmap(firstprivate: aggregate) map(from: s1, s2)
+#pragma omp target defaultmap(to: all) map(from: s3)

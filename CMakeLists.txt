@@ -100,6 +100,28 @@ if(BUILD_TESTING)
              COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_single_pragma.sh" "${TEST_FILE}" "$<TARGET_FILE:ompp>"
              WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
   endforeach()
+
+  # Register OpenMP Examples extracted pragma files as CTest tests
+  file(GLOB_RECURSE OPENMP_EXAMPLES_FILES
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.c"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.cpp"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.cc"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.cxx"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.f"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.f90"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.f95"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.F"
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.F90")
+  list(SORT OPENMP_EXAMPLES_FILES)
+  foreach(TEST_FILE IN LISTS OPENMP_EXAMPLES_FILES)
+    # Get relative path from tests/openmp_examples/ to include directory structure in test name
+    file(RELATIVE_PATH TEST_REL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples" "${TEST_FILE}")
+    # Replace directory separators with underscores for test name
+    string(REPLACE "/" "_" TEST_NAME "${TEST_REL_PATH}")
+    add_test(NAME openmp_examples_${TEST_NAME}
+             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_single_pragma.sh" "${TEST_FILE}" "$<TARGET_FILE:ompp>"
+             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+  endforeach()
 endif()
 
 # Install headers and libraries
