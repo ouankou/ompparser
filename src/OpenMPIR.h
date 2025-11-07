@@ -458,6 +458,7 @@ protected:
       OMPC_REDUCTION_MODIFIER_unknown;        // modifier
   OpenMPReductionClauseIdentifier identifier; // identifier
   std::string user_defined_identifier; // user defined identifier if it is used
+  std::string user_defined_modifier;
 
 public:
   OpenMPReductionClause() : OpenMPClause(OMPC_reduction) {}
@@ -476,11 +477,20 @@ public:
   };
 
   std::string getUserDefinedIdentifier() { return user_defined_identifier; };
+  void setUserDefinedModifier(const char *_modifier) {
+    if (_modifier) {
+      user_defined_modifier = std::string(_modifier);
+    } else {
+      user_defined_modifier.clear();
+    }
+  };
+
+  std::string getUserDefinedModifier() const { return user_defined_modifier; };
 
   static OpenMPClause *addReductionClause(OpenMPDirective *,
                                           OpenMPReductionClauseModifier,
                                           OpenMPReductionClauseIdentifier,
-                                          char *);
+                                          char *, char *);
 
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
@@ -615,6 +625,8 @@ public:
       : OpenMPClause(OMPC_linear), modifier(_modifier) {};
 
   OpenMPLinearClauseModifier getModifier() { return modifier; };
+
+  void setModifier(OpenMPLinearClauseModifier _modifier) { modifier = _modifier; };
 
   void setUserDefinedStep(const char *_step) { user_defined_step = _step; };
 

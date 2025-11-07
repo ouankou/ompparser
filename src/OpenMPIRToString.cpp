@@ -77,9 +77,22 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     std::string id = ((OpenMPDeclareReductionDirective *)this)->getIdentifier();
     std::string combiner =
         ((OpenMPDeclareReductionDirective *)this)->getCombiner();
+    std::vector<OpenMPClause *> *combiner_clauses =
+        this->getClauses(OMPC_combiner);
+    const bool has_combiner_clause =
+        (combiner_clauses != nullptr && !combiner_clauses->empty());
+
+    auto trim = [](const std::string &value) -> std::string {
+      const char *whitespace = " \t\n\r\f\v";
+      const size_t begin = value.find_first_not_of(whitespace);
+      if (begin == std::string::npos)
+        return std::string();
+      const size_t end = value.find_last_not_of(whitespace);
+      return value.substr(begin, end - begin + 1);
+    };
 
     // Add spaces around operators in combiner to match clang-format
-    std::string formatted_combiner = combiner;
+    std::string formatted_combiner = trim(combiner);
     // Add spaces around +=, -=, *=, /=, =, etc.
     size_t pos = 0;
     while ((pos = formatted_combiner.find("+=", pos)) != std::string::npos) {
@@ -93,6 +106,12 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       pos += 3;
     }
 
+    // Remove trailing colon artifacts and trim again
+    while (!formatted_combiner.empty() && formatted_combiner.back() == ':') {
+      formatted_combiner.pop_back();
+    }
+    formatted_combiner = trim(formatted_combiner);
+
     // Remove trailing space from directive name before adding opening paren
     if (!result.empty() && result.back() == ' ') {
       result.pop_back();
@@ -101,12 +120,17 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     result += id;
     result += " : ";
     for (list_item = list->begin(); list_item != list->end(); list_item++) {
-      result += *list_item;
+      std::string type = *list_item ? trim(std::string(*list_item)) : "";
+      result += type;
       result += ",";
     }
-    result = result.substr(0, result.size() - 1);
-    result += " : ";
-    result += formatted_combiner;
+    if (!list->empty()) {
+      result.pop_back();
+    }
+    if (!formatted_combiner.empty() && !has_combiner_clause) {
+      result += " : ";
+      result += formatted_combiner;
+    }
     result += ")";
     break;
   }
@@ -316,6 +340,9 @@ std::string OpenMPDirective::toString() {
   case OMPD_parallel_sections:
     result += "parallel sections ";
     break;
+  case OMPD_parallel_single:
+    result += "parallel single ";
+    break;
   case OMPD_parallel_workshare:
     result += "parallel workshare ";
     break;
@@ -471,6 +498,9 @@ std::string OpenMPDirective::toString() {
     break;
   case OMPD_assume:
     result += "assume ";
+    break;
+  case OMPD_end_assume:
+    result += "end assume ";
     break;
   case OMPD_assumes:
     result += "assumes ";
@@ -1438,6 +1468,9 @@ std::string OpenMPDefaultmapClause::toString() {
   case OMPC_DEFAULTMAP_CATEGORY_pointer:
     clause_string += "pointer";
     break;
+  case OMPC_DEFAULTMAP_CATEGORY_all:
+    clause_string += "all";
+    break;
   case OMPC_DEFAULTMAP_CATEGORY_allocatable:
     clause_string += "allocatable";
     break;
@@ -1738,21 +1771,25 @@ std::string OpenMPReductionClause::toString() {
   std::string clause_string = "(";
   OpenMPReductionClauseModifier modifier = this->getModifier();
   OpenMPReductionClauseIdentifier identifier = this->getIdentifier();
-  switch (modifier) {
-  case OMPC_REDUCTION_MODIFIER_default:
-    clause_string += "default";
-    break;
-  case OMPC_REDUCTION_MODIFIER_inscan:
-    clause_string += "inscan";
-    break;
-  case OMPC_REDUCTION_MODIFIER_task:
-    clause_string += "task";
-    break;
-  default:;
+  if (!this->getUserDefinedModifier().empty()) {
+    clause_string += this->getUserDefinedModifier();
+  } else {
+    switch (modifier) {
+    case OMPC_REDUCTION_MODIFIER_default:
+      clause_string += "default";
+      break;
+    case OMPC_REDUCTION_MODIFIER_inscan:
+      clause_string += "inscan";
+      break;
+    case OMPC_REDUCTION_MODIFIER_task:
+      clause_string += "task";
+      break;
+    default:;
+    }
   }
   if (clause_string.size() > 1) {
     clause_string += ", ";
-  };
+  }
   switch (identifier) {
   case OMPC_REDUCTION_IDENTIFIER_plus:
     clause_string += "+";
@@ -1860,7 +1897,7 @@ std::string OpenMPLinearClause::toString() {
   if (this->getUserDefinedStep() != "") {
     clause_string += ":";
     clause_string += this->getUserDefinedStep();
-  }
+  };
   clause_string += ") ";
   result += clause_string;
   return result;
@@ -2024,7 +2061,7 @@ std::string OpenMPInitializerClause::toString() {
   std::string result = "initializer ";
   std::string clause_string = "(";
   std::string priv = this->getUserDefinedPriv();
-  clause_string += "omp_priv=" + priv;
+  clause_string += priv;
   clause_string += ") ";
   if (clause_string.size() > 2) {
     result += clause_string;
@@ -2474,6 +2511,9 @@ std::string OpenMPProcBindClause::toString() {
     break;
   case OMPC_PROC_BIND_master:
     parameter_string = "master";
+    break;
+  case OMPC_PROC_BIND_primary:
+    parameter_string = "primary";
     break;
   case OMPC_PROC_BIND_spread:
     parameter_string = "spread";

@@ -1,0 +1,5 @@
+#pragma omp declare mapper(custom: T S) map(to:S.x) map(from:S.y) map(alloc: S.z)
+#pragma omp target data map(mapper(custom),tofrom: s)
+#pragma omp target update to(mapper(custom): s)
+#pragma omp target map(from: a,b,c)
+#pragma omp target update from(mapper(custom): s)

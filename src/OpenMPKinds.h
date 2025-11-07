@@ -58,6 +58,7 @@ enum OpenMPDirectiveKind {
     OPENMP_DIRECTIVE(parallel_do)
     OPENMP_DIRECTIVE(parallel_loop)
     OPENMP_DIRECTIVE(parallel_sections)
+    OPENMP_DIRECTIVE(parallel_single)
     OPENMP_DIRECTIVE(parallel_workshare)
     OPENMP_DIRECTIVE(parallel_master)
     OPENMP_DIRECTIVE(master_taskloop)
@@ -130,6 +131,7 @@ enum OpenMPDirectiveKind {
     OPENMP_DIRECTIVE(interop)
     // OpenMP 5.2 directives
     OPENMP_DIRECTIVE(assume)
+    OPENMP_DIRECTIVE(end_assume)
     OPENMP_DIRECTIVE(assumes)
     OPENMP_DIRECTIVE(begin_assumes)
     OPENMP_DIRECTIVE(end_assumes)
@@ -420,8 +422,8 @@ enum OpenMPOrderClauseKind {
 /// OpenMP attributes for 'proc_bind' clause.
 enum OpenMPProcBindClauseKind {
 #define OPENMP_PROC_BIND_KIND(Name) OMPC_PROC_BIND_##Name,
-  OPENMP_PROC_BIND_KIND(master) OPENMP_PROC_BIND_KIND(close)
-      OPENMP_PROC_BIND_KIND(spread)
+  OPENMP_PROC_BIND_KIND(master) OPENMP_PROC_BIND_KIND(primary)
+      OPENMP_PROC_BIND_KIND(close) OPENMP_PROC_BIND_KIND(spread)
 
           OPENMP_PROC_BIND_KIND(unknown)
 #undef OPENMP_PROC_BIND_KIND
@@ -705,7 +707,7 @@ enum OpenMPDefaultmapClauseCategory {
 
   OPENMP_DEFAULTMAP_CATEGORY(unspecified) OPENMP_DEFAULTMAP_CATEGORY(scalar)
       OPENMP_DEFAULTMAP_CATEGORY(aggregate) OPENMP_DEFAULTMAP_CATEGORY(pointer)
-          OPENMP_DEFAULTMAP_CATEGORY(allocatable)
+          OPENMP_DEFAULTMAP_CATEGORY(all) OPENMP_DEFAULTMAP_CATEGORY(allocatable)
               OPENMP_DEFAULTMAP_CATEGORY(unknown)
 #undef OPENMP_DEFAULTMAP_CATEGORY
 };

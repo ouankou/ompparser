@@ -336,11 +336,11 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         (OpenMPReductionClauseModifier)va_arg(args, int);
     OpenMPReductionClauseIdentifier identifier =
         (OpenMPReductionClauseIdentifier)va_arg(args, int);
-    char *user_defined_identifier = NULL;
-    if (identifier == OMPC_REDUCTION_IDENTIFIER_user)
-      user_defined_identifier = va_arg(args, char *);
+    char *user_defined_modifier = va_arg(args, char *);
+    char *user_defined_identifier = va_arg(args, char *);
     new_clause = OpenMPReductionClause::addReductionClause(
-        this, modifier, identifier, user_defined_identifier);
+        this, modifier, identifier, user_defined_modifier,
+        user_defined_identifier);
     break;
   }
   case OMPC_proc_bind: {
@@ -859,14 +859,18 @@ void OpenMPLinearClause::mergeLinear(OpenMPDirective *directive,
 
 OpenMPClause *OpenMPReductionClause::addReductionClause(
     OpenMPDirective *directive, OpenMPReductionClauseModifier modifier,
-    OpenMPReductionClauseIdentifier identifier, char *user_defined_identifier) {
+    OpenMPReductionClauseIdentifier identifier, char *user_defined_modifier,
+    char *user_defined_identifier) {
 
   std::vector<OpenMPClause *> *current_clauses =
       directive->getClauses(OMPC_reduction);
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPReductionClause>(modifier, identifier));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPReductionClause>(modifier, identifier));
+    ((OpenMPReductionClause *)new_clause)
+        ->setUserDefinedModifier(user_defined_modifier);
     if (identifier == OMPC_REDUCTION_IDENTIFIER_user &&
         user_defined_identifier) {
       ((OpenMPReductionClause *)new_clause)
@@ -883,18 +887,29 @@ OpenMPClause *OpenMPReductionClause::addReductionClause(
           current_user_defined_identifier_expression =
               std::string(user_defined_identifier);
         };
+        std::string current_user_defined_modifier_expression;
+        if (user_defined_modifier) {
+          current_user_defined_modifier_expression =
+              std::string(user_defined_modifier);
+        };
         if (((OpenMPReductionClause *)(*it))->getModifier() == modifier &&
             ((OpenMPReductionClause *)(*it))->getIdentifier() == identifier &&
             current_user_defined_identifier_expression.compare(
-                ((OpenMPReductionClause *)(*it))->getUserDefinedIdentifier()) ==
-                0) {
+                ((OpenMPReductionClause *)(*it))
+                    ->getUserDefinedIdentifier()) == 0 &&
+            current_user_defined_modifier_expression.compare(
+                ((OpenMPReductionClause *)(*it))
+                    ->getUserDefinedModifier()) == 0) {
           new_clause = (*it);
           return new_clause;
         }
       }
     }
     /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPReductionClause>(modifier, identifier));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPReductionClause>(modifier, identifier));
+    ((OpenMPReductionClause *)new_clause)
+        ->setUserDefinedModifier(user_defined_modifier);
     if (identifier == OMPC_REDUCTION_IDENTIFIER_user)
       ((OpenMPReductionClause *)new_clause)
           ->setUserDefinedIdentifier(user_defined_identifier);

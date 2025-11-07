@@ -1,0 +1,6 @@
+#pragma omp parallel
+#pragma omp single
+#pragma omp task depend(out: a)
+#pragma omp task depend(out: b)
+#pragma omp task depend(in: a) depend(mutexinoutset: c)
+#pragma omp task depend(in: b) depend(mutexinoutset: c)

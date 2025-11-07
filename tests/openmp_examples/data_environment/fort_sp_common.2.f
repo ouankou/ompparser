@@ -1,0 +1,6 @@
+!$OMP   PARALLEL
+!$OMP     DO PRIVATE(/C/)
+!$OMP     END DO
+!$OMP     DO PRIVATE(X)
+!$OMP     END DO
+!$OMP   END PARALLEL
