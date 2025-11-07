@@ -15,10 +15,6 @@
 #include <regex>
 #include <string>
 
-extern OpenMPDirective *parseOpenMP(const char *,
-                                    void *_exprParse(const char *));
-extern void setLang(OpenMPBaseLang);
-
 void output(OpenMPDirective *);
 std::string test(OpenMPDirective *);
 int openFile(std::ifstream &, const char *);
@@ -181,6 +177,7 @@ int main(int argc, const char *argv[]) {
         } else {
           OpenMPDirective *openMPAST = parseOpenMP(input_pragma.c_str(), NULL);
           output_pragma = test(openMPAST);
+          delete openMPAST;
           generated_output = output_pragma.size() != 0;
           if (is_expected_invalid_case)
             pass = "true";

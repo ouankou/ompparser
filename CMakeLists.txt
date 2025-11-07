@@ -44,10 +44,6 @@ set(OMPIR_SOURCE_FILES
     src/OpenMPIRToString.cpp
     src/OpenMPIR.cpp)
 
-# tools based on omparser
-set(OMPP_TOOLS
-    utils/preprocess_c.cpp)
-
 BISON_TARGET(OMPBISONParser src/ompparser.yy ${CMAKE_CURRENT_BINARY_DIR}/ompparser.cc)
 FLEX_TARGET(OMPFLEXScanner src/omplexer.ll ${CMAKE_CURRENT_BINARY_DIR}/omplexer.cc)
 ADD_FLEX_BISON_DEPENDENCY(OMPFLEXScanner OMPBISONParser)
@@ -59,70 +55,16 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # The ompparser library for install and distribution
 add_library(ompparser SHARED ${BISON_OMPBISONParser_OUTPUTS} ${FLEX_OMPFLEXScanner_OUTPUTS} ${OMPIR_SOURCE_FILES})
-
-# Test runner executable for built-in tests
-add_executable(tester tests/tester.cpp)
-target_link_libraries(tester ompparser)
-
-# Standalone ompparser executable for openmp_vv suite
-add_executable(ompp ${OMPP_TOOLS} utils/ompparser.cpp)
-target_link_libraries(ompp ompparser)
+target_include_directories(ompparser PUBLIC
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
 
 if(BUILD_TESTING)
-  # Register built-in .txt test files as CTest tests
-  file(GLOB TEST_SUITE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/tests/builtin/*.txt")
-  list(SORT TEST_SUITE_FILES)
-  foreach(TEST_FILE IN LISTS TEST_SUITE_FILES)
-    get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
-    add_test(NAME builtin_${TEST_NAME}
-             COMMAND tester "${TEST_FILE}"
-             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-  endforeach()
-
-  # Register OpenMP VV extracted pragma files as CTest tests
-  file(GLOB_RECURSE OPENMP_VV_FILES
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.c"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.cpp"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.cc"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.cxx"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.f"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.f90"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.f95"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.F"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv/*.F90")
-  list(SORT OPENMP_VV_FILES)
-  foreach(TEST_FILE IN LISTS OPENMP_VV_FILES)
-    # Get relative path from tests/openmp_vv/ to include directory structure in test name
-    file(RELATIVE_PATH TEST_REL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_vv" "${TEST_FILE}")
-    # Replace directory separators with underscores for test name
-    string(REPLACE "/" "_" TEST_NAME "${TEST_REL_PATH}")
-    add_test(NAME openmp_vv_${TEST_NAME}
-             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_single_pragma.sh" "${TEST_FILE}" "$<TARGET_FILE:ompp>"
-             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-  endforeach()
-
-  # Register OpenMP Examples extracted pragma files as CTest tests
-  file(GLOB_RECURSE OPENMP_EXAMPLES_FILES
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.c"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.cpp"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.cc"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.cxx"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.f"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.f90"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.f95"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.F"
-       "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples/*.F90")
-  list(SORT OPENMP_EXAMPLES_FILES)
-  foreach(TEST_FILE IN LISTS OPENMP_EXAMPLES_FILES)
-    # Get relative path from tests/openmp_examples/ to include directory structure in test name
-    file(RELATIVE_PATH TEST_REL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tests/openmp_examples" "${TEST_FILE}")
-    # Replace directory separators with underscores for test name
-    string(REPLACE "/" "_" TEST_NAME "${TEST_REL_PATH}")
-    add_test(NAME openmp_examples_${TEST_NAME}
-             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_single_pragma.sh" "${TEST_FILE}" "$<TARGET_FILE:ompp>"
-             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-  endforeach()
+  add_subdirectory(tests)
 endif()
+
+set(ompparser_targets ompparser)
 
 # Install headers and libraries
 install(FILES
@@ -132,7 +74,4 @@ install(FILES
         DESTINATION include)
 install(TARGETS ${ompparser_targets}
         LIBRARY DESTINATION lib
-        )
-install(TARGETS ${executable_targets} OPTIONAL
-        RUNTIME DESTINATION bin
         )

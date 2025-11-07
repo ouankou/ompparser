@@ -17,11 +17,6 @@ void savePragmaList(std::vector<OpenMPDirective *> *, const char *);
 int openFile(std::ifstream &, const char *);
 extern std::unique_ptr<std::vector<std::string>> preProcessCManaged(
     std::ifstream &);
-extern std::vector<std::string> *preProcessC(std::ifstream &);
-extern OpenMPDirective *parseOpenMP(const char *,
-                                    void *_exprParse(const char *));
-extern void setLang(OpenMPBaseLang);
-extern void setNormalizeClauses(bool);
 
 void output(std::vector<OpenMPDirective *> *omp_ast_list) {
 
@@ -148,6 +143,11 @@ int main(int argc, const char *argv[]) {
   output(omp_ast_list.get());
 
   savePragmaList(omp_ast_list.get(), filename);
+
+  // Clean up allocated directives
+  for (OpenMPDirective *directive : *omp_ast_list) {
+    delete directive;
+  }
 
   return 0;
 }
