@@ -482,19 +482,19 @@ else
     echo ""
 fi
 
-# Build roup_roundtrip binary
-echo "Building roup_roundtrip binary..."
+# Build omp_roundtrip binary
+echo "Building omp_roundtrip binary..."
 ROUNDTRIP_BIN=""
-if [ -f "build/utils/ompp" ]; then
-    ROUNDTRIP_BIN="build/utils/ompp"
-elif [ -f "build/ompp" ]; then
-    ROUNDTRIP_BIN="build/ompp"
-elif [ -f "ompp" ]; then
-    ROUNDTRIP_BIN="./ompp"
+if [ -f "build/tests/omp_roundtrip" ]; then
+    ROUNDTRIP_BIN="build/tests/omp_roundtrip"
+elif [ -f "tests/omp_roundtrip" ]; then
+    ROUNDTRIP_BIN="tests/omp_roundtrip"
+elif [ -f "omp_roundtrip" ]; then
+    ROUNDTRIP_BIN="./omp_roundtrip"
 else
-    echo -e "${RED}Error: ompparser binary (ompp) not found${NC}"
+    echo -e "${RED}Error: ompparser binary (omp_roundtrip) not found${NC}"
     echo "Please build ompparser first:"
-    echo "  mkdir -p build && cd build && cmake .. && make ompp"
+    echo "  mkdir -p build && cd build && cmake .. && make"
     exit 1
 fi
 echo -e "${GREEN}✓${NC} Binary built"
