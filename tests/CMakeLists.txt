@@ -23,7 +23,7 @@ list(SORT TEST_SUITE_FILES)
 foreach(TEST_FILE IN LISTS TEST_SUITE_FILES)
   get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
   add_test(NAME builtin_${TEST_NAME}
-           COMMAND tester "${TEST_FILE}"
+           COMMAND $<TARGET_FILE:tester> "${TEST_FILE}"
            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endforeach()
 
