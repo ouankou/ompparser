@@ -21,6 +21,17 @@
 
 set -euo pipefail
 
+# Find repository root and cd to it
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/../CMakeLists.txt" ] && grep -q "project(ompparser)" "$SCRIPT_DIR/../CMakeLists.txt" 2>/dev/null; then
+    cd "$SCRIPT_DIR/.."
+elif [ -f "$SCRIPT_DIR/CMakeLists.txt" ] && grep -q "project(ompparser)" "$SCRIPT_DIR/CMakeLists.txt" 2>/dev/null; then
+    cd "$SCRIPT_DIR"
+else
+    echo "Error: Cannot find ompparser repository root" >&2
+    exit 1
+fi
+
 # Configuration
 REPO_URL="https://github.com/OpenMP-Validation-and-Verification/OpenMP_VV"
 REPO_PATH="${OPENMP_VV_PATH:-build/openmp_vv}"
@@ -482,19 +493,19 @@ else
     echo ""
 fi
 
-# Build roup_roundtrip binary
-echo "Building roup_roundtrip binary..."
+# Build omp_roundtrip binary
+echo "Building omp_roundtrip binary..."
 ROUNDTRIP_BIN=""
-if [ -f "build/utils/ompp" ]; then
-    ROUNDTRIP_BIN="build/utils/ompp"
-elif [ -f "build/ompp" ]; then
-    ROUNDTRIP_BIN="build/ompp"
-elif [ -f "ompp" ]; then
-    ROUNDTRIP_BIN="./ompp"
+if [ -f "build/tests/omp_roundtrip" ]; then
+    ROUNDTRIP_BIN="build/tests/omp_roundtrip"
+elif [ -f "tests/omp_roundtrip" ]; then
+    ROUNDTRIP_BIN="tests/omp_roundtrip"
+elif [ -f "omp_roundtrip" ]; then
+    ROUNDTRIP_BIN="./omp_roundtrip"
 else
-    echo -e "${RED}Error: ompparser binary (ompp) not found${NC}"
+    echo -e "${RED}Error: ompparser binary (omp_roundtrip) not found${NC}"
     echo "Please build ompparser first:"
-    echo "  mkdir -p build && cd build && cmake .. && make ompp"
+    echo "  mkdir -p build && cd build && cmake .. && make"
     exit 1
 fi
 echo -e "${GREEN}✓${NC} Binary built"

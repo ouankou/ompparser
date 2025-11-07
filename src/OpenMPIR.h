@@ -1431,6 +1431,8 @@ extern "C" {
 #endif
 extern OpenMPDirective *parseOpenMP(const char *,
                                     void *exprParse(const char *expr));
+extern void setLang(OpenMPBaseLang lang);
+extern void setNormalizeClauses(bool normalize);
 #ifdef __cplusplus
 }
 #endif
