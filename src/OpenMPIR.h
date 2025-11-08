@@ -619,6 +619,7 @@ protected:
   OpenMPLinearClauseModifier modifier; // linear modifier
 
   std::string user_defined_step = "";
+  bool modifier_first_syntax = false; // true if syntax is modifier(vars), false if vars: modifier
 
 public:
   OpenMPLinearClause(OpenMPLinearClauseModifier _modifier)
@@ -631,6 +632,10 @@ public:
   void setUserDefinedStep(const char *_step) { user_defined_step = _step; };
 
   std::string getUserDefinedStep() { return user_defined_step; };
+
+  void setModifierFirstSyntax(bool value) { modifier_first_syntax = value; };
+
+  bool isModifierFirstSyntax() { return modifier_first_syntax; };
 
   static OpenMPClause *addLinearClause(OpenMPDirective *,
                                        OpenMPLinearClauseModifier);
