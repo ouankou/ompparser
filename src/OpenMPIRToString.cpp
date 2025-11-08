@@ -1870,34 +1870,62 @@ std::string OpenMPLinearClause::toString() {
 
   std::string result = "linear ";
   std::string clause_string = "(";
-  bool flag = false;
   OpenMPLinearClauseModifier modifier = this->getModifier();
-  switch (modifier) {
-  case OMPC_LINEAR_MODIFIER_val:
-    clause_string += "val";
-    flag = true;
-    break;
-  case OMPC_LINEAR_MODIFIER_ref:
-    clause_string += "ref";
-    flag = true;
-    break;
-  case OMPC_LINEAR_MODIFIER_uval:
-    clause_string += "uval";
-    flag = true;
-    break;
-  default:;
-  }
-  if (clause_string.size() > 1) {
+  bool has_modifier = (modifier != OMPC_LINEAR_MODIFIER_unspecified);
+  bool modifier_first = this->isModifierFirstSyntax();
+  std::string user_defined_step = this->getUserDefinedStep();
+  bool has_step = !user_defined_step.empty();
+
+  // Check if we have a modifier to output
+  if (has_modifier && modifier_first) {
+    // Modifier-first syntax: linear(mod(vars))
+    switch (modifier) {
+    case OMPC_LINEAR_MODIFIER_val:
+      clause_string += "val";
+      break;
+    case OMPC_LINEAR_MODIFIER_ref:
+      clause_string += "ref";
+      break;
+    case OMPC_LINEAR_MODIFIER_uval:
+      clause_string += "uval";
+      break;
+    default:;
+    }
     clause_string += "( ";
-  };
-  clause_string += this->expressionToString();
-  if (flag == true) {
+    clause_string += this->expressionToString();
     clause_string += ") ";
-  };
-  if (this->getUserDefinedStep() != "") {
-    clause_string += ":";
-    clause_string += this->getUserDefinedStep();
-  };
+    if (has_step) {
+      clause_string += ":";
+    }
+  } else {
+    // Variable-first syntax: linear(vars) or linear(vars: mod) or linear(vars: mod, step)
+    clause_string += this->expressionToString();
+    if (has_modifier) {
+      clause_string += " : ";
+      switch (modifier) {
+      case OMPC_LINEAR_MODIFIER_val:
+        clause_string += "val";
+        break;
+      case OMPC_LINEAR_MODIFIER_ref:
+        clause_string += "ref";
+        break;
+      case OMPC_LINEAR_MODIFIER_uval:
+        clause_string += "uval";
+        break;
+      default:;
+      }
+    }
+    if (has_step) {
+      if (has_modifier) {
+        clause_string += ", ";
+      } else {
+        clause_string += ":";
+      }
+    }
+  }
+  if (has_step) {
+    clause_string += user_defined_step;
+  }
   clause_string += ") ";
   result += clause_string;
   return result;

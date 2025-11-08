@@ -1283,7 +1283,9 @@ apply_parameter_list : apply_parameter
                      | apply_parameter_list ',' apply_parameter
                      ;
 apply_parameter : apply_transformation
-                | EXPR_STRING ':' apply_transformation_seq
+                | EXPR_STRING {
+                    current_clause->addLangExpr($1);
+                  } ':' apply_transformation_seq
                 | EXPR_STRING '(' apply_parameter_suffix
                 ;
 apply_parameter_suffix : EXPR_STRING ')' apply_parameter_suffix_tail
@@ -1294,7 +1296,9 @@ apply_parameter_suffix_tail : ':' apply_transformation_seq
 apply_transformation_seq : apply_transformation
                          | apply_transformation_seq apply_transformation
                          ;
-apply_transformation : UNROLL
+apply_transformation : UNROLL {
+                         current_clause->addLangExpr("unroll");
+                       }
                      | UNROLL PARTIAL '(' EXPR_STRING ')'
                      | UNROLL FULL
                      | REVERSE
@@ -1302,7 +1306,9 @@ apply_transformation : UNROLL
                      | NOTHING
                      | TILE SIZES '(' expression ')'
                      | apply_clause
-                     | EXPR_STRING
+                     | EXPR_STRING {
+                         current_clause->addLangExpr($1);
+                       }
                      ;
 induction_clause : INDUCTION {
                      current_clause = current_directive->addOpenMPClause(OMPC_induction);
@@ -1315,9 +1321,7 @@ induction_parameter_list : induction_entry
 induction_entry : expression induction_entry_suffix
                 ;
 induction_entry_suffix : /* empty */
-                       | ':' {
-                           current_clause->addLangExpr(":");
-                         } induction_colon_expression
+                       | ':' induction_colon_expression
                        ;
 induction_colon_expression : expression
                            | '(' {
@@ -4602,7 +4606,7 @@ linear_clause : LINEAR '(' linear_parameter ')'
 
 linear_parameter : EXPR_STRING  { current_clause = current_directive->addOpenMPClause(OMPC_linear, OMPC_LINEAR_MODIFIER_unspecified); current_clause->addLangExpr($1); }
                  | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_linear, OMPC_LINEAR_MODIFIER_unspecified); current_clause->addLangExpr($1); } var_list
-                 | linear_modifier '(' var_list ')'
+                 | linear_modifier '(' var_list ')' { ((OpenMPLinearClause*)current_clause)->setModifierFirstSyntax(true); }
                  ;
 linear_modifier : MODOFIER_VAL { current_clause = current_directive->addOpenMPClause(OMPC_linear,OMPC_LINEAR_MODIFIER_val); }
                 | MODOFIER_REF { if (user_set_lang == Lang_unknown && auto_lang == Lang_C){ auto_lang = Lang_Cplusplus; } if (user_set_lang == Lang_C) {yyerror("REF modifier is not supportted in C."); YYABORT; } else { current_clause = current_directive->addOpenMPClause(OMPC_linear, OMPC_LINEAR_MODIFIER_ref); } }
