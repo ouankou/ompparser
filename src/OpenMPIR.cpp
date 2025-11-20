@@ -12,6 +12,8 @@
 #include <stdarg.h>
 #include <utility>
 
+extern bool clause_separator_comma;
+
 OpenMPClause *OpenMPDirective::registerClause(
     std::unique_ptr<OpenMPClause> clause) {
   OpenMPClause *raw_ptr = clause.get();
@@ -59,7 +61,6 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   OpenMPClause *new_clause = NULL;
 
   switch (kind) {
-  case OMPC_num_threads:
   case OMPC_private:
   case OMPC_firstprivate:
   case OMPC_shared:
@@ -561,6 +562,15 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         this, modifier1, modifier2, modifier3, type, mapper_identifier);
     break;
   }
+  case OMPC_num_threads: {
+    if (current_clauses->size() == 0) {
+      new_clause = registerClause(std::make_unique<OpenMPNumThreadsClause>());
+      current_clauses->push_back(new_clause);
+    } else {
+      new_clause = current_clauses->at(0);
+    }
+    break;
+  }
   case OMPC_when: {
     new_clause = OpenMPWhenClause::addWhenClause(this);
     break;
@@ -573,6 +583,15 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
     ;
   }
   };
+
+  if (new_clause != NULL) {
+    if (clause_separator_comma) {
+      new_clause->setPrecedingSeparator(OMPC_CLAUSE_SEP_comma);
+    } else {
+      new_clause->setPrecedingSeparator(OMPC_CLAUSE_SEP_space);
+    }
+    clause_separator_comma = false;
+  }
 
   va_end(args);
   if (new_clause != NULL && new_clause->getClausePosition() == -1) {

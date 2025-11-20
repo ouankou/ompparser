@@ -11,6 +11,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <algorithm>
 
 #include "OpenMPKinds.h"
 #include <cassert>
@@ -56,12 +57,14 @@ public:
  * for the parameters
  */
 class OpenMPClause : public SourceLocation {
+public:
 protected:
   OpenMPClauseKind kind;
   // the clause position in the vector of clauses in original order
   int clause_position = -1;
   // flag to allow duplicate expressions (e.g., sizes(4, 4))
   bool allow_duplicates = false;
+  OpenMPClauseSeparator separator = OMPC_CLAUSE_SEP_space;
 
   /* consider this is a struct of array, i.e.
    * the expression/localtionLine/locationColumn are the same index are one
@@ -91,6 +94,8 @@ public:
   void setClausePosition(int _clause_position) {
     clause_position = _clause_position;
   };
+  void setPrecedingSeparator(OpenMPClauseSeparator sep) { separator = sep; }
+  OpenMPClauseSeparator getPrecedingSeparator() const { return separator; }
 
   // a list of expressions or variables that are language-specific for the
   // clause, ompparser does not parse them, instead, it only stores them as
@@ -116,6 +121,8 @@ protected:
   OpenMPDirectiveKind kind;
   OpenMPBaseLang lang;
   bool normalize_clauses = true;  // Control clause normalization
+  bool use_declare_target_underscore = false;
+  bool compact_parallel_do = false;
 
   /* The vector is used to store the pointers of clauses in original order.
    * While unparsing, the generated pragma keeps the clauses in the same order
@@ -231,6 +238,14 @@ public:
   OpenMPBaseLang getBaseLang() { return lang; };
   void setNormalizeClauses(bool normalize) { normalize_clauses = normalize; };
   bool getNormalizeClauses() { return normalize_clauses; };
+  void setDeclareTargetUnderscore(bool use_underscore) {
+    use_declare_target_underscore = use_underscore;
+  }
+  bool getDeclareTargetUnderscore() const {
+    return use_declare_target_underscore;
+  }
+  void setCompactParallelDo(bool compact) { compact_parallel_do = compact; }
+  bool getCompactParallelDo() const { return compact_parallel_do; }
 
   // Registers a clause for automatic lifetime management
   // Takes ownership of the clause and returns a raw pointer for use
@@ -314,6 +329,7 @@ public:
 class OpenMPEndDirective : public OpenMPDirective {
 protected:
   OpenMPDirective *paired_directive;
+  bool use_compact_enddo = false;
 
 public:
   OpenMPEndDirective() : OpenMPDirective(OMPD_end) {};
@@ -321,6 +337,8 @@ public:
     paired_directive = _paired_directive;
   };
   OpenMPDirective *getPairedDirective() { return paired_directive; };
+  void setUseCompactEndDo(bool compact) { use_compact_enddo = compact; }
+  bool getUseCompactEndDo() const { return use_compact_enddo; }
 };
 
 class OpenMPRequiresDirective : public OpenMPDirective {
@@ -549,6 +567,7 @@ class OpenMPAllocateClause : public OpenMPClause {
 protected:
   OpenMPAllocateClauseAllocator allocator; // Allocate allocator
   std::string user_defined_allocator; /* user defined value if it is used */
+  std::vector<std::string> extra_allocator_parameters;
 
 public:
   OpenMPAllocateClause(OpenMPAllocateClauseAllocator _allocator)
@@ -558,10 +577,26 @@ public:
   OpenMPAllocateClauseAllocator getAllocator() { return allocator; };
 
   void setUserDefinedAllocator(char *_allocator) {
-    user_defined_allocator = std::string(_allocator);
+    if (user_defined_allocator.empty()) {
+      user_defined_allocator = std::string(_allocator);
+    } else {
+      std::string value(_allocator);
+      if (value != user_defined_allocator &&
+          std::find(extra_allocator_parameters.begin(),
+                    extra_allocator_parameters.end(),
+                    value) == extra_allocator_parameters.end()) {
+        extra_allocator_parameters.push_back(value);
+      }
+    }
   }
 
   std::string getUserDefinedAllocator() { return user_defined_allocator; };
+  const std::vector<std::string> &getExtraAllocatorParameters() const {
+    return extra_allocator_parameters;
+  }
+  void addExtraAllocatorParameter(const std::string &param) {
+    extra_allocator_parameters.push_back(param);
+  }
 
   static OpenMPClause *addAllocateClause(OpenMPDirective *,
                                          OpenMPAllocateClauseAllocator, char *);
@@ -768,6 +803,18 @@ public:
   std::string toString();
 };
 
+// num_threads clause with optional strict modifier (OpenMP 5.2)
+class OpenMPNumThreadsClause : public OpenMPClause {
+protected:
+  bool strict = false;
+
+public:
+  OpenMPNumThreadsClause() : OpenMPClause(OMPC_num_threads) {};
+  void setStrict(bool v) { strict = v; }
+  bool isStrict() const { return strict; }
+  std::string toString();
+};
+
 // OpenMP clauses with variant directives, such as WHEN and MATCH clauses.
 class OpenMPVariantClause : public OpenMPClause {
 protected:
@@ -783,6 +830,8 @@ protected:
       std::make_pair("", OMPC_CONTEXT_VENDOR_unspecified);
   std::pair<std::string, std::string> implementation_user_defined_expression;
   bool is_target_device_selector = false;
+  // Preserve selector order as it appeared in the source
+  std::vector<OpenMPContextSelectorSequenceKind> selector_order;
 
 public:
   OpenMPVariantClause(OpenMPClauseKind _kind) : OpenMPClause(_kind) {};
@@ -862,6 +911,12 @@ public:
   };
   bool getIsTargetDeviceSelector() {
     return is_target_device_selector;
+  };
+  void addSelectorKind(OpenMPContextSelectorSequenceKind kind) {
+    selector_order.push_back(kind);
+  };
+  const std::vector<OpenMPContextSelectorSequenceKind> &getSelectorOrder() {
+    return selector_order;
   };
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);

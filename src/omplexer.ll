@@ -9,7 +9,7 @@
 %option prefix="openmp_"
 %option stack
 %option noyy_top_state
-%option noinput
+%option
 
 %x AFFINITY_EXPR_STATE
 %x AFFINITY_ITERATOR_STATE
@@ -847,6 +847,7 @@ block                     {
 <MAPPER_STATE>default                       { return IDENTIFIER_DEFAULT; }
 <MAPPER_STATE>"::"                          { return DOUBLE_COLON; }
 <MAPPER_STATE>":"                           { yy_push_state(ID_EXPR_STATE); return ':'; }
+<MAPPER_STATE>map                           { yy_pop_state(); yy_push_state(MAP_STATE); return MAP; }
 <MAPPER_STATE>{blank}*                      { ; }
 <MAPPER_STATE>"("                           { return '('; }
 <MAPPER_STATE>")"                           { yy_pop_state(); return ')'; }
@@ -1481,10 +1482,16 @@ block                     {
                                                     } else if (ternary_count > 0) {
                                                         ternary_count--;
                                                         current_string.push_back(current_char);
-                                                    } else if (bracket_count == 0) {
-                                                        yy_pop_state();
-                                                        return emit_expr_string_and_unput(':');
                                                     } else {
+                                                        int next_char = yyinput();
+                                                        if (next_char != EOF) {
+                                                            unput(next_char);
+                                                        }
+                                                        bool next_is_paren = (next_char == '(');
+                                                        if (bracket_count == 0 && parenthesis_global_count == 0 && !next_is_paren) {
+                                                            yy_pop_state();
+                                                            return emit_expr_string_and_unput(':');
+                                                        }
                                                         current_string.push_back(current_char);
                                                     }
                                                     break;
