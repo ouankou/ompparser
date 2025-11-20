@@ -673,68 +673,12 @@ std::string OpenMPDirective::toString() {
 
 std::string OpenMPClause::expressionToString() {
 
-  // Helper function to add spaces around colons in array subscripts for clang-format
-  auto formatArraySubscripts = [](const std::string &expr) -> std::string {
-    std::string formatted = expr;
-    size_t pos = 0;
-    int bracket_depth = 0;  // Tracks [] for C/C++
-    int paren_depth = 0;    // Tracks () for Fortran arrays
-
-    while (pos < formatted.size()) {
-      if (formatted[pos] == '[') {
-        bracket_depth++;
-        pos++;
-      } else if (formatted[pos] == ']') {
-        bracket_depth--;
-        pos++;
-      } else if (formatted[pos] == '(') {
-        paren_depth++;
-        pos++;
-      } else if (formatted[pos] == ')') {
-        paren_depth--;
-        pos++;
-      } else if (formatted[pos] == ':' && (bracket_depth > 0 || paren_depth > 0)) {
-        // Found a colon inside array subscripts
-        bool space_before = (pos > 0 && formatted[pos-1] == ' ');
-        bool space_after = (pos + 1 < formatted.size() && formatted[pos+1] == ' ');
-
-        // For C/C++ arrays []: add spaces on both sides for clang-format
-        // For Fortran arrays (): add spaces on both sides (matching pattern from test files)
-        if (!space_after && pos + 1 < formatted.size()) {
-          formatted.insert(pos + 1, " ");
-        }
-        if (!space_before && pos > 0) {
-          formatted.insert(pos, " ");
-          pos++;  // Adjust position after insertion
-        }
-        pos++;
-      } else {
-        pos++;
-      }
-    }
-    return formatted;
-  };
-
   std::string result;
   std::vector<const char *> *expr = this->getExpressions();
   if (expr != NULL) {
     // For apply clause, keep the first entry as the label, rest as comma-separated transformations
     if (this->getKind() == OMPC_apply && !expr->empty()) {
-      auto normalizeApplyToken = [](std::string &value) {
-        if (!value.empty() && value.back() == ':') {
-          value.pop_back();
-        }
-        size_t pos = value.find("unrollpartial");
-        if (pos != std::string::npos) {
-          value.replace(pos, strlen("unrollpartial"), "unroll partial");
-        }
-        pos = value.find("unrollfull");
-        if (pos != std::string::npos) {
-          value.replace(pos, strlen("unrollfull"), "unroll full");
-        }
-      };
-      std::string first = formatArraySubscripts(std::string((*expr)[0]));
-      normalizeApplyToken(first);
+      std::string first = std::string((*expr)[0]);
       result = first;
       if (expr->size() > 1) {
         result += ":";
@@ -743,14 +687,12 @@ std::string OpenMPClause::expressionToString() {
         if (i > 1) {
           result += ", ";
         }
-        std::string entry = formatArraySubscripts(std::string((*expr)[i]));
-        normalizeApplyToken(entry);
-        result += entry;
+        result += std::string((*expr)[i]);
       }
     }
     // For init/apply/adjust_args clauses with exactly 2 expressions, use ":" separator
     else if ((this->getKind() == OMPC_init || this->getKind() == OMPC_adjust_args) && expr->size() == 2) {
-      result = formatArraySubscripts(std::string((*expr)[0])) + ": " + formatArraySubscripts(std::string((*expr)[1]));
+      result = std::string((*expr)[0]) + ": " + std::string((*expr)[1]);
     }
     // For induction clause with 3+ expressions, use colon before last expression
     else if (this->getKind() == OMPC_induction && expr->size() >= 3) {
@@ -762,37 +704,15 @@ std::string OpenMPClause::expressionToString() {
             result += ", ";
           }
         }
-        result += formatArraySubscripts(std::string((*expr)[i]));
+        result += std::string((*expr)[i]);
       }
     } else {
       std::vector<const char *>::iterator it;
       for (it = expr->begin(); it != expr->end(); it++) {
-        result += formatArraySubscripts(std::string(*it)) + ", ";
+        result += std::string(*it) + ", ";
       };
       result = result.substr(0, result.size() - 2);
     }
-  }
-
-  if (this->getKind() == OMPC_combiner) {
-    auto tightenScopeOps = [](std::string &value) {
-      size_t pos = 0;
-      while ((pos = value.find(":", pos)) != std::string::npos) {
-        size_t next = pos + 1;
-        while (next < value.size() && value[next] == ' ') {
-          value.erase(next, 1);
-        }
-        if (next < value.size() && value[next] == ':') {
-          size_t back = pos;
-          while (back > 0 && value[back - 1] == ' ') {
-            value.erase(back - 1, 1);
-            --pos;
-            --back;
-          }
-        }
-        ++pos;
-      }
-    };
-    tightenScopeOps(result);
   }
 
   return result;
