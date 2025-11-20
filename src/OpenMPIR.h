@@ -442,6 +442,7 @@ protected:
   std::string type_var;
   std::string type;
   std::string var;
+  bool type_var_has_space = false;
 
 public:
   OpenMPDeclareMapperDirective(
@@ -453,18 +454,14 @@ public:
     identifier = _identifier;
   };
   OpenMPDeclareMapperDirectiveIdentifier getIdentifier() { return identifier; };
-  void setUserDefinedIdentifier(std::string _user_defined_identifier) {
-    user_defined_identifier = _user_defined_identifier;
-  }
+  void setUserDefinedIdentifier(std::string _user_defined_identifier);
   std::string getUserDefinedIdentifier() { return user_defined_identifier; }
   std::string getDeclareMapperType() { return type; }
   std::string getDeclareMapperVar() { return var; }
-  void setDeclareMapperType(const char *_declare_mapper_type) {
-    type = _declare_mapper_type;
-  }
-  void setDeclareMapperVar(const char *_declare_mapper_variable) {
-    var = _declare_mapper_variable;
-  }
+  void setDeclareMapperType(const char *_declare_mapper_type);
+  void setDeclareMapperVar(const char *_declare_mapper_variable);
+  void setTypeVarHasSpace(bool has_space) { type_var_has_space = has_space; }
+  bool hasTypeVarSpace() const { return type_var_has_space; }
 };
 
 // reduction clause
@@ -575,16 +572,43 @@ public:
 
   void setLabel(const std::string &value) { label = value; }
   void addTransformation(OpenMPApplyTransformKind kind,
-                         const std::string &argument = std::string()) {
-    ApplyTransform t;
-    t.kind = kind;
-    t.argument = argument;
-    transforms.push_back(std::move(t));
-  }
+                         const std::string &argument = std::string());
   const std::string &getLabel() const { return label; }
   const std::vector<ApplyTransform> &getTransformations() const {
     return transforms;
   }
+  std::string toString();
+};
+
+class OpenMPInductionClause : public OpenMPClause {
+public:
+  struct Binding {
+    std::string label;
+    std::string expression;
+  };
+
+private:
+  enum ItemKind { ItemStep, ItemBinding, ItemPassthrough };
+  struct ItemRef {
+    ItemKind kind;
+    size_t index;
+  };
+
+  std::string step_expression;
+  std::vector<Binding> bindings;
+  std::vector<std::string> passthrough_items;
+  std::vector<ItemRef> sequence;
+
+public:
+  OpenMPInductionClause() : OpenMPClause(OMPC_induction) {}
+
+  void setSpecification(const char *raw_spec);
+  const std::string &getStepExpression() const { return step_expression; }
+  const std::vector<Binding> &getBindings() const { return bindings; }
+  const std::vector<std::string> &getPassthroughItems() const {
+    return passthrough_items;
+  }
+  std::string specificationToString() const;
   std::string toString();
 };
 
