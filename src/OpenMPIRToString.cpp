@@ -2101,6 +2101,60 @@ std::string OpenMPInitializerClause::toString() {
   return result;
 };
 
+std::string OpenMPApplyClause::toString() {
+  std::string result = "apply ";
+  bool need_colon = false;
+  if (!label.empty()) {
+    result += label;
+    need_colon = true;
+  }
+  if (!transforms.empty()) {
+    if (need_colon) {
+      result += ":";
+    }
+    for (size_t i = 0; i < transforms.size(); ++i) {
+      if (i > 0) {
+        result += ", ";
+      }
+      const auto &t = transforms[i];
+      switch (t.kind) {
+      case OMPC_APPLY_TRANSFORM_unroll:
+        result += "unroll";
+        break;
+      case OMPC_APPLY_TRANSFORM_unroll_partial:
+        result += "unroll partial";
+        if (!t.argument.empty()) {
+          result += "(" + t.argument + ")";
+        }
+        break;
+      case OMPC_APPLY_TRANSFORM_unroll_full:
+        result += "unroll full";
+        break;
+      case OMPC_APPLY_TRANSFORM_reverse:
+        result += "reverse";
+        break;
+      case OMPC_APPLY_TRANSFORM_interchange:
+        result += "interchange";
+        break;
+      case OMPC_APPLY_TRANSFORM_nothing:
+        result += "nothing";
+        break;
+      case OMPC_APPLY_TRANSFORM_tile_sizes:
+        result += "tile sizes(" + t.argument + ")";
+        break;
+      case OMPC_APPLY_TRANSFORM_unknown:
+      default:
+        result += t.argument;
+        break;
+      }
+    }
+  }
+  if (!result.empty() && result.back() != ' ') {
+    result += " ";
+  }
+  return result;
+}
+
 std::string OpenMPAllocateClause::toString() {
 
   std::string result = "allocate ";

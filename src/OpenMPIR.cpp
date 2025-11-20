@@ -327,7 +327,11 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
 
   {
     if (current_clauses->size() == 0) {
-      new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+      if (kind == OMPC_apply) {
+        new_clause = registerClause(std::make_unique<OpenMPApplyClause>());
+      } else {
+        new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+      }
       current_clauses->push_back(new_clause);
     } else {
       if (kind == OMPC_num_threads) {
@@ -339,7 +343,11 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         new_clause = current_clauses->at(0);
       } else {
         /* normalization is disabled, create a new clause */
-        new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+        if (kind == OMPC_apply) {
+          new_clause = registerClause(std::make_unique<OpenMPApplyClause>());
+        } else {
+          new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+        }
         current_clauses->push_back(new_clause);
       }
       if (kind == OMPC_simdlen) {
