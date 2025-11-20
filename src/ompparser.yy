@@ -741,8 +741,28 @@ adjust_args_clause : ADJUST_ARGS {
                      } '(' adjust_args_parameter ')' {
                    }
                    ;
-adjust_args_parameter : expression ':' var_list
+adjust_args_parameter : EXPR_STRING ':' adjust_args_var_list {
+                          auto *adjust_clause = static_cast<OpenMPAdjustArgsClause *>(current_clause);
+                          if (adjust_clause != nullptr) {
+                            std::string raw_modifier;
+                            auto modifier = parseAdjustArgsModifier(std::string($1), raw_modifier);
+                            adjust_clause->setModifier(modifier, std::string($1));
+                          }
+                        }
                       ;
+adjust_args_var_list : EXPR_STRING {
+                        auto *adjust_clause = static_cast<OpenMPAdjustArgsClause *>(current_clause);
+                        if (adjust_clause != nullptr) {
+                          adjust_clause->addArgument(std::string($1));
+                        }
+                      }
+                     | adjust_args_var_list ',' EXPR_STRING {
+                        auto *adjust_clause = static_cast<OpenMPAdjustArgsClause *>(current_clause);
+                        if (adjust_clause != nullptr) {
+                          adjust_clause->addArgument(std::string($3));
+                        }
+                      }
+                     ;
 
 parallel_directive : PARALLEL {
                         current_directive = new OpenMPDirective(OMPD_parallel);
@@ -1274,8 +1294,23 @@ init_clause : INIT { current_clause = current_directive->addOpenMPClause(OMPC_in
             ;
 init_complete_clause : INIT_COMPLETE { current_clause = current_directive->addOpenMPClause(OMPC_init_complete); }
                      ;
-init_parameter : expression
-               | expression ':' expression
+init_parameter : EXPR_STRING {
+                   auto *init_clause = static_cast<OpenMPInitClause *>(current_clause);
+                   if (init_clause != nullptr) {
+                     std::string operand = std::string($1);
+                     init_clause->setOperand(operand);
+                   }
+                 }
+               | EXPR_STRING ':' EXPR_STRING {
+                   auto *init_clause = static_cast<OpenMPInitClause *>(current_clause);
+                   if (init_clause != nullptr) {
+                     std::string raw_kind;
+                     std::string kind_string = std::string($1);
+                     OpenMPInitClauseKind kind = parseInitKind(kind_string, raw_kind);
+                     init_clause->setKind(kind, kind_string);
+                     init_clause->setOperand(std::string($3));
+                   }
+                 }
                ;
 use_clause : USE { current_clause = current_directive->addOpenMPClause(OMPC_use); } '(' expression ')'
            ;
