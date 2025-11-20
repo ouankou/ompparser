@@ -113,7 +113,13 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     result += "(";
     std::vector<OpenMPClause *> *ind_clauses = this->getClauses(OMPC_induction);
     if (ind_clauses != nullptr && !ind_clauses->empty()) {
-      result += ind_clauses->at(0)->expressionToString();
+      auto *ind_clause =
+          dynamic_cast<OpenMPInductionClause *>(ind_clauses->at(0));
+      if (ind_clause != nullptr) {
+        result += ind_clause->specificationToString();
+      } else {
+        result += ind_clauses->at(0)->expressionToString();
+      }
     }
     result += ") ";
     goto default_case;
@@ -135,37 +141,28 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       case OMPD_DECLARE_MAPPER_IDENTIFIER_user: {
         std::string id =
             ((OpenMPDeclareMapperDirective *)this)->getUserDefinedIdentifier();
-        // Trim trailing space from user-defined identifier (parser may include it)
-        while (!id.empty() && (id.back() == ' ' || id.back() == '\t')) {
-          id.pop_back();
-        }
         result += id;
         break;
       }
       default:;
       };
-      result += " : ";
+      if (this->getBaseLang() == Lang_Fortran) {
+        result += ": ";
+      } else {
+        result += " : ";
+      }
     }
 
     std::string declare_mapper_type =
         ((OpenMPDeclareMapperDirective *)this)->getDeclareMapperType();
-    // Trim leading space from type (parser may include it)
-    if (!declare_mapper_type.empty() && declare_mapper_type[0] == ' ') {
-      declare_mapper_type = declare_mapper_type.substr(1);
-    }
-    // For Fortran, also trim trailing space before adding ::
-    if (this->getBaseLang() == Lang_Fortran) {
-      while (!declare_mapper_type.empty() &&
-             (declare_mapper_type.back() == ' ' || declare_mapper_type.back() == '\t')) {
-        declare_mapper_type.pop_back();
-      }
-    }
     result += declare_mapper_type;
     std::string declare_mapper_variable =
         ((OpenMPDeclareMapperDirective *)this)->getDeclareMapperVar();
     // Fortran requires :: separator between type and variable
     if (this->getBaseLang() == Lang_Fortran) {
       result += " :: ";
+    } else if (((OpenMPDeclareMapperDirective *)this)->hasTypeVarSpace()) {
+      result += " ";
     }
     result += declare_mapper_variable;
     result += ")";
@@ -676,37 +673,11 @@ std::string OpenMPClause::expressionToString() {
   std::string result;
   std::vector<const char *> *expr = this->getExpressions();
   if (expr != NULL) {
-    // For apply clause, keep the first entry as the label, rest as comma-separated transformations
-    if (this->getKind() == OMPC_apply && !expr->empty()) {
-      std::string first = std::string((*expr)[0]);
-      result = first;
-      if (expr->size() > 1) {
-        result += ":";
-      }
-      for (size_t i = 1; i < expr->size(); i++) {
-        if (i > 1) {
-          result += ", ";
-        }
-        result += std::string((*expr)[i]);
-      }
-    }
-    // For init/apply/adjust_args clauses with exactly 2 expressions, use ":" separator
-    else if ((this->getKind() == OMPC_init || this->getKind() == OMPC_adjust_args) && expr->size() == 2) {
+    // For init/adjust_args clauses with exactly 2 expressions, use ":" separator
+    if ((this->getKind() == OMPC_init || this->getKind() == OMPC_adjust_args) && expr->size() == 2) {
       result = std::string((*expr)[0]) + ": " + std::string((*expr)[1]);
     }
-    // For induction clause with 3+ expressions, use colon before last expression
-    else if (this->getKind() == OMPC_induction && expr->size() >= 3) {
-      for (size_t i = 0; i < expr->size(); i++) {
-        if (i > 0) {
-          if (i == expr->size() - 1) {
-            result += ": ";
-          } else {
-            result += ", ";
-          }
-        }
-        result += std::string((*expr)[i]);
-      }
-    } else {
+    else {
       std::vector<const char *>::iterator it;
       for (it = expr->begin(); it != expr->end(); it++) {
         result += std::string(*it) + ", ";
@@ -2102,7 +2073,7 @@ std::string OpenMPInitializerClause::toString() {
 };
 
 std::string OpenMPApplyClause::toString() {
-  std::string result = "apply ";
+  std::string result = "apply(";
   bool need_colon = false;
   if (!label.empty()) {
     result += label;
@@ -2110,7 +2081,7 @@ std::string OpenMPApplyClause::toString() {
   }
   if (!transforms.empty()) {
     if (need_colon) {
-      result += ":";
+      result += ": ";
     }
     for (size_t i = 0; i < transforms.size(); ++i) {
       if (i > 0) {
@@ -2149,9 +2120,49 @@ std::string OpenMPApplyClause::toString() {
       }
     }
   }
-  if (!result.empty() && result.back() != ' ') {
-    result += " ";
+  result += ")";
+  result += " ";
+  return result;
+}
+
+std::string OpenMPInductionClause::specificationToString() const {
+  std::string result;
+  bool first = true;
+
+  for (const auto &item : sequence) {
+    if (!first) {
+      result += ", ";
+    }
+    switch (item.kind) {
+    case ItemStep:
+      result += "step(" + step_expression + ")";
+      break;
+    case ItemBinding:
+      if (item.index < bindings.size()) {
+        const auto &binding = bindings[item.index];
+        if (!binding.label.empty()) {
+          result += binding.label + ": " + binding.expression;
+        } else {
+          result += binding.expression;
+        }
+      }
+      break;
+    case ItemPassthrough:
+      if (item.index < passthrough_items.size()) {
+        result += passthrough_items[item.index];
+      }
+      break;
+    }
+    first = false;
   }
+
+  return result;
+}
+
+std::string OpenMPInductionClause::toString() {
+  std::string result = "induction(";
+  result += specificationToString();
+  result += ") ";
   return result;
 }
 

@@ -995,9 +995,11 @@ declare_induction_directive : DECLARE INDUCTION {
                         openmp_begin_raw_expression();
                      } EXPR_STRING ')' {
                         if (current_clause != nullptr) {
-                          auto *exprs = current_clause->getExpressions();
-                          exprs->clear();
-                          current_clause->addLangExpr($6);
+                          auto *induction_clause =
+                              static_cast<OpenMPInductionClause *>(current_clause);
+                          if (induction_clause != nullptr) {
+                            induction_clause->setSpecification($6);
+                          }
                         }
                         current_clause = nullptr;
                      }
@@ -1389,13 +1391,15 @@ apply_transformation : UNROLL {
                      ;
 induction_clause : INDUCTION {
                      current_clause = current_directive->addOpenMPClause(OMPC_induction);
-                   } '(' {
-                     openmp_begin_raw_expression();
-                   } EXPR_STRING ')' {
+                 } '(' {
+                    openmp_begin_raw_expression();
+                  } EXPR_STRING ')' {
                      if (current_clause != nullptr) {
-                       auto *exprs = current_clause->getExpressions();
-                       exprs->clear();
-                       current_clause->addLangExpr($5);
+                       auto *induction_clause =
+                           static_cast<OpenMPInductionClause *>(current_clause);
+                       if (induction_clause != nullptr) {
+                         induction_clause->setSpecification($5);
+                       }
                      }
                    }
                  ;
@@ -3592,6 +3596,7 @@ type_var : EXPR_STRING {
                    std::string _var = type_var.substr(var_start);
                    ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperType(_type.c_str());
                    ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperVar(_var.c_str());
+                   ((OpenMPDeclareMapperDirective*)current_directive)->setTypeVarHasSpace(true);
                    if (auto_lang == Lang_unknown) {
                        auto_lang = Lang_Fortran;
                    }
@@ -3605,6 +3610,7 @@ type_var : EXPR_STRING {
                            const char* var = _var.c_str();
                            ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperType(type);
                            ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperVar(var);
+                           ((OpenMPDeclareMapperDirective*)current_directive)->setTypeVarHasSpace(type_var[i] == ' ');
                            break;
                        }
                    }

@@ -9,6 +9,7 @@
 #include "OpenMPIR.h"
 #include <cstring>
 #include <memory>
+#include <cctype>
 #include <stdarg.h>
 #include <utility>
 #include <algorithm>
@@ -17,27 +18,30 @@ extern bool clause_separator_comma;
 
 namespace {
 
+void tightenScopeOps(std::string &text);
+
+std::string trimWhitespace(const std::string &text) {
+  const char *whitespace = " \t\n\r\f\v";
+  const size_t begin = text.find_first_not_of(whitespace);
+  if (begin == std::string::npos) {
+    return std::string();
+  }
+  const size_t end = text.find_last_not_of(whitespace);
+  return text.substr(begin, end - begin + 1);
+}
+
 std::string normalizeRawExpression(const char *expr,
                                    bool strip_trailing_colon = false) {
   if (!expr) {
     return std::string();
   }
   std::string value(expr);
-  auto trim = [](const std::string &text) -> std::string {
-    const char *whitespace = " \t\n\r\f\v";
-    const size_t begin = text.find_first_not_of(whitespace);
-    if (begin == std::string::npos) {
-      return std::string();
-    }
-    const size_t end = text.find_last_not_of(whitespace);
-    return text.substr(begin, end - begin + 1);
-  };
-  value = trim(value);
+  value = trimWhitespace(value);
   if (strip_trailing_colon) {
     while (!value.empty() && value.back() == ':') {
       value.pop_back();
     }
-    value = trim(value);
+    value = trimWhitespace(value);
   }
 
   // Add spaces around compound assignments like "+=" to keep output stable.
@@ -53,25 +57,6 @@ std::string normalizeRawExpression(const char *expr,
     pos += 3;
   }
 
-  // Remove stray spaces in scope operators ("std : : foo" -> "std::foo").
-  auto tightenScopeOps = [](std::string &text) {
-    size_t p = 0;
-    while ((p = text.find(":", p)) != std::string::npos) {
-      size_t next = p + 1;
-      while (next < text.size() && text[next] == ' ') {
-        text.erase(next, 1);
-      }
-      if (next < text.size() && text[next] == ':') {
-        size_t back = p;
-        while (back > 0 && text[back - 1] == ' ') {
-          text.erase(back - 1, 1);
-          --p;
-          --back;
-        }
-      }
-      ++p;
-    }
-  };
   tightenScopeOps(value);
 
   return value;
@@ -118,6 +103,87 @@ std::string formatArraySubscripts(const std::string &expr) {
   return formatted;
 }
 
+std::vector<std::string> splitTopLevel(const std::string &text, char separator) {
+  std::vector<std::string> parts;
+  std::string current;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  bool in_single_quote = false;
+  bool in_double_quote = false;
+
+  for (char ch : text) {
+    if (ch == '\'' && !in_double_quote) {
+      in_single_quote = !in_single_quote;
+    } else if (ch == '"' && !in_single_quote) {
+      in_double_quote = !in_double_quote;
+    }
+    if (!in_single_quote && !in_double_quote) {
+      if (ch == '(') {
+        ++paren_depth;
+      } else if (ch == ')') {
+        --paren_depth;
+      } else if (ch == '[') {
+        ++bracket_depth;
+      } else if (ch == ']') {
+        --bracket_depth;
+      } else if (ch == '{') {
+        ++brace_depth;
+      } else if (ch == '}') {
+        --brace_depth;
+      }
+      if (ch == separator && paren_depth == 0 && bracket_depth == 0 &&
+          brace_depth == 0) {
+        parts.push_back(current);
+        current.clear();
+        continue;
+      }
+    }
+    current.push_back(ch);
+  }
+  if (!current.empty()) {
+    parts.push_back(current);
+  }
+  return parts;
+}
+
+size_t findTopLevel(const std::string &text, char target) {
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  bool in_single_quote = false;
+  bool in_double_quote = false;
+
+  for (size_t i = 0; i < text.size(); ++i) {
+    char ch = text[i];
+    if (ch == '\'' && !in_double_quote) {
+      in_single_quote = !in_single_quote;
+    } else if (ch == '"' && !in_single_quote) {
+      in_double_quote = !in_double_quote;
+    }
+    if (!in_single_quote && !in_double_quote) {
+      if (ch == '(') {
+        ++paren_depth;
+      } else if (ch == ')') {
+        --paren_depth;
+      } else if (ch == '[') {
+        ++bracket_depth;
+      } else if (ch == ']') {
+        --bracket_depth;
+      } else if (ch == '{') {
+        ++brace_depth;
+      } else if (ch == '}') {
+        --brace_depth;
+      }
+      if (ch == target && paren_depth == 0 && bracket_depth == 0 &&
+          brace_depth == 0) {
+        return i;
+      }
+    }
+  }
+  return std::string::npos;
+}
+
 void normalizeApplyToken(std::string &value) {
   size_t pos = value.find("unrollpartial");
   if (pos != std::string::npos) {
@@ -137,15 +203,26 @@ void tightenScopeOps(std::string &text) {
   while ((p = text.find(":", p)) != std::string::npos) {
     size_t next = p + 1;
     while (next < text.size() && text[next] == ' ') {
-      text.erase(next, 1);
+      ++next;
     }
-    if (next < text.size() && text[next] == ':') {
-      size_t back = p;
-      while (back > 0 && text[back - 1] == ' ') {
-        text.erase(back - 1, 1);
-        --p;
-        --back;
-      }
+    if (next >= text.size() || text[next] != ':') {
+      ++p;
+      continue;
+    }
+    // Remove spaces between the two colons
+    if (next > p + 1) {
+      text.erase(p + 1, next - (p + 1));
+    }
+    // Remove spaces after the second colon
+    size_t second = p + 1;
+    size_t after = second + 1;
+    while (after < text.size() && text[after] == ' ') {
+      text.erase(after, 1);
+    }
+    // Remove spaces before the first colon
+    while (p > 0 && text[p - 1] == ' ') {
+      text.erase(p - 1, 1);
+      --p;
     }
     ++p;
   }
@@ -165,6 +242,47 @@ std::string normalizeClauseExpression(OpenMPClauseKind kind,
 }
 
 } // namespace
+
+void OpenMPApplyClause::addTransformation(OpenMPApplyTransformKind kind,
+                                          const std::string &argument) {
+  ApplyTransform t;
+  t.kind = kind;
+  t.argument = argument;
+
+  if (kind == OMPC_APPLY_TRANSFORM_unknown) {
+    std::string normalized = argument;
+    normalizeApplyToken(normalized);
+    t.argument = normalized;
+
+    std::string lowered = normalized;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                   [](unsigned char ch) { return std::tolower(ch); });
+
+    auto extractArgument = [&](const std::string &text,
+                               const std::string &prefix) -> std::string {
+      size_t lparen = text.find('(', prefix.size());
+      size_t rparen = text.find_last_of(')');
+      if (lparen != std::string::npos && rparen != std::string::npos &&
+          rparen > lparen + 1) {
+        return trimWhitespace(text.substr(lparen + 1, rparen - lparen - 1));
+      }
+      return std::string();
+    };
+
+    if (lowered.rfind("unroll partial", 0) == 0) {
+      t.kind = OMPC_APPLY_TRANSFORM_unroll_partial;
+      t.argument = extractArgument(normalized, "unroll partial");
+    } else if (lowered.rfind("unroll full", 0) == 0) {
+      t.kind = OMPC_APPLY_TRANSFORM_unroll_full;
+      t.argument.clear();
+    } else if (lowered.rfind("unroll", 0) == 0) {
+      t.kind = OMPC_APPLY_TRANSFORM_unroll;
+      t.argument = extractArgument(normalized, "unroll");
+    }
+  }
+
+  transforms.push_back(std::move(t));
+}
 
 OpenMPClause *OpenMPDirective::registerClause(
     std::unique_ptr<OpenMPClause> clause) {
@@ -194,6 +312,21 @@ void OpenMPInitializerClause::setUserDefinedPriv(char *_priv) {
   user_defined_priv = normalizeRawExpression(_priv);
 }
 
+void OpenMPDeclareMapperDirective::setUserDefinedIdentifier(
+    std::string _user_defined_identifier) {
+  user_defined_identifier = trimWhitespace(_user_defined_identifier);
+}
+
+void OpenMPDeclareMapperDirective::setDeclareMapperType(
+    const char *_declare_mapper_type) {
+  type = normalizeRawExpression(_declare_mapper_type);
+}
+
+void OpenMPDeclareMapperDirective::setDeclareMapperVar(
+    const char *_declare_mapper_variable) {
+  var = normalizeRawExpression(_declare_mapper_variable);
+}
+
 void OpenMPClause::addLangExpr(const char *expression, int line, int col) {
   if (expression == nullptr) {
     return;
@@ -218,6 +351,93 @@ void OpenMPClause::addLangExpr(const char *expression, int line, int col) {
   locations.push_back(SourceLocation(line, col));
 };
 
+void OpenMPInductionClause::setSpecification(const char *raw_spec) {
+  step_expression.clear();
+  bindings.clear();
+  passthrough_items.clear();
+  sequence.clear();
+
+  if (raw_spec == nullptr) {
+    return;
+  }
+  std::string raw = trimWhitespace(normalizeRawExpression(raw_spec));
+  auto items = splitTopLevel(raw, ',');
+  for (const auto &item : items) {
+    std::string cleaned = trimWhitespace(item);
+    if (cleaned.empty()) {
+      continue;
+    }
+    bool handled = false;
+
+    // Detect step(<expr>) entries
+    size_t lparen = findTopLevel(cleaned, '(');
+    if (lparen != std::string::npos) {
+      std::string head = trimWhitespace(cleaned.substr(0, lparen));
+      std::string lowered_head = head;
+      std::transform(lowered_head.begin(), lowered_head.end(),
+                     lowered_head.begin(),
+                     [](unsigned char ch) { return std::tolower(ch); });
+      int depth = 0;
+      size_t rparen = std::string::npos;
+      for (size_t i = lparen; i < cleaned.size(); ++i) {
+        if (cleaned[i] == '(') {
+          ++depth;
+        } else if (cleaned[i] == ')') {
+          --depth;
+          if (depth == 0) {
+            rparen = i;
+            break;
+          }
+        }
+      }
+      if (lowered_head == "step" && rparen != std::string::npos) {
+        std::string inner =
+            trimWhitespace(cleaned.substr(lparen + 1, rparen - lparen - 1));
+        std::string normalized_inner =
+            normalizeClauseExpression(OMPC_induction, inner.c_str());
+        if (step_expression.empty()) {
+          step_expression = normalized_inner;
+          sequence.push_back({ItemStep, 0});
+        } else {
+          passthrough_items.push_back(normalized_inner);
+          sequence.push_back(
+              {ItemPassthrough, passthrough_items.size() - 1});
+        }
+        std::string trailing = trimWhitespace(cleaned.substr(rparen + 1));
+        if (!trailing.empty()) {
+          passthrough_items.push_back(normalizeClauseExpression(
+              OMPC_induction, trailing.c_str()));
+          sequence.push_back(
+              {ItemPassthrough, passthrough_items.size() - 1});
+        }
+        handled = true;
+      }
+    }
+
+    if (handled) {
+      continue;
+    }
+
+    // Parse <label> : <expr> bindings at the top level
+    size_t colon = findTopLevel(cleaned, ':');
+    if (colon != std::string::npos) {
+      Binding binding;
+      binding.label = trimWhitespace(cleaned.substr(0, colon));
+      binding.expression = normalizeClauseExpression(
+          OMPC_induction, trimWhitespace(cleaned.substr(colon + 1)).c_str());
+      bindings.push_back(std::move(binding));
+      sequence.push_back({ItemBinding, bindings.size() - 1});
+      handled = true;
+    }
+
+    if (!handled) {
+      passthrough_items.push_back(
+          normalizeClauseExpression(OMPC_induction, cleaned.c_str()));
+      sequence.push_back({ItemPassthrough, passthrough_items.size() - 1});
+    }
+  }
+}
+
 /**
  *
  * @param kind
@@ -233,6 +453,17 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   va_list args;
   va_start(args, k);
   OpenMPClause *new_clause = NULL;
+
+  auto makeClause = [&](OpenMPClauseKind clause_kind)
+      -> std::unique_ptr<OpenMPClause> {
+    if (clause_kind == OMPC_apply) {
+      return std::make_unique<OpenMPApplyClause>();
+    }
+    if (clause_kind == OMPC_induction) {
+      return std::make_unique<OpenMPInductionClause>();
+    }
+    return std::make_unique<OpenMPClause>(clause_kind);
+  };
 
   switch (kind) {
   case OMPC_private:
@@ -327,11 +558,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
 
   {
     if (current_clauses->size() == 0) {
-      if (kind == OMPC_apply) {
-        new_clause = registerClause(std::make_unique<OpenMPApplyClause>());
-      } else {
-        new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
-      }
+      new_clause = registerClause(makeClause(kind));
       current_clauses->push_back(new_clause);
     } else {
       if (kind == OMPC_num_threads) {
@@ -343,11 +570,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         new_clause = current_clauses->at(0);
       } else {
         /* normalization is disabled, create a new clause */
-        if (kind == OMPC_apply) {
-          new_clause = registerClause(std::make_unique<OpenMPApplyClause>());
-        } else {
-          new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
-        }
+        new_clause = registerClause(makeClause(kind));
         current_clauses->push_back(new_clause);
       }
       if (kind == OMPC_simdlen) {
@@ -359,7 +582,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         new_clause = current_clauses->at(0);
       } else {
         /* normalization is disabled, create a new clause */
-        new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+        new_clause = registerClause(makeClause(kind));
         current_clauses->push_back(new_clause);
       }
       if (kind == OMPC_safelen) {
@@ -371,7 +594,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         new_clause = current_clauses->at(0);
       } else {
         /* normalization is disabled, create a new clause */
-        new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+        new_clause = registerClause(makeClause(kind));
         current_clauses->push_back(new_clause);
       }
       if (kind == OMPC_seq_cst) {
@@ -383,7 +606,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         new_clause = current_clauses->at(0);
       } else {
         /* normalization is disabled, create a new clause */
-        new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+        new_clause = registerClause(makeClause(kind));
         current_clauses->push_back(new_clause);
       }
       if (kind == OMPC_acq_rel) {
@@ -395,7 +618,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         new_clause = current_clauses->at(0);
       } else {
         /* normalization is disabled, create a new clause */
-        new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+        new_clause = registerClause(makeClause(kind));
         current_clauses->push_back(new_clause);
       }
       if (kind == OMPC_release) {
@@ -407,7 +630,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         new_clause = current_clauses->at(0);
       } else {
         /* normalization is disabled, create a new clause */
-        new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+        new_clause = registerClause(makeClause(kind));
         current_clauses->push_back(new_clause);
       }
       if (kind == OMPC_acquire) {
@@ -419,7 +642,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         new_clause = current_clauses->at(0);
       } else {
         /* normalization is disabled, create a new clause */
-        new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+        new_clause = registerClause(makeClause(kind));
         current_clauses->push_back(new_clause);
       }
       if (kind == OMPC_relaxed) {
@@ -431,7 +654,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         new_clause = current_clauses->at(0);
       } else {
         /* normalization is disabled, create a new clause */
-        new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+        new_clause = registerClause(makeClause(kind));
         current_clauses->push_back(new_clause);
       }
       if (kind == OMPC_hint) {
@@ -443,7 +666,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         new_clause = current_clauses->at(0);
       } else {
         /* normalization is disabled, create a new clause */
-        new_clause = registerClause(std::make_unique<OpenMPClause>(kind));
+        new_clause = registerClause(makeClause(kind));
         current_clauses->push_back(new_clause);
       }
     }
