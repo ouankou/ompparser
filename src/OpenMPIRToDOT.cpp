@@ -1676,7 +1676,8 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
                                       int index, std::string parent_node) {
 
   std::string parameter_string;
-  std::pair<std::string, std::string> *parameter_pair_string;
+  // Legacy pair variable is no longer needed after selector struct cleanup.
+  OpenMPVariantClause::ScoredExpression *scored_expr = nullptr;
   std::vector<std::pair<std::string, OpenMPDirective *>>
       *parameter_pair_directives;
   OpenMPDirective *variant_directive = NULL;
@@ -1784,26 +1785,26 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
 
   std::string node_id = "";
   // check user
-  parameter_pair_string = this->getUserCondition();
-  if (parameter_pair_string->second.size() > 0) {
+  scored_expr = this->getUserCondition();
+  if (scored_expr != nullptr && scored_expr->expression.size() > 0) {
     node_id = clause_string + "_user_condition";
     current_line = indent + clause_string + " -- " + node_id + "\n";
     dot_file << current_line.c_str();
     current_line = indent + "\t" + node_id + " [label = \"user_condition\"]\n";
     dot_file << current_line.c_str();
     // output score
-    if (parameter_pair_string->first.size() > 0) {
+    if (scored_expr->score.size() > 0) {
       current_line = indent + "\t" + node_id + " -- " + node_id + "_score\n";
       dot_file << current_line.c_str();
       current_line = indent + "\t\t" + node_id + "_score [label = \"score\\n " +
-                     parameter_pair_string->first + "\"]\n";
+                     scored_expr->score + "\"]\n";
       dot_file << current_line.c_str();
     };
     // output condition expression
     current_line = indent + "\t" + node_id + " -- " + node_id + "_expr\n";
     dot_file << current_line.c_str();
     current_line = indent + "\t\t" + node_id + "_expr [label = \"expr\\n " +
-                   parameter_pair_string->second + "\"]\n";
+                   scored_expr->expression + "\"]\n";
     dot_file << current_line.c_str();
   };
 
@@ -1824,8 +1825,8 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
 
   // check device_arch
   bool has_device = false;
-  parameter_pair_string = this->getArchExpression();
-  if (parameter_pair_string->second.size() > 0) {
+  scored_expr = this->getArchExpression();
+  if (scored_expr != nullptr && scored_expr->expression.size() > 0) {
     if (!has_device) {
       node_id = clause_string + "_device";
       current_line = indent + clause_string + " -- " + node_id + "\n";
@@ -1839,13 +1840,13 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
     current_line = indent + "\t\t" + node_id + "_arch [label = \"arch\"]\n";
     dot_file << current_line.c_str();
     // output score
-    if (parameter_pair_string->first.size() > 0) {
+    if (scored_expr->score.size() > 0) {
       current_line =
           indent + "\t\t" + node_id + "_arch -- " + node_id + "_arch_score\n";
       dot_file << current_line.c_str();
       current_line = indent + "\t\t\t" + node_id +
                      "_arch_score [label = \"score\\n " +
-                     parameter_pair_string->first + "\"]\n";
+                     scored_expr->score + "\"]\n";
       dot_file << current_line.c_str();
     };
     // output arch expression
@@ -1854,13 +1855,13 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
     dot_file << current_line.c_str();
     current_line = indent + "\t\t\t" + node_id +
                    "_arch_expr [label = \"expr\\n " +
-                   parameter_pair_string->second + "\"]\n";
+                   scored_expr->expression + "\"]\n";
     dot_file << current_line.c_str();
   };
 
   // check device_isa
-  parameter_pair_string = this->getIsaExpression();
-  if (parameter_pair_string->second != "") {
+  scored_expr = this->getIsaExpression();
+  if (scored_expr != nullptr && scored_expr->expression != "") {
     if (!has_device) {
       node_id = clause_string + "_device";
       current_line = indent + clause_string + " -- " + node_id + "\n";
@@ -1874,13 +1875,13 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
     current_line = indent + "\t\t" + node_id + "_isa [label = \"isa\"]\n";
     dot_file << current_line.c_str();
     // output score
-    if (parameter_pair_string->first.size() > 0) {
+    if (scored_expr->score.size() > 0) {
       current_line =
           indent + "\t\t" + node_id + "_isa -- " + node_id + "_isa_score\n";
       dot_file << current_line.c_str();
       current_line = indent + "\t\t\t" + node_id +
                      "_isa_score [label = \"score\\n " +
-                     parameter_pair_string->first + "\"]\n";
+                     scored_expr->score + "\"]\n";
       dot_file << current_line.c_str();
     };
     // output isa expression
@@ -1889,7 +1890,7 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
     dot_file << current_line.c_str();
     current_line = indent + "\t\t\t" + node_id +
                    "_isa_expr [label = \"expr\\n " +
-                   parameter_pair_string->second + "\"]\n";
+                   scored_expr->expression + "\"]\n";
     dot_file << current_line.c_str();
   };
 

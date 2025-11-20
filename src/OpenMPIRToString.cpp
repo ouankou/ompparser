@@ -2304,12 +2304,14 @@ std::string OpenMPVariantClause::toString() {
   // Builders for each selector category
   auto buildUserSelector = [&]() -> std::string {
     std::string s;
-    parameter_pair_string = this->getUserCondition();
-    if (parameter_pair_string->first != "") {
-      s = "user = {condition(score(" + parameter_pair_string->first +
-          "): " + parameter_pair_string->second + ")}";
-    } else if (parameter_pair_string->second != "") {
-      s = "user = {condition(" + parameter_pair_string->second + ")}";
+    auto *expr = this->getUserCondition();
+    if (!expr) {
+      return s;
+    }
+    if (!expr->score.empty()) {
+      s = "user = {condition(score(" + expr->score + "): " + expr->expression + ")}";
+    } else if (!expr->expression.empty()) {
+      s = "user = {condition(" + expr->expression + ")}";
     }
     return s;
   };
@@ -2377,28 +2379,27 @@ std::string OpenMPVariantClause::toString() {
       s += "kind(" + local + "), ";
     }
     // arch
-    parameter_pair_string = this->getArchExpression();
-    if (parameter_pair_string->first.size() > 0) {
-      s += "arch(score(" + parameter_pair_string->first +
-           "): " + parameter_pair_string->second + "), ";
-    } else if (parameter_pair_string->second.size() > 0) {
-      s += "arch(" + parameter_pair_string->second + "), ";
+    parameter_pair_string = nullptr;
+    auto *arch = this->getArchExpression();
+    if (arch && !arch->score.empty()) {
+      s += "arch(score(" + arch->score + "): " + arch->expression + "), ";
+    } else if (arch && !arch->expression.empty()) {
+      s += "arch(" + arch->expression + "), ";
     }
     // isa
-    parameter_pair_string = this->getIsaExpression();
-    if (parameter_pair_string->first.size() > 0) {
-      s += "isa(score(" + parameter_pair_string->first +
-           "): " + parameter_pair_string->second + "), ";
-    } else if (parameter_pair_string->second.size() > 0) {
-      s += "isa(" + parameter_pair_string->second + "), ";
+    auto *isa = this->getIsaExpression();
+    if (isa && !isa->score.empty()) {
+      s += "isa(score(" + isa->score + "): " + isa->expression + "), ";
+    } else if (isa && !isa->expression.empty()) {
+      s += "isa(" + isa->expression + "), ";
     }
     // device_num
-    parameter_pair_string = this->getDeviceNumExpression();
-    if (parameter_pair_string->first.size() > 0) {
-      s += "device_num(score(" + parameter_pair_string->first +
-           "): " + parameter_pair_string->second + "), ";
-    } else if (parameter_pair_string->second.size() > 0) {
-      s += "device_num(" + parameter_pair_string->second + "), ";
+    auto *devnum = this->getDeviceNumExpression();
+    if (devnum && !devnum->score.empty()) {
+      s += "device_num(score(" + devnum->score +
+           "): " + devnum->expression + "), ";
+    } else if (devnum && !devnum->expression.empty()) {
+      s += "device_num(" + devnum->expression + "), ";
     }
     if (s.empty()) {
       return s;
@@ -2465,9 +2466,8 @@ std::string OpenMPVariantClause::toString() {
     }
 
     // user-defined implementation selector
-    parameter_pair_string = this->getImplementationExpression();
-    if (!parameter_pair_string->first.empty() ||
-        !parameter_pair_string->second.empty()) {
+    auto *impl_expr = this->getImplementationExpression();
+    if (impl_expr && (!impl_expr->score.empty() || !impl_expr->expression.empty())) {
       auto trim = [](const std::string &value) -> std::string {
         const char *whitespace = " \t\n\r\f\v";
         const size_t begin = value.find_first_not_of(whitespace);
@@ -2477,8 +2477,8 @@ std::string OpenMPVariantClause::toString() {
         const size_t end = value.find_last_not_of(whitespace);
         return value.substr(begin, end - begin + 1);
       };
-      std::string expr = trim(parameter_pair_string->second);
-      const std::string score = parameter_pair_string->first;
+      std::string expr = trim(impl_expr->expression);
+      const std::string score = impl_expr->score;
       const std::string requires_prefix = "requires";
       bool is_requires =
           expr.compare(0, requires_prefix.size(), requires_prefix) == 0;
@@ -2519,12 +2519,12 @@ std::string OpenMPVariantClause::toString() {
     }
 
     // extension
-    parameter_pair_string = this->getExtensionExpression();
-    if (parameter_pair_string->first.size() > 0) {
-      s += "extension(score(" + parameter_pair_string->first +
-           "): " + parameter_pair_string->second + "), ";
-    } else if (parameter_pair_string->second.size() > 0) {
-      s += "extension(" + parameter_pair_string->second + "), ";
+    auto *ext_expr = this->getExtensionExpression();
+    if (ext_expr && ext_expr->score.size() > 0) {
+      s += "extension(score(" + ext_expr->score +
+           "): " + ext_expr->expression + "), ";
+    } else if (ext_expr && ext_expr->expression.size() > 0) {
+      s += "extension(" + ext_expr->expression + "), ";
     }
 
     if (s.empty()) {
