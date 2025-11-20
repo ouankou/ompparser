@@ -559,6 +559,35 @@ public:
   void generateDOT(std::ofstream &, int, int, std::string);
 };
 
+class OpenMPApplyClause : public OpenMPClause {
+public:
+  struct ApplyTransform {
+    OpenMPApplyTransformKind kind = OMPC_APPLY_TRANSFORM_unknown;
+    std::string argument;
+  };
+
+protected:
+  std::string label;
+  std::vector<ApplyTransform> transforms;
+
+public:
+  OpenMPApplyClause() : OpenMPClause(OMPC_apply) {};
+
+  void setLabel(const std::string &value) { label = value; }
+  void addTransformation(OpenMPApplyTransformKind kind,
+                         const std::string &argument = std::string()) {
+    ApplyTransform t;
+    t.kind = kind;
+    t.argument = argument;
+    transforms.push_back(std::move(t));
+  }
+  const std::string &getLabel() const { return label; }
+  const std::vector<ApplyTransform> &getTransformations() const {
+    return transforms;
+  }
+  std::string toString();
+};
+
 // allocate clause
 class OpenMPAllocateClause : public OpenMPClause {
 protected:

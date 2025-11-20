@@ -389,6 +389,17 @@ enum OpenMPContextSelectorSequenceKind {
   OMPC_SELECTOR_implementation
 };
 
+enum OpenMPApplyTransformKind {
+  OMPC_APPLY_TRANSFORM_unroll,
+  OMPC_APPLY_TRANSFORM_unroll_partial,
+  OMPC_APPLY_TRANSFORM_unroll_full,
+  OMPC_APPLY_TRANSFORM_reverse,
+  OMPC_APPLY_TRANSFORM_interchange,
+  OMPC_APPLY_TRANSFORM_nothing,
+  OMPC_APPLY_TRANSFORM_tile_sizes,
+  OMPC_APPLY_TRANSFORM_unknown
+};
+
 // OpenMP attributes for 'if' clause.
 enum OpenMPIfClauseModifier {
 #define OPENMP_IF_MODIFIER(Name) OMPC_IF_MODIFIER_##Name,

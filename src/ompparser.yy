@@ -1306,12 +1306,26 @@ apply_parameter_list : apply_parameter
                      ;
 apply_parameter : apply_transformation
                 | EXPR_STRING {
-                    current_clause->addLangExpr($1);
+                    auto *apply_clause = static_cast<OpenMPApplyClause *>(current_clause);
+                    if (apply_clause != nullptr) {
+                      std::string label = std::string($1);
+                      const char *ws = " \t\n\r\f\v";
+                      label.erase(0, label.find_first_not_of(ws));
+                      label.erase(label.find_last_not_of(ws) + 1);
+                      apply_clause->setLabel(label);
+                    }
                   } ':' apply_transformation_seq
-                | EXPR_STRING '(' apply_parameter_suffix
+                | EXPR_STRING '(' EXPR_STRING ')' apply_parameter_suffix_tail {
+                    auto *apply_clause = static_cast<OpenMPApplyClause *>(current_clause);
+                    if (apply_clause != nullptr) {
+                      std::string label = std::string($1) + "(" + std::string($3) + ")";
+                      const char *ws = " \t\n\r\f\v";
+                      label.erase(0, label.find_first_not_of(ws));
+                      label.erase(label.find_last_not_of(ws) + 1);
+                      apply_clause->setLabel(label);
+                    }
+                  }
                 ;
-apply_parameter_suffix : EXPR_STRING ')' apply_parameter_suffix_tail
-                      ;
 apply_parameter_suffix_tail : ':' apply_transformation_seq
                            | /* empty */
                            ;
@@ -1319,31 +1333,58 @@ apply_transformation_seq : apply_transformation
                          | apply_transformation_seq apply_transformation
                          ;
 apply_transformation : UNROLL {
-                         current_clause->addLangExpr("unroll");
+                         auto *apply_clause = static_cast<OpenMPApplyClause *>(current_clause);
+                         if (apply_clause != nullptr) {
+                           apply_clause->addTransformation(OMPC_APPLY_TRANSFORM_unroll);
+                         }
                        }
                      | UNROLL PARTIAL '(' EXPR_STRING ')' {
-                         std::string expr = "unroll partial(" + std::string($4) + ")";
-                         current_clause->addLangExpr(expr.c_str());
+                         auto *apply_clause = static_cast<OpenMPApplyClause *>(current_clause);
+                         if (apply_clause != nullptr) {
+                           apply_clause->addTransformation(OMPC_APPLY_TRANSFORM_unroll_partial, std::string($4));
+                         }
                        }
                      | UNROLL FULL {
-                         current_clause->addLangExpr("unroll full");
+                         auto *apply_clause = static_cast<OpenMPApplyClause *>(current_clause);
+                         if (apply_clause != nullptr) {
+                           apply_clause->addTransformation(OMPC_APPLY_TRANSFORM_unroll_full);
+                         }
                        }
                      | REVERSE {
-                         current_clause->addLangExpr("reverse");
+                         auto *apply_clause = static_cast<OpenMPApplyClause *>(current_clause);
+                         if (apply_clause != nullptr) {
+                           apply_clause->addTransformation(OMPC_APPLY_TRANSFORM_reverse);
+                         }
                        }
                      | INTERCHANGE {
-                         current_clause->addLangExpr("interchange");
+                         auto *apply_clause = static_cast<OpenMPApplyClause *>(current_clause);
+                         if (apply_clause != nullptr) {
+                           apply_clause->addTransformation(OMPC_APPLY_TRANSFORM_interchange);
+                         }
                        }
                      | NOTHING {
-                         current_clause->addLangExpr("nothing");
+                         auto *apply_clause = static_cast<OpenMPApplyClause *>(current_clause);
+                         if (apply_clause != nullptr) {
+                           apply_clause->addTransformation(OMPC_APPLY_TRANSFORM_nothing);
+                         }
                        }
                      | TILE SIZES '(' expression ')' {
-                         std::string expr = "tile sizes(" + std::string($4) + ")";
-                         current_clause->addLangExpr(expr.c_str());
+                         auto *apply_clause = static_cast<OpenMPApplyClause *>(current_clause);
+                         if (apply_clause != nullptr) {
+                           apply_clause->addTransformation(OMPC_APPLY_TRANSFORM_tile_sizes, std::string($4));
+                         }
                        }
-                     | apply_clause
+                     | apply_clause {
+                         auto *apply_clause_obj = static_cast<OpenMPApplyClause *>(current_clause);
+                         if (apply_clause_obj != nullptr) {
+                           apply_clause_obj->addTransformation(OMPC_APPLY_TRANSFORM_unknown, "apply");
+                         }
+                       }
                      | EXPR_STRING {
-                         current_clause->addLangExpr($1);
+                         auto *apply_clause = static_cast<OpenMPApplyClause *>(current_clause);
+                         if (apply_clause != nullptr) {
+                           apply_clause->addTransformation(OMPC_APPLY_TRANSFORM_unknown, std::string($1));
+                         }
                        }
                      ;
 induction_clause : INDUCTION {
