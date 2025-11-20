@@ -502,6 +502,31 @@ std::string OpenMPAdjustArgsClause::toString() {
   return result;
 }
 
+void OpenMPAppendArgsClause::addArgument(const std::string &arg) {
+  std::string cleaned =
+      normalizeClauseExpression(OMPC_append_args, arg.c_str());
+  arguments.push_back(cleaned);
+}
+
+std::string OpenMPAppendArgsClause::toString() {
+  std::string result = "append_args(";
+  if (!label.empty()) {
+    result += label;
+    if (!arguments.empty()) {
+      result += ": ";
+    }
+  }
+  for (size_t i = 0; i < arguments.size(); ++i) {
+    if (i > 0) {
+      result += ", ";
+    }
+    result += arguments[i];
+  }
+  result += ")";
+  result += " ";
+  return result;
+}
+
 std::string OpenMPInitClause::toString() {
   std::string result = "init(";
   std::string kind_string;
@@ -561,6 +586,9 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
     }
     if (clause_kind == OMPC_adjust_args) {
       return std::make_unique<OpenMPAdjustArgsClause>();
+    }
+    if (clause_kind == OMPC_append_args) {
+      return std::make_unique<OpenMPAppendArgsClause>();
     }
     return std::make_unique<OpenMPClause>(clause_kind);
   };

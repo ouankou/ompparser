@@ -730,6 +730,7 @@ declare_variant_clause_seq : declare_variant_clause
 
 declare_variant_clause : match_clause
                        | adjust_args_clause
+                       | append_args_clause
                        ;
 
 match_clause : MATCH { current_clause = current_directive->addOpenMPClause(OMPC_match); }
@@ -760,6 +761,32 @@ adjust_args_var_list : EXPR_STRING {
                         auto *adjust_clause = static_cast<OpenMPAdjustArgsClause *>(current_clause);
                         if (adjust_clause != nullptr) {
                           adjust_clause->addArgument(std::string($3));
+                        }
+                      }
+                     ;
+append_args_clause : APPEND_ARGS {
+                       current_clause = current_directive->addOpenMPClause(OMPC_append_args);
+                     } '(' append_args_parameter ')' {
+                   }
+                   ;
+append_args_parameter : append_args_var_list
+                      | EXPR_STRING ':' append_args_var_list {
+                          auto *append_clause = static_cast<OpenMPAppendArgsClause *>(current_clause);
+                          if (append_clause != nullptr) {
+                            append_clause->setLabel(std::string($1));
+                          }
+                        }
+                      ;
+append_args_var_list : EXPR_STRING {
+                        auto *append_clause = static_cast<OpenMPAppendArgsClause *>(current_clause);
+                        if (append_clause != nullptr) {
+                          append_clause->addArgument(std::string($1));
+                        }
+                      }
+                     | append_args_var_list ',' EXPR_STRING {
+                        auto *append_clause = static_cast<OpenMPAppendArgsClause *>(current_clause);
+                        if (append_clause != nullptr) {
+                          append_clause->addArgument(std::string($3));
                         }
                       }
                      ;
