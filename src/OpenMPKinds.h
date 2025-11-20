@@ -400,6 +400,10 @@ enum OpenMPAdjustArgsModifier {
   OMPC_ADJUST_ARGS_unknown
 };
 
+enum OpenMPAppendArgsModifier {
+  OMPC_APPEND_ARGS_unknown
+};
+
 enum OpenMPApplyTransformKind {
   OMPC_APPLY_TRANSFORM_unroll,
   OMPC_APPLY_TRANSFORM_unroll_partial,

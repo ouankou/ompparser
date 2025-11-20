@@ -657,6 +657,24 @@ public:
   std::string toString();
 };
 
+class OpenMPAppendArgsClause : public OpenMPClause {
+private:
+  OpenMPAppendArgsModifier modifier = OMPC_APPEND_ARGS_unknown;
+  std::string label;
+  std::vector<std::string> arguments;
+
+public:
+  OpenMPAppendArgsClause() : OpenMPClause(OMPC_append_args) {}
+
+  void setLabel(const std::string &value) { label = value; }
+  const std::string &getLabel() const { return label; }
+  void setModifier(OpenMPAppendArgsModifier value) { modifier = value; }
+  OpenMPAppendArgsModifier getModifier() const { return modifier; }
+  void addArgument(const std::string &arg);
+  const std::vector<std::string> &getArguments() const { return arguments; }
+  std::string toString();
+};
+
 // allocate clause
 class OpenMPAllocateClause : public OpenMPClause {
 protected:
