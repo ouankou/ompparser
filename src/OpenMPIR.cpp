@@ -11,14 +11,100 @@
 #include <memory>
 #include <stdarg.h>
 #include <utility>
+#include <algorithm>
 
 extern bool clause_separator_comma;
+
+namespace {
+
+std::string normalizeRawExpression(const char *expr,
+                                   bool strip_trailing_colon = false) {
+  if (!expr) {
+    return std::string();
+  }
+  std::string value(expr);
+  auto trim = [](const std::string &text) -> std::string {
+    const char *whitespace = " \t\n\r\f\v";
+    const size_t begin = text.find_first_not_of(whitespace);
+    if (begin == std::string::npos) {
+      return std::string();
+    }
+    const size_t end = text.find_last_not_of(whitespace);
+    return text.substr(begin, end - begin + 1);
+  };
+  value = trim(value);
+  if (strip_trailing_colon) {
+    while (!value.empty() && value.back() == ':') {
+      value.pop_back();
+    }
+    value = trim(value);
+  }
+
+  // Add spaces around compound assignments like "+=" to keep output stable.
+  size_t pos = 0;
+  while ((pos = value.find("+=", pos)) != std::string::npos) {
+    if (pos > 0 && value[pos - 1] != ' ') {
+      value.insert(pos, " ");
+      ++pos;
+    }
+    if (pos + 2 < value.size() && value[pos + 2] != ' ') {
+      value.insert(pos + 2, " ");
+    }
+    pos += 3;
+  }
+
+  // Remove stray spaces in scope operators ("std : : foo" -> "std::foo").
+  auto tightenScopeOps = [](std::string &text) {
+    size_t p = 0;
+    while ((p = text.find(":", p)) != std::string::npos) {
+      size_t next = p + 1;
+      while (next < text.size() && text[next] == ' ') {
+        text.erase(next, 1);
+      }
+      if (next < text.size() && text[next] == ':') {
+        size_t back = p;
+        while (back > 0 && text[back - 1] == ' ') {
+          text.erase(back - 1, 1);
+          --p;
+          --back;
+        }
+      }
+      ++p;
+    }
+  };
+  tightenScopeOps(value);
+
+  return value;
+}
+
+} // namespace
 
 OpenMPClause *OpenMPDirective::registerClause(
     std::unique_ptr<OpenMPClause> clause) {
   OpenMPClause *raw_ptr = clause.get();
   clause_storage.push_back(std::move(clause));
   return raw_ptr;
+}
+
+void OpenMPDeclareReductionDirective::setCombiner(const char *_combiner) {
+  combiner = normalizeRawExpression(_combiner, /*strip_trailing_colon=*/true);
+}
+
+void OpenMPDeclareReductionDirective::addTypenameList(
+    const char *_typename_list) {
+  if (_typename_list == nullptr) {
+    return;
+  }
+  std::string cleaned = normalizeRawExpression(_typename_list);
+  auto owned_value = std::make_unique<char[]>(cleaned.size() + 1);
+  std::memcpy(owned_value.get(), cleaned.c_str(), cleaned.size() + 1);
+  const char *stored_expression = owned_value.get();
+  typename_list.push_back(stored_expression);
+  typename_storage.push_back(std::move(owned_value));
+}
+
+void OpenMPInitializerClause::setUserDefinedPriv(char *_priv) {
+  user_defined_priv = normalizeRawExpression(_priv);
 }
 
 void OpenMPClause::addLangExpr(const char *expression, int line, int col) {
@@ -1359,7 +1445,8 @@ OpenMPInitializerClause::addInitializerClause(OpenMPDirective *directive,
            it != current_clauses->end(); ++it) {
         std::string current_user_defined_priv_expression;
         if (user_defined_priv) {
-          current_user_defined_priv_expression = std::string(user_defined_priv);
+          current_user_defined_priv_expression =
+              normalizeRawExpression(user_defined_priv);
         };
         if (((OpenMPInitializerClause *)(*it))->getPriv() == priv &&
             current_user_defined_priv_expression.compare(

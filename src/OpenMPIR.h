@@ -418,19 +418,18 @@ public:
 class OpenMPDeclareReductionDirective : public OpenMPDirective {
 protected:
   std::vector<const char *> typename_list;
+  std::vector<std::unique_ptr<char[]>> typename_storage;
   std::string identifier;
   std::string combiner;
 
 public:
   OpenMPDeclareReductionDirective()
       : OpenMPDirective(OMPD_declare_reduction) {};
-  void addTypenameList(const char *_typename_list) {
-    typename_list.push_back(_typename_list);
-  };
+  void addTypenameList(const char *_typename_list);
   std::vector<const char *> *getTypenameList() { return &typename_list; };
   void setIdentifier(std::string _identifier) { identifier = _identifier; }
   std::string getIdentifier() { return identifier; }
-  void setCombiner(const char *_combiner) { combiner = std::string(_combiner); }
+  void setCombiner(const char *_combiner);
   std::string getCombiner() { return combiner; }
 };
 
@@ -551,9 +550,7 @@ public:
 
   OpenMPInitializerClausePriv getPriv() { return priv; };
 
-  void setUserDefinedPriv(char *_priv) {
-    user_defined_priv = std::string(_priv);
-  }
+  void setUserDefinedPriv(char *_priv);
 
   std::string getUserDefinedPriv() { return user_defined_priv; };
   static OpenMPClause *

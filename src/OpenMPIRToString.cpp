@@ -82,57 +82,6 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     const bool has_combiner_clause =
         (combiner_clauses != nullptr && !combiner_clauses->empty());
 
-    auto trim = [](const std::string &value) -> std::string {
-      const char *whitespace = " \t\n\r\f\v";
-      const size_t begin = value.find_first_not_of(whitespace);
-      if (begin == std::string::npos)
-        return std::string();
-      const size_t end = value.find_last_not_of(whitespace);
-      return value.substr(begin, end - begin + 1);
-    };
-
-    // Add spaces around operators in combiner to match clang-format
-    std::string formatted_combiner = trim(combiner);
-    // Add spaces around +=, -=, *=, /=, =, etc.
-    size_t pos = 0;
-    while ((pos = formatted_combiner.find("+=", pos)) != std::string::npos) {
-      if (pos > 0 && formatted_combiner[pos-1] != ' ') {
-        formatted_combiner.insert(pos, " ");
-        pos++;
-      }
-      if (pos + 2 < formatted_combiner.size() && formatted_combiner[pos+2] != ' ') {
-        formatted_combiner.insert(pos + 2, " ");
-      }
-      pos += 3;
-    }
-
-    // Remove trailing colon artifacts and trim again
-    while (!formatted_combiner.empty() && formatted_combiner.back() == ':') {
-      formatted_combiner.pop_back();
-    }
-    formatted_combiner = trim(formatted_combiner);
-
-    // Remove stray spaces around scope operators (e.g., "std : : foo" -> "std::foo")
-    auto normalizeScopeOps = [](std::string &value) {
-      size_t pos = 0;
-      while ((pos = value.find(":", pos)) != std::string::npos) {
-        size_t next = pos + 1;
-        while (next < value.size() && value[next] == ' ') {
-          value.erase(next, 1);
-        }
-        if (next < value.size() && value[next] == ':') {
-          size_t back = pos;
-          while (back > 0 && value[back - 1] == ' ') {
-            value.erase(back - 1, 1);
-            --pos;
-            --back;
-          }
-        }
-        ++pos;
-      }
-    };
-    normalizeScopeOps(formatted_combiner);
-
     // Remove trailing space from directive name before adding opening paren
     if (!result.empty() && result.back() == ' ') {
       result.pop_back();
@@ -142,7 +91,7 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     result += " : ";
     bool first_type = true;
     for (list_item = list->begin(); list_item != list->end(); list_item++) {
-      std::string type = *list_item ? trim(std::string(*list_item)) : "";
+      std::string type = *list_item ? std::string(*list_item) : "";
       if (!first_type) {
         result += ", ";
       } else {
@@ -150,9 +99,9 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       }
       result += type;
     }
-    if (!formatted_combiner.empty() && !has_combiner_clause) {
+    if (!combiner.empty() && !has_combiner_clause) {
       result += " : ";
-      result += formatted_combiner;
+      result += combiner;
     }
     result += ") ";
     break;
