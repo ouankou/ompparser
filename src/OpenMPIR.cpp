@@ -79,6 +79,93 @@ std::string normalizeRawExpression(const char *expr,
 
 } // namespace
 
+namespace {
+
+std::string formatArraySubscripts(const std::string &expr) {
+  std::string formatted = expr;
+  size_t pos = 0;
+  int bracket_depth = 0;  // Tracks [] for C/C++
+  int paren_depth = 0;    // Tracks () for Fortran arrays
+
+  while (pos < formatted.size()) {
+    if (formatted[pos] == '[') {
+      bracket_depth++;
+      pos++;
+    } else if (formatted[pos] == ']') {
+      bracket_depth--;
+      pos++;
+    } else if (formatted[pos] == '(') {
+      paren_depth++;
+      pos++;
+    } else if (formatted[pos] == ')') {
+      paren_depth--;
+      pos++;
+    } else if (formatted[pos] == ':' && (bracket_depth > 0 || paren_depth > 0)) {
+      bool space_before = (pos > 0 && formatted[pos - 1] == ' ');
+      bool space_after = (pos + 1 < formatted.size() && formatted[pos + 1] == ' ');
+      if (!space_after && pos + 1 < formatted.size()) {
+        formatted.insert(pos + 1, " ");
+      }
+      if (!space_before && pos > 0) {
+        formatted.insert(pos, " ");
+        pos++;
+      }
+      pos++;
+    } else {
+      pos++;
+    }
+  }
+  return formatted;
+}
+
+void normalizeApplyToken(std::string &value) {
+  size_t pos = value.find("unrollpartial");
+  if (pos != std::string::npos) {
+    value.replace(pos, std::strlen("unrollpartial"), "unroll partial");
+  }
+  pos = value.find("unrollfull");
+  if (pos != std::string::npos) {
+    value.replace(pos, std::strlen("unrollfull"), "unroll full");
+  }
+  while (!value.empty() && value.back() == ':') {
+    value.pop_back();
+  }
+}
+
+void tightenScopeOps(std::string &text) {
+  size_t p = 0;
+  while ((p = text.find(":", p)) != std::string::npos) {
+    size_t next = p + 1;
+    while (next < text.size() && text[next] == ' ') {
+      text.erase(next, 1);
+    }
+    if (next < text.size() && text[next] == ':') {
+      size_t back = p;
+      while (back > 0 && text[back - 1] == ' ') {
+        text.erase(back - 1, 1);
+        --p;
+        --back;
+      }
+    }
+    ++p;
+  }
+}
+
+std::string normalizeClauseExpression(OpenMPClauseKind kind,
+                                      const char *expression) {
+  std::string result = expression ? std::string(expression) : std::string();
+  result = formatArraySubscripts(result);
+  if (kind == OMPC_apply) {
+    normalizeApplyToken(result);
+  }
+  if (kind == OMPC_combiner) {
+    tightenScopeOps(result);
+  }
+  return result;
+}
+
+} // namespace
+
 OpenMPClause *OpenMPDirective::registerClause(
     std::unique_ptr<OpenMPClause> clause) {
   OpenMPClause *raw_ptr = clause.get();
@@ -108,22 +195,23 @@ void OpenMPInitializerClause::setUserDefinedPriv(char *_priv) {
 }
 
 void OpenMPClause::addLangExpr(const char *expression, int line, int col) {
+  if (expression == nullptr) {
+    return;
+  }
+  std::string normalized = normalizeClauseExpression(this->kind, expression);
   // Since the size of expression vector is supposed to be small, brute force is
   // used here.
   // Skip deduplication if duplicates are allowed (e.g., for sizes(4, 4))
   if (!allow_duplicates) {
     for (unsigned int i = 0; i < this->expressions.size(); i++) {
-      if (!strcmp(expressions.at(i), expression)) {
+      if (!strcmp(expressions.at(i), normalized.c_str())) {
         return;
       };
     };
   }
-  if (expression == nullptr) {
-    return;
-  }
-  size_t length = std::strlen(expression);
+  size_t length = normalized.size();
   auto owned_value = std::make_unique<char[]>(length + 1);
-  std::memcpy(owned_value.get(), expression, length + 1);
+  std::memcpy(owned_value.get(), normalized.c_str(), length + 1);
   const char *stored_expression = owned_value.get();
   expressions.push_back(stored_expression);
   owned_expressions.push_back(std::move(owned_value));
