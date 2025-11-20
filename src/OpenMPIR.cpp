@@ -243,6 +243,33 @@ std::string normalizeClauseExpression(OpenMPClauseKind kind,
 
 } // namespace
 
+OpenMPInitClauseKind parseInitKind(const std::string &text,
+                                   std::string &raw_output) {
+  std::string lowered = text;
+  std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                 [](unsigned char ch) { return std::tolower(ch); });
+  raw_output = text;
+  if (lowered == "target") {
+    return OMPC_INIT_KIND_target;
+  }
+  if (lowered == "targetsync") {
+    return OMPC_INIT_KIND_targetsync;
+  }
+  return OMPC_INIT_KIND_unknown;
+}
+
+OpenMPAdjustArgsModifier parseAdjustArgsModifier(
+    const std::string &text, std::string &raw_output) {
+  std::string lowered = text;
+  std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                 [](unsigned char ch) { return std::tolower(ch); });
+  raw_output = text;
+  if (lowered == "need_device_ptr") {
+    return OMPC_ADJUST_ARGS_need_device_ptr;
+  }
+  return OMPC_ADJUST_ARGS_unknown;
+}
+
 void OpenMPApplyClause::addTransformation(OpenMPApplyTransformKind kind,
                                           const std::string &argument) {
   ApplyTransform t;
@@ -438,6 +465,73 @@ void OpenMPInductionClause::setSpecification(const char *raw_spec) {
   }
 }
 
+void OpenMPAdjustArgsClause::addArgument(const std::string &arg) {
+  std::string cleaned = normalizeClauseExpression(OMPC_adjust_args, arg.c_str());
+  arguments.push_back(cleaned);
+}
+
+std::string OpenMPAdjustArgsClause::toString() {
+  std::string result = "adjust_args(";
+  std::string modifier_string;
+  switch (modifier) {
+  case OMPC_ADJUST_ARGS_need_device_ptr:
+    modifier_string = "need_device_ptr";
+    break;
+  case OMPC_ADJUST_ARGS_unknown:
+  default:
+    modifier_string = raw_modifier;
+    break;
+  }
+
+  if (!modifier_string.empty()) {
+    result += modifier_string;
+    if (!arguments.empty()) {
+      result += ": ";
+    }
+  }
+
+  for (size_t i = 0; i < arguments.size(); ++i) {
+    if (i > 0) {
+      result += ", ";
+    }
+    result += arguments[i];
+  }
+
+  result += ")";
+  result += " ";
+  return result;
+}
+
+std::string OpenMPInitClause::toString() {
+  std::string result = "init(";
+  std::string kind_string;
+  switch (kind) {
+  case OMPC_INIT_KIND_target:
+    kind_string = "target";
+    break;
+  case OMPC_INIT_KIND_targetsync:
+    kind_string = "targetsync";
+    break;
+  case OMPC_INIT_KIND_unknown:
+  default:
+    kind_string = raw_kind;
+    break;
+  }
+
+  if (!kind_string.empty()) {
+    result += kind_string;
+    if (!operand.empty()) {
+      result += ": ";
+    }
+  }
+  if (!operand.empty()) {
+    result += operand;
+  }
+  result += ")";
+  result += " ";
+  return result;
+}
+
 /**
  *
  * @param kind
@@ -461,6 +555,12 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
     }
     if (clause_kind == OMPC_induction) {
       return std::make_unique<OpenMPInductionClause>();
+    }
+    if (clause_kind == OMPC_init) {
+      return std::make_unique<OpenMPInitClause>();
+    }
+    if (clause_kind == OMPC_adjust_args) {
+      return std::make_unique<OpenMPAdjustArgsClause>();
     }
     return std::make_unique<OpenMPClause>(clause_kind);
   };

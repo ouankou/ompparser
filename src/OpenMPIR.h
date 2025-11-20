@@ -29,6 +29,11 @@ enum OpenMPBaseLang { Lang_C, Lang_Cplusplus, Lang_Fortran, Lang_unknown };
 // Global flag for clause normalization control
 extern bool normalize_clauses_global;
 
+OpenMPInitClauseKind parseInitKind(const std::string &text,
+                                   std::string &raw_output);
+OpenMPAdjustArgsModifier parseAdjustArgsModifier(const std::string &text,
+                                                 std::string &raw_output);
+
 class SourceLocation {
   int line;
   int column;
@@ -609,6 +614,46 @@ public:
     return passthrough_items;
   }
   std::string specificationToString() const;
+  std::string toString();
+};
+
+class OpenMPInitClause : public OpenMPClause {
+private:
+  OpenMPInitClauseKind kind = OMPC_INIT_KIND_unknown;
+  std::string raw_kind;
+  std::string operand;
+
+public:
+  OpenMPInitClause() : OpenMPClause(OMPC_init) {}
+
+  void setKind(OpenMPInitClauseKind value, const std::string &raw = "") {
+    kind = value;
+    raw_kind = raw;
+  }
+  void setOperand(const std::string &value) { operand = value; }
+  OpenMPInitClauseKind getKind() const { return kind; }
+  const std::string &getRawKind() const { return raw_kind; }
+  const std::string &getOperand() const { return operand; }
+  std::string toString();
+};
+
+class OpenMPAdjustArgsClause : public OpenMPClause {
+private:
+  OpenMPAdjustArgsModifier modifier = OMPC_ADJUST_ARGS_unknown;
+  std::string raw_modifier;
+  std::vector<std::string> arguments;
+
+public:
+  OpenMPAdjustArgsClause() : OpenMPClause(OMPC_adjust_args) {}
+
+  void setModifier(OpenMPAdjustArgsModifier value, const std::string &raw = "") {
+    modifier = value;
+    raw_modifier = raw;
+  }
+  OpenMPAdjustArgsModifier getModifier() const { return modifier; }
+  const std::string &getRawModifier() const { return raw_modifier; }
+  void addArgument(const std::string &arg);
+  const std::vector<std::string> &getArguments() const { return arguments; }
   std::string toString();
 };
 
