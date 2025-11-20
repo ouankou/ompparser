@@ -931,17 +931,22 @@ public:
 // OpenMP clauses with variant directives, such as WHEN and MATCH clauses.
 class OpenMPVariantClause : public OpenMPClause {
 protected:
-  std::pair<std::string, std::string> user_condition_expression;
+  struct ScoredExpression {
+    std::string score;
+    std::string expression;
+  };
+
+  ScoredExpression user_condition_expression;
   std::vector<std::pair<std::string, OpenMPDirective *>> construct_directives;
-  std::pair<std::string, std::string> arch_expression;
-  std::pair<std::string, std::string> isa_expression;
+  ScoredExpression arch_expression;
+  ScoredExpression isa_expression;
   std::pair<std::string, OpenMPClauseContextKind> context_kind_name =
       std::make_pair("", OMPC_CONTEXT_KIND_unknown);
-  std::pair<std::string, std::string> device_num_expression;
-  std::pair<std::string, std::string> extension_expression;
+  ScoredExpression device_num_expression;
+  ScoredExpression extension_expression;
   std::pair<std::string, OpenMPClauseContextVendor> context_vendor_name =
       std::make_pair("", OMPC_CONTEXT_VENDOR_unspecified);
-  std::pair<std::string, std::string> implementation_user_defined_expression;
+  ScoredExpression implementation_user_defined_expression;
   bool is_target_device_selector = false;
   // Preserve selector order as it appeared in the source
   std::vector<OpenMPContextSelectorSequenceKind> selector_order;
@@ -951,12 +956,10 @@ public:
 
   void setUserCondition(const char *_score,
                         const char *_user_condition_expression) {
-    user_condition_expression = std::make_pair(
-        std::string(_score), std::string(_user_condition_expression));
+    user_condition_expression.score = std::string(_score);
+    user_condition_expression.expression = std::string(_user_condition_expression);
   };
-  std::pair<std::string, std::string> *getUserCondition() {
-    return &user_condition_expression;
-  };
+  ScoredExpression *getUserCondition() { return &user_condition_expression; };
   void addConstructDirective(const char *_score,
                              OpenMPDirective *_construct_directive) {
     construct_directives.push_back(
@@ -967,19 +970,15 @@ public:
     return &construct_directives;
   };
   void setArchExpression(const char *_score, const char *_arch_expression) {
-    arch_expression =
-        std::make_pair(std::string(_score), std::string(_arch_expression));
+    arch_expression.score = std::string(_score);
+    arch_expression.expression = std::string(_arch_expression);
   };
-  std::pair<std::string, std::string> *getArchExpression() {
-    return &arch_expression;
-  };
+  ScoredExpression *getArchExpression() { return &arch_expression; };
   void setIsaExpression(const char *_score, const char *_isa_expression) {
-    isa_expression =
-        std::make_pair(std::string(_score), std::string(_isa_expression));
+    isa_expression.score = std::string(_score);
+    isa_expression.expression = std::string(_isa_expression);
   };
-  std::pair<std::string, std::string> *getIsaExpression() {
-    return &isa_expression;
-  };
+  ScoredExpression *getIsaExpression() { return &isa_expression; };
   void setContextKind(const char *_score,
                       OpenMPClauseContextKind _context_kind_name) {
     context_kind_name = std::make_pair(std::string(_score), _context_kind_name);
@@ -988,20 +987,16 @@ public:
     return &context_kind_name;
   };
   void setDeviceNumExpression(const char *_score, const char *_device_num_expression) {
-    device_num_expression =
-        std::make_pair(std::string(_score), std::string(_device_num_expression));
+    device_num_expression.score = std::string(_score);
+    device_num_expression.expression = std::string(_device_num_expression);
   };
-  std::pair<std::string, std::string> *getDeviceNumExpression() {
-    return &device_num_expression;
-  };
+  ScoredExpression *getDeviceNumExpression() { return &device_num_expression; };
   void setExtensionExpression(const char *_score,
                               const char *_extension_expression) {
-    extension_expression =
-        std::make_pair(std::string(_score), std::string(_extension_expression));
+    extension_expression.score = std::string(_score);
+    extension_expression.expression = std::string(_extension_expression);
   };
-  std::pair<std::string, std::string> *getExtensionExpression() {
-    return &extension_expression;
-  };
+  ScoredExpression *getExtensionExpression() { return &extension_expression; };
   void setImplementationKind(const char *_score,
                              OpenMPClauseContextVendor _context_vendor_name) {
     context_vendor_name =
@@ -1012,11 +1007,11 @@ public:
   };
   void setImplementationExpression(
       const char *_score, const char *_implementation_user_defined_expression) {
-    implementation_user_defined_expression =
-        std::make_pair(std::string(_score),
-                       std::string(_implementation_user_defined_expression));
+    implementation_user_defined_expression.score = std::string(_score);
+    implementation_user_defined_expression.expression =
+        std::string(_implementation_user_defined_expression);
   };
-  std::pair<std::string, std::string> *getImplementationExpression() {
+  ScoredExpression *getImplementationExpression() {
     return &implementation_user_defined_expression;
   };
   void setIsTargetDeviceSelector(bool _is_target_device) {
@@ -1586,12 +1581,7 @@ public:
   OpenMPUsesAllocatorsClause() : OpenMPClause(OMPC_uses_allocators) {};
   void addUsesAllocatorsAllocatorSequence(
       OpenMPUsesAllocatorsClauseAllocator _allocator,
-      std::string _allocator_traits_array, std::string _allocator_user) {
-    auto usesAllocatorsAllocator = std::make_unique<usesAllocatorParameter>(
-        _allocator, _allocator_traits_array, _allocator_user);
-    usesAllocatorsAllocatorSequenceView.push_back(usesAllocatorsAllocator.get());
-    usesAllocatorsAllocatorSequenceStorage.push_back(std::move(usesAllocatorsAllocator));
-  };
+      std::string _allocator_traits_array, std::string _allocator_user);
   std::vector<usesAllocatorParameter *> *getUsesAllocatorsAllocatorSequence() {
     return &usesAllocatorsAllocatorSequenceView;
   };

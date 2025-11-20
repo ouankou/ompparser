@@ -527,6 +527,20 @@ std::string OpenMPAppendArgsClause::toString() {
   return result;
 }
 
+void OpenMPUsesAllocatorsClause::addUsesAllocatorsAllocatorSequence(
+    OpenMPUsesAllocatorsClauseAllocator _allocator,
+    std::string _allocator_traits_array, std::string _allocator_user) {
+  std::string traits_cleaned =
+      normalizeClauseExpression(OMPC_uses_allocators, _allocator_traits_array.c_str());
+  std::string user_cleaned =
+      normalizeClauseExpression(OMPC_uses_allocators, _allocator_user.c_str());
+  auto usesAllocatorsAllocator = std::make_unique<usesAllocatorParameter>(
+      _allocator, traits_cleaned, user_cleaned);
+  usesAllocatorsAllocatorSequenceView.push_back(usesAllocatorsAllocator.get());
+  usesAllocatorsAllocatorSequenceStorage.push_back(
+      std::move(usesAllocatorsAllocator));
+}
+
 std::string OpenMPInitClause::toString() {
   std::string result = "init(";
   std::string kind_string;
