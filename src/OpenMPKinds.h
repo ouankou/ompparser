@@ -331,6 +331,12 @@ enum OpenMPClauseKind {
 #undef OPENMP_CLAUSE
 };
 
+// Separator used between clauses when reconstructing pragmas.
+enum OpenMPClauseSeparator {
+  OMPC_CLAUSE_SEP_space,
+  OMPC_CLAUSE_SEP_comma
+};
+
 // context selector set for 'when' clause.
 enum OpenMPWhenClauseSelectorSet {
 #define OPENMP_WHEN_SELECTOR_SET(Name) OMPC_WHEN_SELECTOR_SET_##Name,
@@ -372,6 +378,15 @@ enum OpenMPClauseContextVendor {
                           OPENMP_CONTEXT_VENDOR(unknown) OPENMP_CONTEXT_VENDOR(
                               unspecified) // default enum for vendor list
 #undef OPENMP_CONTEXT_VENDOR
+};
+
+// Preserve ordering of selector sets in variant constructs.
+enum OpenMPContextSelectorSequenceKind {
+  OMPC_SELECTOR_user,
+  OMPC_SELECTOR_construct,
+  OMPC_SELECTOR_device,
+  OMPC_SELECTOR_target_device,
+  OMPC_SELECTOR_implementation
 };
 
 // OpenMP attributes for 'if' clause.

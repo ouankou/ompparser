@@ -18,7 +18,7 @@
 
 #include "OpenMPIR.h"
 
-#include <algorithm>
+#include <cctype>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -78,6 +78,10 @@ void setLang(OpenMPBaseLang _lang) { user_set_lang = _lang; };
 /* used for clause normalization control */
 bool normalize_clauses_global = true;
 void setNormalizeClauses(bool normalize) { normalize_clauses_global = normalize; };
+
+// Track whether the next clause should be preceded by a comma (to preserve Fortran spacing)
+bool clause_separator_comma = false;
+static std::string current_pragma_raw;
 
 %}
 
@@ -470,6 +474,11 @@ fortran_paired_directive : parallel_directive
 end_directive : END { current_directive = new OpenMPEndDirective();
                 current_parent_directive = current_directive;
                 current_parent_clause = current_clause;
+                std::string pragma_lower = current_pragma_raw;
+                std::transform(pragma_lower.begin(), pragma_lower.end(), pragma_lower.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                bool compact_enddo = (pragma_lower.find("enddo") != std::string::npos);
+                ((OpenMPEndDirective*)current_directive)->setUseCompactEndDo(compact_enddo);
               } end_clause_seq {
                 ((OpenMPEndDirective*)current_parent_directive)->setPairedDirective(current_directive);
                 current_directive = current_parent_directive;
@@ -492,7 +501,7 @@ metadirective_clause_optseq : /* empty */
 
 metadirective_clause_seq : metadirective_clause
                          | metadirective_clause_seq metadirective_clause
-                         | metadirective_clause_seq ',' metadirective_clause
+                         | metadirective_clause_seq ',' { clause_separator_comma = true; } metadirective_clause
                          ;
 
 metadirective_clause : when_clause
@@ -531,12 +540,12 @@ trait_set_selector : trait_set_selector_name { } '=' '{' trait_selector_list {
                      } '}'
                    ;
 
-trait_set_selector_name : USER { }
-                | CONSTRUCT { current_parent_directive = current_directive;
+trait_set_selector_name : USER { ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_user); }
+                | CONSTRUCT { ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_construct); current_parent_directive = current_directive;
                     current_parent_clause = current_clause; }
-                | DEVICE { ((OpenMPVariantClause*)current_clause)->setIsTargetDeviceSelector(false); }
-                | TARGET_DEVICE { ((OpenMPVariantClause*)current_clause)->setIsTargetDeviceSelector(true); }
-                | IMPLEMENTATION { }
+                | DEVICE { ((OpenMPVariantClause*)current_clause)->setIsTargetDeviceSelector(false); ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_device); }
+                | TARGET_DEVICE { ((OpenMPVariantClause*)current_clause)->setIsTargetDeviceSelector(true); ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_target_device); }
+                | IMPLEMENTATION { ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_implementation); }
                 ;
 
 trait_selector_list : trait_selector { trait_score = ""; }
@@ -715,9 +724,9 @@ declare_variant_clause_optseq : /* empty */
                        ;
 
 declare_variant_clause_seq : declare_variant_clause
-                    | declare_variant_clause_seq declare_variant_clause
-                    | declare_variant_clause_seq ',' declare_variant_clause
-                    ;
+                           | declare_variant_clause_seq declare_variant_clause
+                           | declare_variant_clause_seq ',' { clause_separator_comma = true; } declare_variant_clause
+                           ;
 
 declare_variant_clause : match_clause
                        | adjust_args_clause
@@ -797,6 +806,8 @@ target_update_directive :  TARGET UPDATE{
                    ;
 declare_target_directive : DECLARE TARGET {
                         current_directive = new OpenMPDeclareTargetDirective ();
+                        current_directive->setDeclareTargetUnderscore(
+                            current_pragma_raw.find("declare_target") != std::string::npos);
                      }
                      declare_target_clause_optseq 
                    ;
@@ -808,6 +819,8 @@ flush_directive : FLUSH {
 
 end_declare_target_directive : END DECLARE TARGET {
                         current_directive = new OpenMPDirective(OMPD_end_declare_target);
+                        current_directive->setDeclareTargetUnderscore(
+                            current_pragma_raw.find("declare_target") != std::string::npos);
                                   }
                              ;
 master_directive : MASTER {
@@ -915,6 +928,8 @@ begin_metadirective_directive : BEGIN_DIR METADIRECTIVE {
                    ;
 begin_declare_target_directive : BEGIN_DIR DECLARE TARGET {
                         current_directive = new OpenMPDirective(OMPD_begin_declare_target);
+                        current_directive->setDeclareTargetUnderscore(
+                            current_pragma_raw.find("declare_target") != std::string::npos);
                      }
                    ;
 // OpenMP 6.0 directives
@@ -976,10 +991,17 @@ stripe_directive : STRIPE {
 declare_induction_directive : DECLARE INDUCTION {
                         current_directive = new OpenMPDirective(OMPD_declare_induction);
                         current_clause = current_directive->addOpenMPClause(OMPC_induction);
-                     } '(' induction_parameter_list ')' {
+                     } '(' {
+                        openmp_begin_raw_expression();
+                     } EXPR_STRING ')' {
+                        if (current_clause != nullptr) {
+                          auto *exprs = current_clause->getExpressions();
+                          exprs->clear();
+                          current_clause->addLangExpr($6);
+                        }
                         current_clause = nullptr;
                      }
-                      declare_induction_clause_optseq
+                     declare_induction_clause_optseq
                    ;
 taskgroup_directive : TASKGROUP {
                         current_directive = new OpenMPDirective(OMPD_taskgroup);
@@ -1299,12 +1321,26 @@ apply_transformation_seq : apply_transformation
 apply_transformation : UNROLL {
                          current_clause->addLangExpr("unroll");
                        }
-                     | UNROLL PARTIAL '(' EXPR_STRING ')'
-                     | UNROLL FULL
-                     | REVERSE
-                     | INTERCHANGE
-                     | NOTHING
-                     | TILE SIZES '(' expression ')'
+                     | UNROLL PARTIAL '(' EXPR_STRING ')' {
+                         std::string expr = "unroll partial(" + std::string($4) + ")";
+                         current_clause->addLangExpr(expr.c_str());
+                       }
+                     | UNROLL FULL {
+                         current_clause->addLangExpr("unroll full");
+                       }
+                     | REVERSE {
+                         current_clause->addLangExpr("reverse");
+                       }
+                     | INTERCHANGE {
+                         current_clause->addLangExpr("interchange");
+                       }
+                     | NOTHING {
+                         current_clause->addLangExpr("nothing");
+                       }
+                     | TILE SIZES '(' expression ')' {
+                         std::string expr = "tile sizes(" + std::string($4) + ")";
+                         current_clause->addLangExpr(expr.c_str());
+                       }
                      | apply_clause
                      | EXPR_STRING {
                          current_clause->addLangExpr($1);
@@ -1312,29 +1348,16 @@ apply_transformation : UNROLL {
                      ;
 induction_clause : INDUCTION {
                      current_clause = current_directive->addOpenMPClause(OMPC_induction);
-                   } '(' induction_parameter_list ')' {
-                 }
+                   } '(' {
+                     openmp_begin_raw_expression();
+                   } EXPR_STRING ')' {
+                     if (current_clause != nullptr) {
+                       auto *exprs = current_clause->getExpressions();
+                       exprs->clear();
+                       current_clause->addLangExpr($5);
+                     }
+                   }
                  ;
-induction_parameter_list : induction_entry
-                         | induction_parameter_list ',' induction_entry
-                         ;
-induction_entry : expression induction_entry_suffix
-                ;
-induction_entry_suffix : /* empty */
-                       | ':' induction_colon_expression
-                       ;
-induction_colon_expression : expression
-                           | '(' {
-                               current_clause->addLangExpr("(");
-                             } induction_colon_expression_list ')' {
-                               current_clause->addLangExpr(")");
-                             }
-                           ;
-induction_colon_expression_list : expression
-                                | induction_colon_expression_list ',' {
-                                    current_clause->addLangExpr(",");
-                                  } expression
-                                ;
 inductor_clause : INDUCTOR {
                     current_clause = current_directive->addOpenMPClause(OMPC_inductor);
                   } '(' expression ')' {
@@ -1467,44 +1490,44 @@ taskgroup_clause_optseq : /* empty */
 
 task_clause_seq : task_clause
                 | task_clause_seq task_clause
-                | task_clause_seq ',' task_clause
+                | task_clause_seq ',' { clause_separator_comma = true; } task_clause
                 ;
 taskloop_clause_seq : taskloop_clause
                     | taskloop_clause_seq taskloop_clause
-                    | taskloop_clause_seq ',' taskloop_clause
+                    | taskloop_clause_seq ',' { clause_separator_comma = true; } taskloop_clause
                     ;
 taskloop_simd_clause_seq : taskloop_simd_clause
                          | taskloop_simd_clause_seq taskloop_simd_clause
-                         | taskloop_simd_clause_seq ',' taskloop_simd_clause
+                         | taskloop_simd_clause_seq ',' { clause_separator_comma = true; } taskloop_simd_clause
                          ;
 requires_clause_seq : requires_clause
                     | requires_clause_seq requires_clause
-                    | requires_clause_seq ',' requires_clause
+                    | requires_clause_seq ',' { clause_separator_comma = true; } requires_clause
                     ;
 
 target_data_clause_seq : target_data_clause
                        | target_data_clause_seq target_data_clause
-                       | target_data_clause_seq ',' target_data_clause
+                       | target_data_clause_seq ',' { clause_separator_comma = true; } target_data_clause
                        ;
 target_enter_data_clause_seq : target_enter_data_clause
                              | target_enter_data_clause_seq target_enter_data_clause
-                             | target_enter_data_clause_seq ',' target_enter_data_clause
+                             | target_enter_data_clause_seq ',' { clause_separator_comma = true; } target_enter_data_clause
                              ;
 target_exit_data_clause_seq : target_exit_data_clause
                             | target_exit_data_clause_seq target_exit_data_clause
-                            | target_exit_data_clause_seq ',' target_exit_data_clause
+                            | target_exit_data_clause_seq ',' { clause_separator_comma = true; } target_exit_data_clause
                             ;
 target_clause_seq : target_clause
                   | target_clause_seq target_clause
-                  | target_clause_seq ',' target_clause
+                  | target_clause_seq ',' { clause_separator_comma = true; } target_clause
                   ;
 target_update_clause_seq : target_update_clause
                          | target_update_clause_seq target_update_clause
-                         | target_update_clause_seq ',' target_update_clause
+                         | target_update_clause_seq ',' { clause_separator_comma = true; } target_update_clause
                          ;
 declare_target_seq : declare_target_clause
                    | declare_target_seq declare_target_clause
-                   | declare_target_seq ',' declare_target_clause
+                   | declare_target_seq ',' { clause_separator_comma = true; } declare_target_clause
                    ;
 taskwait_clause_seq : taskwait_clause
                     | taskwait_clause_seq taskwait_clause
@@ -1832,7 +1855,7 @@ stripe_clause : counts_clause
               ;
 declare_induction_clause_seq : declare_induction_clause
                              | declare_induction_clause_seq declare_induction_clause
-                             | declare_induction_clause_seq ',' declare_induction_clause
+                             | declare_induction_clause_seq ',' { clause_separator_comma = true; } declare_induction_clause
                              ;
 declare_induction_clause : inductor_clause
                          | collector_clause
@@ -2513,6 +2536,8 @@ teams_distribute_parallel_for_clause : num_teams_clause
                                      ;
 teams_distribute_parallel_do_directive :  TEAMS DISTRIBUTE PARALLEL DO {
                      current_directive = new OpenMPDirective(OMPD_teams_distribute_parallel_do);
+                     current_directive->setCompactParallelDo(
+                         current_pragma_raw.find("paralleldo") != std::string::npos);
                                         }
                      teams_distribute_parallel_do_clause_optseq 
                                        ;
@@ -2714,10 +2739,12 @@ target_parallel_for_clause : if_target_parallel_clause
                            | induction_clause
                            ;
 target_parallel_do_directive : TARGET PARALLEL DO{
-                        current_directive = new OpenMPDirective(OMPD_target_parallel_do);
-                                         }
-                     target_parallel_do_clause_optseq 
-                             ;
+                       current_directive = new OpenMPDirective(OMPD_target_parallel_do);
+                       current_directive->setCompactParallelDo(
+                           current_pragma_raw.find("paralleldo") != std::string::npos);
+                     }
+                       target_parallel_do_clause_optseq
+                     ;
 target_parallel_do_clause_optseq : /* empty */
                                  | target_parallel_do_clause_seq
                                  ;
@@ -3079,10 +3106,12 @@ target_teams_distribute_parallel_for_clause : if_target_parallel_clause
                                             | dist_schedule_clause
                                             ;
 target_teams_distribute_parallel_do_directive : TARGET TEAMS DISTRIBUTE PARALLEL DO{
-                        current_directive = new OpenMPDirective(OMPD_target_teams_distribute_parallel_do);
-                                         }
-                     target_teams_distribute_parallel_do_clause_optseq 
-                                              ;
+                       current_directive = new OpenMPDirective(OMPD_target_teams_distribute_parallel_do);
+                       current_directive->setCompactParallelDo(
+                           current_pragma_raw.find("paralleldo") != std::string::npos);
+                     }
+                      target_teams_distribute_parallel_do_clause_optseq
+                    ;
 target_teams_distribute_parallel_do_clause_optseq : /* empty */
                                                   | target_teams_distribute_parallel_do_clause_seq
                                                   ;
@@ -3282,6 +3311,8 @@ distribute_parallel_for_directive : DISTRIBUTE PARALLEL FOR {
                                   ;
 distribute_parallel_do_directive : DISTRIBUTE PARALLEL DO {
                                        current_directive = new OpenMPDirective(OMPD_distribute_parallel_do);
+                                       current_directive->setCompactParallelDo(
+                                           current_pragma_raw.find("paralleldo") != std::string::npos);
                                  }
                                  distribute_parallel_do_clause_optseq
                                  ;
@@ -3301,10 +3332,12 @@ parallel_for_directive : PARALLEL FOR {
                        parallel_for_clause_optseq
                        ;
 parallel_do_directive : PARALLEL DO {
-                         current_directive = new OpenMPDirective(OMPD_parallel_do);
-                       }
+                        current_directive = new OpenMPDirective(OMPD_parallel_do);
+                        current_directive->setCompactParallelDo(
+                            current_pragma_raw.find("paralleldo") != std::string::npos);
+                     }
                       parallel_do_clause_optseq
-                      ;
+                   ;
 parallel_loop_directive : PARALLEL LOOP {
                          current_directive = new OpenMPDirective(OMPD_parallel_loop);
                         }
@@ -3504,9 +3537,24 @@ mapper_identifier : IDENTIFIER_DEFAULT { ((OpenMPDeclareMapperDirective*)current
                   ;
          
 type_var : EXPR_STRING { 
-               if (user_set_lang == Lang_C || auto_lang == Lang_C) { 
-                   const char * _type_var = $1;
-                   std::string type_var = std::string(_type_var);
+               const char * _type_var = $1;
+               std::string type_var = std::string(_type_var);
+               // Handle Fortran style embedded "::" if present
+               size_t dc_pos = type_var.find("::");
+               if (dc_pos != std::string::npos && (user_set_lang == Lang_Fortran || auto_lang == Lang_Fortran || user_set_lang == Lang_unknown)) {
+                   std::string _type = type_var.substr(0, dc_pos);
+                   // Skip following spaces
+                   size_t var_start = dc_pos + 2;
+                   while (var_start < type_var.size() && (type_var[var_start] == ' ' || type_var[var_start] == '\t')) {
+                       ++var_start;
+                   }
+                   std::string _var = type_var.substr(var_start);
+                   ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperType(_type.c_str());
+                   ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperVar(_var.c_str());
+                   if (auto_lang == Lang_unknown) {
+                       auto_lang = Lang_Fortran;
+                   }
+               } else if (user_set_lang == Lang_C || auto_lang == Lang_C) { 
                    int length = type_var.length() - 1;
                    for (int i = length; i >= 0; i--) {
                        if (type_var[i] == ' ' || type_var[i] == '*') { 
@@ -3672,92 +3720,92 @@ declare_mapper_clause_optseq : /*empty*/
                              ;
 declare_mapper_clause_seq : declare_mapper_clause
                           | declare_mapper_clause_seq declare_mapper_clause
-                          | declare_mapper_clause_seq ',' declare_mapper_clause
+                          | declare_mapper_clause_seq ',' { clause_separator_comma = true; } declare_mapper_clause
                           ; 
 parallel_clause_seq : parallel_clause
                     | parallel_clause_seq parallel_clause
-                    | parallel_clause_seq ',' parallel_clause
+                    | parallel_clause_seq ',' { clause_separator_comma = true; } parallel_clause
                     ;
 
 teams_clause_seq : teams_clause
                  | teams_clause_seq teams_clause
-                 | teams_clause_seq ',' teams_clause
+                 | teams_clause_seq ',' { clause_separator_comma = true; } teams_clause
                  ;
 
 for_clause_seq : for_clause
                | for_clause_seq for_clause
-               | for_clause_seq ',' for_clause
+               | for_clause_seq ',' { clause_separator_comma = true; } for_clause
                ;
 
 do_clause_seq : do_clause
               | do_clause_seq do_clause
-              | do_clause_seq ',' do_clause
+              | do_clause_seq ',' { clause_separator_comma = true; } do_clause
               ;
 
 simd_clause_seq : simd_clause
                 | simd_clause_seq simd_clause
-                | simd_clause_seq ',' simd_clause
+                | simd_clause_seq ',' { clause_separator_comma = true; } simd_clause
                 ;
 
 for_simd_clause_seq : for_simd_clause
                     | for_simd_clause_seq for_simd_clause
-                    | for_simd_clause_seq ',' for_simd_clause
+                    | for_simd_clause_seq ',' { clause_separator_comma = true; } for_simd_clause
                     ;
 do_simd_clause_seq : do_simd_clause
                    | do_simd_clause_seq do_simd_clause
-                   | do_simd_clause_seq ',' do_simd_clause
+                   | do_simd_clause_seq ',' { clause_separator_comma = true; } do_simd_clause
                    ;
 parallel_for_simd_clause_seq : parallel_for_simd_clause
                              | parallel_for_simd_clause_seq parallel_for_simd_clause
-                             | parallel_for_simd_clause_seq ',' parallel_for_simd_clause
+                             | parallel_for_simd_clause_seq ',' { clause_separator_comma = true; } parallel_for_simd_clause
                              ;
 declare_simd_clause_seq : declare_simd_clause
                         | declare_simd_clause_seq declare_simd_clause
-                        | declare_simd_clause_seq ',' declare_simd_clause
+                        | declare_simd_clause_seq ',' { clause_separator_comma = true; } declare_simd_clause
                         ;
 distribute_clause_seq : distribute_clause
                       | distribute_clause_seq distribute_clause
-                      | distribute_clause_seq ',' distribute_clause
+                      | distribute_clause_seq ',' { clause_separator_comma = true; } distribute_clause
                       ;
 distribute_simd_clause_seq : distribute_simd_clause
                            | distribute_simd_clause_seq distribute_simd_clause
-                           | distribute_simd_clause_seq ',' distribute_simd_clause
+                           | distribute_simd_clause_seq ',' { clause_separator_comma = true; } distribute_simd_clause
                            ;
 distribute_parallel_for_clause_seq : distribute_parallel_for_clause
                                    | distribute_parallel_for_clause_seq distribute_parallel_for_clause
-                                   | distribute_parallel_for_clause_seq ',' distribute_parallel_for_clause
+                                   | distribute_parallel_for_clause_seq ',' { clause_separator_comma = true; } distribute_parallel_for_clause
                                    ;
 distribute_parallel_do_clause_seq : distribute_parallel_do_clause
                                   | distribute_parallel_do_clause_seq distribute_parallel_do_clause
-                                  | distribute_parallel_do_clause_seq ',' distribute_parallel_do_clause
+                                  | distribute_parallel_do_clause_seq ',' { clause_separator_comma = true; } distribute_parallel_do_clause
                                   ;
 distribute_parallel_for_simd_clause_seq : distribute_parallel_for_simd_clause
                                         | distribute_parallel_for_simd_clause_seq distribute_parallel_for_simd_clause
-                                        | distribute_parallel_for_simd_clause_seq ',' distribute_parallel_for_simd_clause
+                                        | distribute_parallel_for_simd_clause_seq ',' { clause_separator_comma = true; } distribute_parallel_for_simd_clause
                                         ;
 distribute_parallel_do_simd_clause_seq : distribute_parallel_do_simd_clause
                                        | distribute_parallel_do_simd_clause_seq distribute_parallel_do_simd_clause
-                                       | distribute_parallel_do_simd_clause_seq ',' distribute_parallel_do_simd_clause
+                                       | distribute_parallel_do_simd_clause_seq ',' { clause_separator_comma = true; } distribute_parallel_do_simd_clause
                                        ;
 parallel_for_clause_seq : parallel_for_clause
                         | parallel_for_clause_seq parallel_for_clause
-                        | parallel_for_clause_seq ',' parallel_for_clause
+                        | parallel_for_clause_seq ',' { clause_separator_comma = true; } parallel_for_clause
                         ;
 parallel_do_clause_seq : parallel_do_clause
                        | parallel_do_clause_seq parallel_do_clause
-                       | parallel_do_clause_seq ',' parallel_do_clause
+                       | parallel_do_clause_seq ',' { clause_separator_comma = true; } parallel_do_clause
                        ;
 parallel_loop_clause_seq : parallel_loop_clause
                          | parallel_loop_clause_seq parallel_loop_clause
-                         | parallel_loop_clause_seq ',' parallel_loop_clause
+                         | parallel_loop_clause_seq ',' { clause_separator_comma = true; } parallel_loop_clause
                          ;
 parallel_sections_clause_seq : parallel_sections_clause
                              | parallel_sections_clause_seq parallel_sections_clause
-                             | parallel_sections_clause_seq ',' parallel_sections_clause
+                             | parallel_sections_clause_seq ',' { clause_separator_comma = true; } parallel_sections_clause
                              ;
 parallel_single_clause_seq : parallel_single_clause
                            | parallel_single_clause_seq parallel_single_clause
-                           | parallel_single_clause_seq ',' parallel_single_clause
+                           | parallel_single_clause_seq ',' { clause_separator_comma = true; } parallel_single_clause
                            ;
 parallel_single_clause : parallel_only_clause
                        | single_only_clause
@@ -3783,37 +3831,37 @@ parallel_single_common_clause : private_clause
                               ;
 parallel_workshare_clause_seq : parallel_workshare_clause
                                | parallel_workshare_clause_seq parallel_workshare_clause
-                               | parallel_workshare_clause_seq ',' parallel_workshare_clause
+                               | parallel_workshare_clause_seq ',' { clause_separator_comma = true; } parallel_workshare_clause
                               ;
 parallel_master_clause_seq : parallel_master_clause
                            | parallel_master_clause_seq parallel_master_clause
-                           | parallel_master_clause_seq ',' parallel_master_clause
+                           | parallel_master_clause_seq ',' { clause_separator_comma = true; } parallel_master_clause
                            ;
 master_taskloop_clause_seq : master_taskloop_clause
                            | master_taskloop_clause_seq master_taskloop_clause
-                           | master_taskloop_clause_seq ',' master_taskloop_clause
+                           | master_taskloop_clause_seq ',' { clause_separator_comma = true; } master_taskloop_clause
                            ;
 master_taskloop_simd_clause_seq : master_taskloop_simd_clause
                                 | master_taskloop_simd_clause_seq master_taskloop_simd_clause
-                                | master_taskloop_simd_clause_seq ',' master_taskloop_simd_clause
+                                | master_taskloop_simd_clause_seq ',' { clause_separator_comma = true; } master_taskloop_simd_clause
                                 ;
 parallel_master_taskloop_clause_seq : parallel_master_taskloop_clause
                                     | parallel_master_taskloop_clause_seq parallel_master_taskloop_clause
-                                    | parallel_master_taskloop_clause_seq ',' parallel_master_taskloop_clause
+                                    | parallel_master_taskloop_clause_seq ',' { clause_separator_comma = true; } parallel_master_taskloop_clause
                                     ;
 parallel_master_taskloop_simd_clause_seq : parallel_master_taskloop_simd_clause
                                          | parallel_master_taskloop_simd_clause_seq parallel_master_taskloop_simd_clause
-                                         | parallel_master_taskloop_simd_clause_seq ',' parallel_master_taskloop_simd_clause
+                                         | parallel_master_taskloop_simd_clause_seq ',' { clause_separator_comma = true; } parallel_master_taskloop_simd_clause
                                          ;
 loop_clause_seq : loop_clause
                 | loop_clause_seq loop_clause
-                | loop_clause_seq ',' loop_clause
+                | loop_clause_seq ',' { clause_separator_comma = true; } loop_clause
                 ;
 scan_clause_seq : scan_clause
                 ;
 sections_clause_seq : sections_clause
                     | sections_clause_seq sections_clause
-                    | sections_clause_seq ',' sections_clause
+                    | sections_clause_seq ',' { clause_separator_comma = true; } sections_clause
                     ;
 //sections_clause_fortran_seq : sections_fortran_clause
 //                            | sections_clause_fortran_seq sections_fortran_clause
@@ -3821,15 +3869,15 @@ sections_clause_seq : sections_clause
 //                            ;
 single_clause_seq : single_clause
                   | single_clause_seq single_clause
-                  | single_clause_seq ',' single_clause
+                  | single_clause_seq ',' { clause_separator_comma = true; } single_clause
                   ;
 single_paired_clause_seq : single_paired_clause
                          | single_paired_clause_seq single_paired_clause
-                         | single_paired_clause_seq ',' single_paired_clause
+                         | single_paired_clause_seq ',' { clause_separator_comma = true; } single_paired_clause
                          ;
 cancel_clause_seq : construct_type_clause
                   | construct_type_clause if_cancel_clause
-                  | construct_type_clause ',' if_cancel_clause
+                  | construct_type_clause ',' { clause_separator_comma = true; } if_cancel_clause
                   ;
 //cancel_clause_fortran_seq : construct_type_clause_fortran
 //                          | construct_type_clause_fortran if_cancel_clause
@@ -4466,7 +4514,7 @@ num_threads_parameter : {
                          } expression num_threads_optional_tail
                       | {
                             current_clause = current_directive->addOpenMPClause(OMPC_num_threads);
-                         } STRICT ':' expression num_threads_optional_tail
+                        } { if (current_clause) { dynamic_cast<OpenMPNumThreadsClause*>(current_clause)->setStrict(true); } } STRICT ':' expression num_threads_optional_tail
                       ;
 num_threads_optional_tail : /* empty */
                           | ',' expression
@@ -4660,8 +4708,22 @@ partial_clause: PARTIAL { current_clause = current_directive->addOpenMPClause(OM
               ;
 fortran_nowait_clause: NOWAIT { if (user_set_lang == Lang_C || auto_lang == Lang_C) {current_clause = current_directive->addOpenMPClause(OMPC_nowait);} else {yyerror("Sections does not support nowait clause in Fortran."); YYABORT;} }
                      ;
-nowait_clause: NOWAIT { current_clause = current_directive->addOpenMPClause(OMPC_nowait); }
-             | NOWAIT { current_clause = current_directive->addOpenMPClause(OMPC_nowait); } '(' expression ')'
+nowait_clause: NOWAIT { 
+                         OpenMPDirective *target_directive = current_directive;
+                         if (current_parent_directive != nullptr &&
+                             current_parent_directive->getKind() == OMPD_end) {
+                           target_directive = current_parent_directive;
+                         }
+                         current_clause = target_directive->addOpenMPClause(OMPC_nowait);
+                       }
+             | NOWAIT { 
+                         OpenMPDirective *target_directive = current_directive;
+                         if (current_parent_directive != nullptr &&
+                             current_parent_directive->getKind() == OMPD_end) {
+                           target_directive = current_parent_directive;
+                         }
+                         current_clause = target_directive->addOpenMPClause(OMPC_nowait);
+                       } '(' expression ')'
              ;
 indirect_clause: INDIRECT { current_clause = current_directive->addOpenMPClause(OMPC_indirect); }
                ;
@@ -4880,6 +4942,7 @@ OpenMPDirective* parseOpenMP(const char* _input, void * _exprParse(const char*))
     current_directive = nullptr;
     std::string input_string;  // Must persist until after start_lexer()
     const char *input = _input;
+    current_pragma_raw = (_input != nullptr) ? std::string(_input) : "";
     std::regex fortran_regex ("[!cC*][$][Oo][Mm][Pp]");
 
     if (_input == nullptr) {

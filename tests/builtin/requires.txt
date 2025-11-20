@@ -14,4 +14,4 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp requires ext_user_test reverse_offload unified_address unified_shared_memory,atomic_default_mem_order(acq_rel) dynamic_allocators
-PASS: #pragma omp requires ext_user_test reverse_offload unified_address unified_shared_memory atomic_default_mem_order(acq_rel) dynamic_allocators
+PASS: #pragma omp requires ext_user_test reverse_offload unified_address unified_shared_memory, atomic_default_mem_order(acq_rel) dynamic_allocators
