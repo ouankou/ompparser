@@ -2489,54 +2489,31 @@ std::string OpenMPVariantClause::toString() {
 
     // user-defined implementation selector
     auto *impl_expr = this->getImplementationExpression();
-    if (impl_expr && (!impl_expr->score.empty() || !impl_expr->expression.empty())) {
-      auto trim = [](const std::string &value) -> std::string {
-        const char *whitespace = " \t\n\r\f\v";
-        const size_t begin = value.find_first_not_of(whitespace);
-        if (begin == std::string::npos) {
-          return std::string();
-        }
-        const size_t end = value.find_last_not_of(whitespace);
-        return value.substr(begin, end - begin + 1);
-      };
-      std::string expr = trim(impl_expr->expression);
+    if (impl_expr && (!impl_expr->score.empty() || !impl_expr->expression.empty() ||
+                      impl_expr->kind != OMPC_IMPL_EXPR_unknown)) {
       const std::string score = impl_expr->score;
-      const std::string requires_prefix = "requires";
-      bool is_requires =
-          expr.compare(0, requires_prefix.size(), requires_prefix) == 0;
-
-      auto append_user = [&](const std::string &payload) {
-        if (payload.empty()) {
-          return;
+      switch (impl_expr->kind) {
+      case OMPC_IMPL_EXPR_requires:
+        if (!impl_expr->expression.empty()) {
+          s += "requires(";
+          if (!score.empty()) {
+            s += "score(" + score + "): ";
+          }
+          s += impl_expr->expression;
+          s += "), ";
         }
-        if (!score.empty()) {
-          s += "user(score(" + score + "): " + payload + "), ";
-        } else {
-          s += "user(" + payload + "), ";
+        break;
+      case OMPC_IMPL_EXPR_user:
+      case OMPC_IMPL_EXPR_unknown:
+      default:
+        if (!impl_expr->expression.empty()) {
+          if (!score.empty()) {
+            s += "user(score(" + score + "): " + impl_expr->expression + "), ";
+          } else {
+            s += "user(" + impl_expr->expression + "), ";
+          }
         }
-      };
-
-      if (is_requires) {
-        // Extract the inner requires arguments (strip outer requires(...) if
-        // present) so we can format optional scores cleanly.
-        size_t lparen = expr.find('(');
-        size_t rparen = expr.find_last_of(')');
-        std::string inner;
-        if (lparen != std::string::npos && rparen != std::string::npos &&
-            rparen > lparen) {
-          inner = expr.substr(lparen + 1, rparen - lparen - 1);
-        } else {
-          inner = expr.substr(requires_prefix.size());
-        }
-        inner = trim(inner);
-        s += "requires(";
-        if (!score.empty()) {
-          s += "score(" + score + "): ";
-        }
-        s += inner;
-        s += "), ";
-      } else {
-        append_user(expr);
+        break;
       }
     }
 

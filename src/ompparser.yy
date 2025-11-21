@@ -665,11 +665,10 @@ context_arch : ARCH '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current
 implementation_selector : VENDOR '(' trait_score context_vendor_name ')'
                         | EXTENSION '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setExtensionExpression(trait_score, $4); } ')'
                         | REQUIRES '(' trait_score EXPR_STRING {
-                            std::string implementation_expr = "requires(" + std::string($4) + ")";
-                            ((OpenMPVariantClause*)current_clause)->setImplementationExpression(trait_score, implementation_expr.c_str());
+                            ((OpenMPVariantClause*)current_clause)->setImplementationRequiresExpression(trait_score, $4);
                           } ')'
-                        | EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setImplementationExpression(trait_score, $1); }
-                        | EXPR_STRING '(' trait_score ')' { ((OpenMPVariantClause*)current_clause)->setImplementationExpression(trait_score, $1); }
+                        | EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setImplementationUserExpression(trait_score, $1); }
+                        | EXPR_STRING '(' trait_score ')' { ((OpenMPVariantClause*)current_clause)->setImplementationUserExpression(trait_score, $1); }
                         ;
 
 context_vendor_name : AMD { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_amd); }

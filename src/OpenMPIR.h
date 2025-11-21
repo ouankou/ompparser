@@ -935,6 +935,11 @@ protected:
     std::string score;
     std::string expression;
   };
+  struct ImplementationExpression {
+    OpenMPImplementationExprKind kind = OMPC_IMPL_EXPR_unknown;
+    std::string score;
+    std::string expression;
+  };
 
   ScoredExpression user_condition_expression;
   std::vector<std::pair<std::string, OpenMPDirective *>> construct_directives;
@@ -946,7 +951,7 @@ protected:
   ScoredExpression extension_expression;
   std::pair<std::string, OpenMPClauseContextVendor> context_vendor_name =
       std::make_pair("", OMPC_CONTEXT_VENDOR_unspecified);
-  ScoredExpression implementation_user_defined_expression;
+  ImplementationExpression implementation_user_defined_expression;
   bool is_target_device_selector = false;
   // Preserve selector order as it appeared in the source
   std::vector<OpenMPContextSelectorSequenceKind> selector_order;
@@ -1005,13 +1010,20 @@ public:
   std::pair<std::string, OpenMPClauseContextVendor> *getImplementationKind() {
     return &context_vendor_name;
   };
-  void setImplementationExpression(
-      const char *_score, const char *_implementation_user_defined_expression) {
+  void setImplementationRequiresExpression(const char *_score,
+                                           const char *args) {
+    implementation_user_defined_expression.kind = OMPC_IMPL_EXPR_requires;
+    implementation_user_defined_expression.score = std::string(_score);
+    implementation_user_defined_expression.expression = std::string(args);
+  };
+  void setImplementationUserExpression(const char *_score,
+                                       const char *_implementation_expression) {
+    implementation_user_defined_expression.kind = OMPC_IMPL_EXPR_user;
     implementation_user_defined_expression.score = std::string(_score);
     implementation_user_defined_expression.expression =
-        std::string(_implementation_user_defined_expression);
+        std::string(_implementation_expression);
   };
-  ScoredExpression *getImplementationExpression() {
+  ImplementationExpression *getImplementationExpression() {
     return &implementation_user_defined_expression;
   };
   void setIsTargetDeviceSelector(bool _is_target_device) {

@@ -380,6 +380,12 @@ enum OpenMPClauseContextVendor {
 #undef OPENMP_CONTEXT_VENDOR
 };
 
+enum OpenMPImplementationExprKind {
+  OMPC_IMPL_EXPR_unknown,
+  OMPC_IMPL_EXPR_user,
+  OMPC_IMPL_EXPR_requires
+};
+
 // Preserve ordering of selector sets in variant constructs.
 enum OpenMPContextSelectorSequenceKind {
   OMPC_SELECTOR_user,
