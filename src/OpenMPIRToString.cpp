@@ -1317,6 +1317,7 @@ std::string OpenMPToClause::toString() {
   std::string result = "to ";
   std::string clause_string = "(";
   OpenMPToClauseKind to_kind = this->getKind();
+  const auto &iterator_defs = this->getIterators();
   switch (to_kind) {
   case OMPC_TO_mapper:
     clause_string += "mapper";
@@ -1324,16 +1325,21 @@ std::string OpenMPToClause::toString() {
     clause_string += this->getMapperIdentifier();
     clause_string += ")";
     break;
-  case OMPC_TO_iterator: {
+  case OMPC_TO_iterator:
     clause_string += "iterator";
     clause_string += "(";
-    std::vector<const char *> *expr = this->getExpressions();
-    if (expr != NULL && expr->size() >= 3) {
-      clause_string += std::string((*expr)[0]) + " = " + std::string((*expr)[1]) + ":" + std::string((*expr)[2]);
+    for (size_t i = 0; i < iterator_defs.size(); ++i) {
+      if (i > 0) {
+        clause_string += ", ";
+      }
+      clause_string += iteratorToString(iterator_defs[i].qualifier,
+                                        iterator_defs[i].var,
+                                        iterator_defs[i].begin,
+                                        iterator_defs[i].end,
+                                        iterator_defs[i].step);
     }
     clause_string += ")";
     break;
-  }
   case OMPC_TO_present:
     clause_string += "present";
     break;
@@ -1342,20 +1348,16 @@ std::string OpenMPToClause::toString() {
   if (clause_string.size() > 1) {
     clause_string += " : ";
   };
-  // For iterator, skip the first 3 expressions (var, start, end) and print the rest (var_list)
-  if (to_kind == OMPC_TO_iterator) {
-    std::vector<const char *> *expr = this->getExpressions();
-    if (expr != NULL && expr->size() > 3) {
-      for (size_t i = 3; i < expr->size(); i++) {
-        if (i > 3) clause_string += ", ";
-        clause_string += std::string((*expr)[i]);
-      }
-    }
-  } else {
-    clause_string += this->expressionToString();
-  }
+  clause_string += this->expressionToString();
   clause_string += ") ";
   if (clause_string.size() > 3) {
+    if (to_kind == OMPC_TO_iterator) {
+      if (!result.empty() && result.back() == ' ') {
+        result.pop_back();
+      }
+    } else if (!result.empty() && result.back() != ' ') {
+      result += " ";
+    }
     result += clause_string;
   };
 
@@ -1367,11 +1369,27 @@ std::string OpenMPFromClause::toString() {
   std::string result = "from ";
   std::string clause_string = "(";
   OpenMPFromClauseKind from_kind = this->getKind();
+  const auto &iterator_defs = this->getIterators();
   switch (from_kind) {
   case OMPC_FROM_mapper:
     clause_string += "mapper";
     clause_string += "(";
     clause_string += this->getMapperIdentifier();
+    clause_string += ")";
+    break;
+  case OMPC_FROM_iterator:
+    clause_string += "iterator";
+    clause_string += "(";
+    for (size_t i = 0; i < iterator_defs.size(); ++i) {
+      if (i > 0) {
+        clause_string += ", ";
+      }
+      clause_string += iteratorToString(iterator_defs[i].qualifier,
+                                        iterator_defs[i].var,
+                                        iterator_defs[i].begin,
+                                        iterator_defs[i].end,
+                                        iterator_defs[i].step);
+    }
     clause_string += ")";
     break;
   case OMPC_FROM_present:
@@ -1385,6 +1403,13 @@ std::string OpenMPFromClause::toString() {
   clause_string += this->expressionToString();
   clause_string += ") ";
   if (clause_string.size() > 3) {
+    if (from_kind == OMPC_FROM_iterator) {
+      if (!result.empty() && result.back() == ' ') {
+        result.pop_back();
+      }
+    } else if (!result.empty() && result.back() != ' ') {
+      result += " ";
+    }
     result += clause_string;
   };
 
@@ -1448,6 +1473,9 @@ std::string OpenMPDefaultmapClause::toString() {
   clause_string += this->expressionToString();
   clause_string += ") ";
   if (clause_string.size() > 3) {
+    if (!result.empty() && result.back() != ' ') {
+      result += " ";
+    }
     result += clause_string;
   };
 
@@ -1474,6 +1502,9 @@ std::string OpenMPDeviceClause::toString() {
   clause_string += this->expressionToString();
   clause_string += ") ";
   if (clause_string.size() > 3) {
+    if (!result.empty() && result.back() != ' ') {
+      result += " ";
+    }
     result += clause_string;
   };
 

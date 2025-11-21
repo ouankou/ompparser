@@ -541,27 +541,6 @@ void OpenMPUsesAllocatorsClause::addUsesAllocatorsAllocatorSequence(
       std::move(usesAllocatorsAllocator));
 }
 
-static std::string iteratorToString(const std::string &qualifier,
-                                    const std::string &var,
-                                    const std::string &begin,
-                                    const std::string &end,
-                                    const std::string &step) {
-  std::string result;
-  if (!qualifier.empty()) {
-    result += qualifier + " ";
-  }
-  result += var;
-  result += "=";
-  result += begin;
-  result += ":";
-  result += end;
-  if (!step.empty()) {
-    result += ":";
-    result += step;
-  }
-  return result;
-}
-
 std::string OpenMPInitClause::toString() {
   std::string result = "init(";
   std::string kind_string;

@@ -1386,6 +1386,14 @@ class OpenMPToClause : public OpenMPClause {
 protected:
   OpenMPToClauseKind to_kind;
   std::string mapper_identifier;
+  struct Iterator {
+    std::string qualifier;
+    std::string var;
+    std::string begin;
+    std::string end;
+    std::string step;
+  };
+  std::vector<Iterator> iterators;
 
 public:
   OpenMPToClause() : OpenMPClause(OMPC_to) {}
@@ -1396,6 +1404,19 @@ public:
     mapper_identifier = std::string(_identifier);
   };
   std::string getMapperIdentifier() { return mapper_identifier; };
+  void addIterator(const std::string &qualifier, const std::string &var,
+                   const std::string &begin, const std::string &end,
+                   const std::string &step = std::string()) {
+    Iterator it;
+    it.qualifier = qualifier;
+    it.var = var;
+    it.begin = begin;
+    it.end = end;
+    it.step = step;
+    iterators.push_back(it);
+  }
+  const std::vector<Iterator> &getIterators() const { return iterators; }
+  void clearIterators() { iterators.clear(); }
   static OpenMPClause *addToClause(OpenMPDirective *, OpenMPToClauseKind);
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
@@ -1406,6 +1427,14 @@ class OpenMPFromClause : public OpenMPClause {
 protected:
   OpenMPFromClauseKind from_kind;
   std::string mapper_identifier;
+  struct Iterator {
+    std::string qualifier;
+    std::string var;
+    std::string begin;
+    std::string end;
+    std::string step;
+  };
+  std::vector<Iterator> iterators;
 
 public:
   OpenMPFromClause() : OpenMPClause(OMPC_from) {}
@@ -1417,6 +1446,19 @@ public:
     mapper_identifier = std::string(_identifier);
   };
   std::string getMapperIdentifier() { return mapper_identifier; };
+  void addIterator(const std::string &qualifier, const std::string &var,
+                   const std::string &begin, const std::string &end,
+                   const std::string &step = std::string()) {
+    Iterator it;
+    it.qualifier = qualifier;
+    it.var = var;
+    it.begin = begin;
+    it.end = end;
+    it.step = step;
+    iterators.push_back(it);
+  }
+  const std::vector<Iterator> &getIterators() const { return iterators; }
+  void clearIterators() { iterators.clear(); }
   static OpenMPClause *addFromClause(OpenMPDirective *, OpenMPFromClauseKind);
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
