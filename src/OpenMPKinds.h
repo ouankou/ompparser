@@ -764,6 +764,12 @@ enum OpenMPDeviceTypeClauseKind {
       OPENMP_DEVICE_TYPE_KIND(any) OPENMP_DEVICE_TYPE_KIND(unknown)
 #undef OPENMP_DEVICE_TYPE_KIND
 };
+
+enum OpenMPMapIteratorKind {
+  OMPC_MAP_ITERATOR_unknown,
+  OMPC_MAP_ITERATOR_iterator
+};
+
 /// modifiers for 'map' clause.
 enum OpenMPMapClauseModifier {
 #define OPENMP_MAP_MODIFIER(Name) OMPC_MAP_MODIFIER_##Name,
