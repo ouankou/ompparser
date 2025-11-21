@@ -541,6 +541,27 @@ void OpenMPUsesAllocatorsClause::addUsesAllocatorsAllocatorSequence(
       std::move(usesAllocatorsAllocator));
 }
 
+static std::string iteratorToString(const std::string &qualifier,
+                                    const std::string &var,
+                                    const std::string &begin,
+                                    const std::string &end,
+                                    const std::string &step) {
+  std::string result;
+  if (!qualifier.empty()) {
+    result += qualifier + " ";
+  }
+  result += var;
+  result += "=";
+  result += begin;
+  result += ":";
+  result += end;
+  if (!step.empty()) {
+    result += ":";
+    result += step;
+  }
+  return result;
+}
+
 std::string OpenMPInitClause::toString() {
   std::string result = "init(";
   std::string kind_string;
@@ -1608,51 +1629,22 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
             ((OpenMPDependClause *)current_clause)->getModifier() &&
         ((OpenMPDependClause *)(*it))->getType() ==
             ((OpenMPDependClause *)current_clause)->getType()) {
-      bool normalize = true;
-      std::vector<
-          vector<const char *> *> *depend_iterators_definition_previous =
-          ((OpenMPDependClause *)(*it))->getDependIteratorsDefinitionClass();
-      std::vector<vector<const char *> *> *depend_iterators_definition_current =
-          ((OpenMPDependClause *)current_clause)
-              ->getDependIteratorsDefinitionClass();
-      if (depend_iterators_definition_previous->size() ==
-          depend_iterators_definition_current->size()) {
-        for (std::vector<vector<const char *> *>::iterator
-                 it_expr_current_outer =
-                     depend_iterators_definition_current->begin();
-             it_expr_current_outer !=
-             depend_iterators_definition_current->end();
-             it_expr_current_outer++) {
-          for (std::vector<vector<const char *> *>::iterator
-                   it_expr_previous_outer =
-                       depend_iterators_definition_previous->begin();
-               it_expr_previous_outer !=
-               depend_iterators_definition_previous->end();
-               it_expr_previous_outer++) {
-            bool merge = false;
-            if (strcmp((*it_expr_current_outer)->at(0),
-                       (*it_expr_previous_outer)->at(0)) == 0 &&
-                strcmp((*it_expr_current_outer)->at(1),
-                       (*it_expr_previous_outer)->at(1)) == 0 &&
-                strcmp((*it_expr_current_outer)->at(2),
-                       (*it_expr_previous_outer)->at(2)) == 0 &&
-                strcmp((*it_expr_current_outer)->at(3),
-                       (*it_expr_previous_outer)->at(3)) == 0 &&
-                strcmp((*it_expr_current_outer)->at(4),
-                       (*it_expr_previous_outer)->at(4)) == 0) {
-              merge = true;
-              break;
-            }
-            if (it_expr_previous_outer ==
-                    depend_iterators_definition_previous->end() - 1 &&
-                merge == false) {
-              normalize = false;
-            }
-          }
-          if (normalize == false)
+      const auto &prev_iters =
+          static_cast<OpenMPDependClause *>(*it)->getIterators();
+      const auto &curr_iters =
+          static_cast<OpenMPDependClause *>(current_clause)->getIterators();
+      if (prev_iters.size() == curr_iters.size()) {
+        bool normalize = true;
+        for (size_t idx = 0; idx < prev_iters.size(); ++idx) {
+          const auto &p = prev_iters[idx];
+          const auto &c = curr_iters[idx];
+          if (p.qualifier != c.qualifier || p.var != c.var ||
+              p.begin != c.begin || p.end != c.end || p.step != c.step) {
+            normalize = false;
             break;
+          }
         }
-        if (normalize == true) {
+        if (normalize) {
           std::vector<const char *> *expressions_previous =
               ((OpenMPDependClause *)(*it))->getExpressions();
           std::vector<const char *> *expressions_current =
@@ -1677,6 +1669,8 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
           directive->getClausesInOriginalOrder()->pop_back();
           break;
         }
+      } else {
+        directive->setNormalizeClauses(false);
       }
 
     } else if (((OpenMPDependClause *)(*it))->getModifier() ==
