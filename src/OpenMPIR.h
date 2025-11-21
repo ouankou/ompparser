@@ -1498,6 +1498,14 @@ protected:
   OpenMPMapClauseModifier modifier3;
   OpenMPMapClauseType type = OMPC_MAP_TYPE_unknown;
   std::string mapper_identifier;
+  struct Iterator {
+    std::string qualifier;
+    std::string var;
+    std::string begin;
+    std::string end;
+    std::string step;
+  };
+  std::vector<Iterator> iterators;
 
 public:
   OpenMPMapClause() : OpenMPClause(OMPC_map) {}
@@ -1515,6 +1523,20 @@ public:
   OpenMPMapClauseModifier getModifier3() { return modifier3; };
   OpenMPMapClauseType getType() { return type; };
   std::string getMapperIdentifier() { return mapper_identifier; };
+  void addIterator(const Iterator &it) { iterators.push_back(it); }
+  void addIterator(const std::string &qualifier, const std::string &var,
+                   const std::string &begin, const std::string &end,
+                   const std::string &step = std::string()) {
+    Iterator it;
+    it.qualifier = qualifier;
+    it.var = var;
+    it.begin = begin;
+    it.end = end;
+    it.step = step;
+    iterators.push_back(it);
+  }
+  const std::vector<Iterator> &getIterators() const { return iterators; }
+  void clearIterators() { iterators.clear(); }
   static OpenMPClause *addMapClause(OpenMPDirective *, OpenMPMapClauseModifier,
                                     OpenMPMapClauseModifier,
                                     OpenMPMapClauseModifier,

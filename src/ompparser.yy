@@ -58,6 +58,39 @@ static std::vector<std::vector<const char *> *> *
 // std::vector<std::vector<const char*>* >* depend_iterators_definition_class;
 static std::vector<const char *> *map_iterator_args =
     new std::vector<const char *>();
+static inline bool hasMapIteratorModifier() {
+  return firstParameter == OMPC_MAP_MODIFIER_iterator ||
+         secondParameter == OMPC_MAP_MODIFIER_iterator ||
+         thirdParameter == OMPC_MAP_MODIFIER_iterator;
+}
+
+static void addMapIteratorDefinition(OpenMPClause *clause,
+                                     std::vector<const char *> *args) {
+  if (clause == nullptr || args == nullptr) {
+    if (args != nullptr) {
+      args->clear();
+    }
+    return;
+  }
+
+  auto *map_clause = static_cast<OpenMPMapClause *>(clause);
+  map_clause->clearIterators();
+  if (args->size() < 3) {
+    args->clear();
+    return;
+  }
+  std::string qualifier;
+  std::string var((*args)[0]);
+  std::string begin((*args)[1]);
+  std::string end((*args)[2]);
+  std::string step;
+  if (args->size() > 3) {
+    step = std::string((*args)[3]);
+  }
+
+  map_clause->addIterator(qualifier, var, begin, end, step);
+  args->clear();
+}
 static const char *trait_score = "";
 /* Treat the entire expression as a string for now */
 extern void openmp_parse_expr();
@@ -2464,40 +2497,40 @@ map_modifier3 : MAP_MODIFIER_ALWAYS { if (firstParameter == OMPC_MAP_MODIFIER_al
               | map_modifier_mapper { if (firstParameter == OMPC_MAP_MODIFIER_mapper || secondParameter==OMPC_MAP_MODIFIER_mapper) { yyerror("MAPPER modifier can appear in the map clause only once\n"); YYABORT; } else { thirdParameter = OMPC_MAP_MODIFIER_mapper; }}
               ;
 map_type : MAP_TYPE_TO { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter,thirdParameter, OMPC_MAP_TYPE_to, firstStringParameter);
-                         if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
-                           for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                         if (hasMapIteratorModifier()) {
+                           addMapIteratorDefinition(current_clause, map_iterator_args);
                          } }
          | MAP_TYPE_FROM { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_from, firstStringParameter);
-                           if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
-                             for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                           if (hasMapIteratorModifier()) {
+                             addMapIteratorDefinition(current_clause, map_iterator_args);
                            } }
          | MAP_TYPE_TOFROM { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_tofrom, firstStringParameter);
-                             if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
-                               for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                             if (hasMapIteratorModifier()) {
+                               addMapIteratorDefinition(current_clause, map_iterator_args);
                              } }
          | MAP_TYPE_ALLOC { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_alloc, firstStringParameter);
-                            if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
-                              for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                            if (hasMapIteratorModifier()) {
+                              addMapIteratorDefinition(current_clause, map_iterator_args);
                             } }
          | MAP_TYPE_RELEASE { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_release, firstStringParameter);
-                              if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
-                                for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                              if (hasMapIteratorModifier()) {
+                                addMapIteratorDefinition(current_clause, map_iterator_args);
                               } }
          | MAP_TYPE_DELETE { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_delete, firstStringParameter);
-                             if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
-                               for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                             if (hasMapIteratorModifier()) {
+                               addMapIteratorDefinition(current_clause, map_iterator_args);
                              } }
          | MAP_TYPE_PRESENT { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_present, firstStringParameter);
-                              if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
-                                for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                              if (hasMapIteratorModifier()) {
+                                addMapIteratorDefinition(current_clause, map_iterator_args);
                               } }
          | MAP_TYPE_SELF { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter, thirdParameter, OMPC_MAP_TYPE_self, firstStringParameter);
-                           if (firstParameter == OMPC_MAP_MODIFIER_iterator || secondParameter == OMPC_MAP_MODIFIER_iterator || thirdParameter == OMPC_MAP_MODIFIER_iterator) {
-                             for (auto arg : *map_iterator_args) { current_clause->addLangExpr(arg); }
+                           if (hasMapIteratorModifier()) {
+                             addMapIteratorDefinition(current_clause, map_iterator_args);
                            } }
          ;
 map_modifier_mapper : MAP_MODIFIER_MAPPER '('EXPR_STRING')' { firstStringParameter = $3; }
-                    ;
+                   ;
 map_modifier_iterator : MAP_MODIFIER_ITERATOR {
                           firstParameter = OMPC_MAP_MODIFIER_iterator;
                           map_iterator_args->clear();

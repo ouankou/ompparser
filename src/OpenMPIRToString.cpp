@@ -1568,6 +1568,7 @@ std::string OpenMPMapClause::toString() {
   OpenMPMapClauseModifier modifier1 = this->getModifier1();
   OpenMPMapClauseModifier modifier2 = this->getModifier2();
   OpenMPMapClauseModifier modifier3 = this->getModifier3();
+  const auto &iterator_defs = this->getIterators();
   bool has_content = false;
 
   OpenMPMapClauseType type = this->getType();
@@ -1598,9 +1599,14 @@ std::string OpenMPMapClause::toString() {
   case OMPC_MAP_MODIFIER_iterator: {
     clause_string += "iterator";
     clause_string += "(";
-    std::vector<const char *> *expr = this->getExpressions();
-    if (expr != NULL && expr->size() >= 3) {
-      clause_string += std::string((*expr)[0]) + " = " + std::string((*expr)[1]) + " : " + std::string((*expr)[2]);
+    for (size_t i = 0; i < iterator_defs.size(); ++i) {
+      if (i > 0) {
+        clause_string += ", ";
+      }
+      clause_string +=
+          iteratorToString(iterator_defs[i].qualifier, iterator_defs[i].var,
+                           iterator_defs[i].begin, iterator_defs[i].end,
+                           iterator_defs[i].step);
     }
     clause_string += ")";
     has_content = true;
@@ -1709,18 +1715,7 @@ std::string OpenMPMapClause::toString() {
   if (clause_string.size() > 1) {
     clause_string += " : ";
   };
-  // For iterator modifier, skip the first 3 expressions (var, start, end)
-  if (modifier1 == OMPC_MAP_MODIFIER_iterator || modifier2 == OMPC_MAP_MODIFIER_iterator || modifier3 == OMPC_MAP_MODIFIER_iterator) {
-    std::vector<const char *> *expr = this->getExpressions();
-    if (expr != NULL && expr->size() > 3) {
-      for (size_t i = 3; i < expr->size(); i++) {
-        if (i > 3) clause_string += ", ";
-        clause_string += std::string((*expr)[i]);
-      }
-    }
-  } else {
-    clause_string += this->expressionToString();
-  }
+  clause_string += this->expressionToString();
   clause_string += ")";
   if (clause_string.size() > 2) {
     // clang-format: no space before ( for map clause
