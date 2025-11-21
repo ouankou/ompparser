@@ -58,6 +58,8 @@ static std::vector<std::vector<const char *> *> *
 // std::vector<std::vector<const char*>* >* depend_iterators_definition_class;
 static std::vector<const char *> *map_iterator_args =
     new std::vector<const char *>();
+static std::vector<const char *> *tofrom_iterator_args =
+    new std::vector<const char *>();
 static inline bool hasMapIteratorModifier() {
   return firstParameter == OMPC_MAP_MODIFIER_iterator ||
          secondParameter == OMPC_MAP_MODIFIER_iterator ||
@@ -89,6 +91,40 @@ static void addMapIteratorDefinition(OpenMPClause *clause,
   }
 
   map_clause->addIterator(qualifier, var, begin, end, step);
+  args->clear();
+}
+
+static void addToFromIteratorDefinition(OpenMPClause *clause,
+                                        std::vector<const char *> *args) {
+  if (clause == nullptr || args == nullptr) {
+    if (args != nullptr) {
+      args->clear();
+    }
+    return;
+  }
+  if (args->size() < 3) {
+    args->clear();
+    return;
+  }
+
+  std::string qualifier;
+  std::string var((*args)[0]);
+  std::string begin((*args)[1]);
+  std::string end((*args)[2]);
+  std::string step;
+  if (args->size() > 3) {
+    step = std::string((*args)[3]);
+  }
+
+  if (clause->getKind() == OMPC_to) {
+    auto *to_clause = static_cast<OpenMPToClause *>(clause);
+    to_clause->clearIterators();
+    to_clause->addIterator(qualifier, var, begin, end, step);
+  } else if (clause->getKind() == OMPC_from) {
+    auto *from_clause = static_cast<OpenMPFromClause *>(clause);
+    from_clause->clearIterators();
+    from_clause->addIterator(qualifier, var, begin, end, step);
+  }
   args->clear();
 }
 static const char *trait_score = "";
@@ -2416,24 +2452,28 @@ to_parameter : EXPR_STRING  { current_clause = current_directive->addOpenMPClaus
 to_mapper : TO_MAPPER { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_mapper);
                               }'('EXPR_STRING')' { ((OpenMPToClause*)current_clause)->setMapperIdentifier($4); }
           ;
-to_iterator : TO_ITERATOR { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_iterator);
-                                }'(' to_iterator_args ')'
+to_iterator : TO_ITERATOR { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_iterator); tofrom_iterator_args->clear();
+                                }'(' to_iterator_args ')' { addToFromIteratorDefinition(current_clause, tofrom_iterator_args); }
             ;
-to_iterator_args : EXPR_STRING { current_clause->addLangExpr($1); } '=' EXPR_STRING { current_clause->addLangExpr($4); } ':' EXPR_STRING { current_clause->addLangExpr($7); } to_iterator_step
+to_iterator_args : EXPR_STRING { tofrom_iterator_args->push_back($1); } '=' EXPR_STRING { tofrom_iterator_args->push_back($4); } ':' EXPR_STRING { tofrom_iterator_args->push_back($7); } to_iterator_step
                  ;
 to_iterator_step : /* empty */
-                 | ':' EXPR_STRING { current_clause->addLangExpr($2); }
+                 | ':' EXPR_STRING { tofrom_iterator_args->push_back($2); }
                  ;
 
 from_clause: FROM '(' from_parameter ')' ;
 from_parameter : EXPR_STRING { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_unspecified); current_clause->addLangExpr($1);  }
                | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_unspecified); current_clause->addLangExpr($1); } var_list
                | from_mapper ':' var_list
+               | from_iterator ':' var_list
                | PRESENT ':' { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_present); } var_list
                ;
 from_mapper : FROM_MAPPER { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_mapper); 
                               }'('EXPR_STRING')' { ((OpenMPFromClause*)current_clause)->setMapperIdentifier($4); }
             ;
+from_iterator : FROM_ITERATOR { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_iterator); tofrom_iterator_args->clear();
+                                  } '(' to_iterator_args ')' { addToFromIteratorDefinition(current_clause, tofrom_iterator_args); }
+              ;
 link_clause : LINK {
                 current_clause = current_directive->addOpenMPClause(OMPC_link);
 } '(' var_list ')' {
