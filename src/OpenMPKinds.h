@@ -404,6 +404,11 @@ enum OpenMPAppendArgsModifier {
   OMPC_APPEND_ARGS_unknown
 };
 
+enum OpenMPIteratorKind {
+  OMP_ITER_unknown,
+  OMP_ITER_iterator
+};
+
 enum OpenMPApplyTransformKind {
   OMPC_APPLY_TRANSFORM_unroll,
   OMPC_APPLY_TRANSFORM_unroll_partial,

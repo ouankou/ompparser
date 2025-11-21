@@ -1217,7 +1217,14 @@ protected:
   OpenMPDependClauseModifier modifier; // modifier
   OpenMPDependClauseType type;         // type
   std::string dependence_vector;
-  std::vector<std::vector<const char *> *> depend_iterators_definition_class;
+  struct Iterator {
+    std::string qualifier;
+    std::string var;
+    std::string begin;
+    std::string end;
+    std::string step;
+  };
+  std::vector<Iterator> iterators;
 
 public:
   OpenMPDependClause() : OpenMPClause(OMPC_depend) {}
@@ -1231,13 +1238,31 @@ public:
     dependence_vector = std::string(_dependence_vector);
   };
   std::string getDependenceVector() { return dependence_vector; };
+  void addIterator(const Iterator &it) { iterators.push_back(it); }
+  const std::vector<Iterator> &getIterators() const { return iterators; }
+  void clearIterators() { iterators.clear(); }
   void
   setDependIteratorsDefinitionClass(std::vector<std::vector<const char *> *>
                                         *_depend_iterators_definition_class) {
-    depend_iterators_definition_class = *_depend_iterators_definition_class;
-  };
-  std::vector<vector<const char *> *> *getDependIteratorsDefinitionClass() {
-    return &depend_iterators_definition_class;
+    // Legacy entry point: convert existing string vectors into Iterator structs.
+    iterators.clear();
+    if (_depend_iterators_definition_class == nullptr) {
+      return;
+    }
+    for (auto *vec : *_depend_iterators_definition_class) {
+      if (vec == nullptr || vec->size() < 4) {
+        continue;
+      }
+      Iterator it;
+      it.qualifier = (*vec)[0] ? std::string((*vec)[0]) : "";
+      it.var = (*vec)[1] ? std::string((*vec)[1]) : "";
+      it.begin = (*vec)[2] ? std::string((*vec)[2]) : "";
+      it.end = (*vec)[3] ? std::string((*vec)[3]) : "";
+      if (vec->size() > 4 && (*vec)[4]) {
+        it.step = std::string((*vec)[4]);
+      }
+      iterators.push_back(it);
+    }
   };
   static OpenMPClause *addDependClause(OpenMPDirective *,
                                        OpenMPDependClauseModifier,
@@ -1269,7 +1294,14 @@ class OpenMPAffinityClause : public OpenMPClause {
 
 protected:
   OpenMPAffinityClauseModifier modifier; // modifier
-  std::vector<std::vector<const char *> *> iterators_definition_class;
+  struct Iterator {
+    std::string qualifier;
+    std::string var;
+    std::string begin;
+    std::string end;
+    std::string step;
+  };
+  std::vector<Iterator> iterators;
 
 public:
   OpenMPAffinityClause() : OpenMPClause(OMPC_affinity) {}
@@ -1278,10 +1310,29 @@ public:
       : OpenMPClause(OMPC_affinity), modifier(_modifier) {};
   void
   addIteratorsDefinitionClass(std::vector<const char *> *_iterator_definition) {
-    iterators_definition_class.push_back(_iterator_definition);
+    if (_iterator_definition == nullptr || _iterator_definition->size() < 4) {
+      return;
+    }
+    Iterator it;
+    it.qualifier =
+        (*_iterator_definition)[0] ? std::string((*_iterator_definition)[0])
+                                   : "";
+    it.var =
+        (*_iterator_definition)[1] ? std::string((*_iterator_definition)[1])
+                                   : "";
+    it.begin =
+        (*_iterator_definition)[2] ? std::string((*_iterator_definition)[2])
+                                   : "";
+    it.end =
+        (*_iterator_definition)[3] ? std::string((*_iterator_definition)[3])
+                                   : "";
+    if (_iterator_definition->size() > 4 && (*_iterator_definition)[4]) {
+      it.step = std::string((*_iterator_definition)[4]);
+    }
+    iterators.push_back(it);
   };
-  std::vector<vector<const char *> *> *getIteratorsDefinitionClass() {
-    return &iterators_definition_class;
+  const std::vector<Iterator> &getIteratorsDefinitionClass() const {
+    return iterators;
   };
   OpenMPAffinityClauseModifier getModifier() { return modifier; };
   static OpenMPClause *addAffinityClause(OpenMPDirective *,

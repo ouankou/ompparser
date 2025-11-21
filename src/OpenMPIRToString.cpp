@@ -1029,6 +1029,29 @@ std::string OpenMPClause::toString() {
   return result;
 };
 
+namespace {
+std::string iteratorToString(const std::string &qualifier,
+                             const std::string &var,
+                             const std::string &begin,
+                             const std::string &end,
+                             const std::string &step) {
+  std::string result;
+  if (!qualifier.empty()) {
+    result += qualifier + " ";
+  }
+  result += var;
+  result += "=";
+  result += begin;
+  result += ":";
+  result += end;
+  if (!step.empty()) {
+    result += ":";
+    result += step;
+  }
+  return result;
+}
+} // namespace
+
 std::string OpenMPExtImplementationDefinedRequirementClause::toString() {
   std::string result = "";
   std::string parameter_string;
@@ -1123,44 +1146,25 @@ std::string OpenMPInReductionClause::toString() {
 
 std::string OpenMPDependClause::toString() {
   OpenMPDependClauseModifier modifier = this->getModifier();
-  std::vector<vector<const char *> *> *depend_iterators_definition_class = nullptr;
-  if (modifier == OMPC_DEPEND_MODIFIER_iterator) {
-    depend_iterators_definition_class =
-        this->getDependIteratorsDefinitionClass();
-  }
+  const auto &iterator_defs = this->getIterators();
   std::string result = "depend ";
   std::string clause_string = "(";
 
   OpenMPDependClauseType type = this->getType();
   if (modifier == OMPC_DEPEND_MODIFIER_iterator) {
-    switch (modifier) {
-    case OMPC_DEPEND_MODIFIER_iterator: {
-      clause_string += "iterator";
-      clause_string += " ( ";
-      for (unsigned int i = 0; i < depend_iterators_definition_class->size();
-           i++) {
-        clause_string += depend_iterators_definition_class->at(i)->at(0);
-        if (strcmp(depend_iterators_definition_class->at(i)->at(0), "\0") !=
-            0) {
-          clause_string += " ";
-        };
-        clause_string += depend_iterators_definition_class->at(i)->at(1);
-        clause_string += "=";
-        clause_string += depend_iterators_definition_class->at(i)->at(2);
-        clause_string += ":";
-        clause_string += depend_iterators_definition_class->at(i)->at(3);
-        if ((string)depend_iterators_definition_class->at(i)->at(4) != "") {
-          clause_string += ":";
-          clause_string += depend_iterators_definition_class->at(i)->at(4);
-        };
+    clause_string += "iterator";
+    clause_string += " ( ";
+    for (size_t i = 0; i < iterator_defs.size(); ++i) {
+      if (i > 0) {
         clause_string += ", ";
-      };
-      clause_string = clause_string.substr(0, clause_string.size() - 2);
-
-      clause_string += " )";
+      }
+      clause_string += iteratorToString(iterator_defs[i].qualifier,
+                                        iterator_defs[i].var,
+                                        iterator_defs[i].begin,
+                                        iterator_defs[i].end,
+                                        iterator_defs[i].step);
     }
-    default:;
-    }
+    clause_string += " )";
   }
 
   if (clause_string.size() > 1) {
@@ -1274,8 +1278,7 @@ std::string OpenMPDepobjUpdateClause::toString() {
 };
 
 std::string OpenMPAffinityClause::toString() {
-  std::vector<vector<const char *> *> *iterators_definition_class =
-      this->getIteratorsDefinitionClass();
+  const auto &iterators_definition_class = this->getIteratorsDefinitionClass();
   std::string result = "affinity ";
   std::string clause_string = "(";
   OpenMPAffinityClauseModifier modifier = this->getModifier();
@@ -1283,23 +1286,16 @@ std::string OpenMPAffinityClause::toString() {
   case OMPC_AFFINITY_MODIFIER_iterator:
     clause_string += "iterator";
     clause_string += " ( ";
-    for (unsigned int i = 0; i < iterators_definition_class->size(); i++) {
-      clause_string += iterators_definition_class->at(i)->at(0);
-      if (strcmp(iterators_definition_class->at(i)->at(0), "\0") != 0) {
-        clause_string += " ";
-      };
-      clause_string += iterators_definition_class->at(i)->at(1);
-      clause_string += "=";
-      clause_string += iterators_definition_class->at(i)->at(2);
-      clause_string += ":";
-      clause_string += iterators_definition_class->at(i)->at(3);
-      if ((string)iterators_definition_class->at(i)->at(4) != "") {
-        clause_string += ":";
-        clause_string += iterators_definition_class->at(i)->at(4);
+    for (size_t i = 0; i < iterators_definition_class.size(); i++) {
+      if (i > 0) {
+        clause_string += ", ";
       }
-      clause_string += ", ";
+      clause_string += iteratorToString(iterators_definition_class[i].qualifier,
+                                        iterators_definition_class[i].var,
+                                        iterators_definition_class[i].begin,
+                                        iterators_definition_class[i].end,
+                                        iterators_definition_class[i].step);
     };
-    clause_string = clause_string.substr(0, clause_string.size() - 2);
     clause_string += " )";
     break;
   default:;
