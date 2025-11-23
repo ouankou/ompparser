@@ -678,12 +678,27 @@ std::string OpenMPClause::expressionToString() {
       result = std::string((*expr)[0]) + ": " + std::string((*expr)[1]);
     }
     else {
-      std::vector<const char *>::iterator it;
-      for (it = expr->begin(); it != expr->end(); it++) {
-        if (it != expr->begin())
-          result += ", ";
-        result += std::string(*it);
-      };
+      if (expression_separators.empty()) {
+        std::vector<const char *>::iterator it;
+        for (it = expr->begin(); it != expr->end(); it++) {
+          if (it != expr->begin())
+            result += ", ";
+          result += std::string(*it);
+        };
+      } else {
+        for (size_t idx = 0; idx < expr->size(); ++idx) {
+          if (idx > 0) {
+            OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma;
+            if (idx < expression_separators.size()) {
+              sep = expression_separators[idx];
+            }
+            // FIXME: normalize to comma+space until clause expressions become fully typed.
+            // Once typed payloads land, emit the exact separator that was parsed.
+            result += ", ";
+          }
+          result += std::string((*expr)[idx]);
+        }
+      }
     }
   }
 

@@ -76,6 +76,7 @@ protected:
    * record for an expression and its location
    */
   std::vector<const char *> expressions;
+  std::vector<OpenMPClauseSeparator> expression_separators;
   std::vector<const void *> expressionNodes;
 
   std::vector<SourceLocation> locations;
@@ -105,7 +106,9 @@ public:
   // a list of expressions or variables that are language-specific for the
   // clause, ompparser does not parse them, instead, it only stores them as
   // strings
-  void addLangExpr(const char *expression, int line = 0, int col = 0);
+  void addLangExpr(const char *expression,
+                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
+                   int line = 0, int col = 0);
 
   std::vector<const char *> *getExpressions() { return &expressions; };
 
