@@ -218,7 +218,17 @@ corresponding C type is union name defaults to YYSTYPE.
 
 /* lang-dependent expression is only used in clause, at this point, the current_clause object should already be created. */
 expression : EXPR_STRING { current_clause->addLangExpr($1); /*void * astnode = exprParse)($1);*/ }
-variable :   EXPR_STRING { current_clause->addLangExpr($1, current_expr_separator); current_expr_separator = OMPC_CLAUSE_SEP_space; } /* we use expression for variable so far */
+variable :   EXPR_STRING {
+                if (current_clause != nullptr &&
+                    current_clause->getKind() == OMPC_reduction) {
+                  auto *red_clause =
+                      static_cast<OpenMPReductionClause *>(current_clause);
+                  red_clause->addOperand($1, current_expr_separator);
+                } else {
+                  current_clause->addLangExpr($1, current_expr_separator);
+                }
+                current_expr_separator = OMPC_CLAUSE_SEP_space;
+             } /* we use expression for variable so far */
            | UPDATE { current_clause->addLangExpr("update"); }
            | DEVICE { current_clause->addLangExpr("device"); }
            | HOST { current_clause->addLangExpr("host"); }
@@ -2442,12 +2452,12 @@ allocators_list_parameter_enum : DEFAULT_MEM_ALLOC { usesAllocator = OMPC_USESAL
                                ;
 allocators_list_parameter_user : EXPR_STRING { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_unspecified; secondStringParameter = $1; }
                                ;
-to_clause: TO '(' to_parameter ')' ;
-to_parameter : EXPR_STRING  { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_unspecified); current_clause->addLangExpr($1);  }
-             | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_unspecified); current_expr_separator = OMPC_CLAUSE_SEP_comma; current_clause->addLangExpr($1, OMPC_CLAUSE_SEP_space); } var_list
-             | to_mapper ':' var_list
-             | to_iterator ':' var_list
-             | PRESENT ':' { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_present); } var_list
+to_clause: TO { current_expr_separator = OMPC_CLAUSE_SEP_space; } '(' to_parameter ')' ;
+to_parameter : EXPR_STRING  { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_unspecified); static_cast<OpenMPToClause*>(current_clause)->addItem($1); }
+             | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_unspecified); current_expr_separator = OMPC_CLAUSE_SEP_comma; static_cast<OpenMPToClause*>(current_clause)->addItem($1); } to_var_list
+             | to_mapper ':' to_var_list
+             | to_iterator ':' to_var_list
+             | PRESENT ':' { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_present); } to_var_list
              ;
 to_mapper : TO_MAPPER { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_mapper);
                               }'('EXPR_STRING')' { ((OpenMPToClause*)current_clause)->setMapperIdentifier($4); }
@@ -2455,25 +2465,45 @@ to_mapper : TO_MAPPER { current_clause = current_directive->addOpenMPClause(OMPC
 to_iterator : TO_ITERATOR { current_clause = current_directive->addOpenMPClause(OMPC_to, OMPC_TO_iterator); tofrom_iterator_args->clear();
                                 }'(' to_iterator_args ')' { addToFromIteratorDefinition(current_clause, tofrom_iterator_args); }
             ;
+to_var_list : to_var
+            | to_var_list ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } to_var
+            ;
+
+to_var : EXPR_STRING {
+           auto *to_clause = static_cast<OpenMPToClause *>(current_clause);
+           to_clause->addItem($1, current_expr_separator);
+           current_expr_separator = OMPC_CLAUSE_SEP_space;
+         }
+       ;
 to_iterator_args : EXPR_STRING { tofrom_iterator_args->push_back($1); } '=' EXPR_STRING { tofrom_iterator_args->push_back($4); } ':' EXPR_STRING { tofrom_iterator_args->push_back($7); } to_iterator_step
                  ;
 to_iterator_step : /* empty */
                  | ':' EXPR_STRING { tofrom_iterator_args->push_back($2); }
                  ;
 
-from_clause: FROM '(' from_parameter ')' ;
-from_parameter : EXPR_STRING { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_unspecified); current_clause->addLangExpr($1);  }
-               | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_unspecified); current_expr_separator = OMPC_CLAUSE_SEP_comma; current_clause->addLangExpr($1, OMPC_CLAUSE_SEP_space); } var_list
-               | from_mapper ':' var_list
-               | from_iterator ':' var_list
-               | PRESENT ':' { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_present); } var_list
+from_clause: FROM { current_expr_separator = OMPC_CLAUSE_SEP_space; } '(' from_parameter ')' ;
+from_parameter : EXPR_STRING { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_unspecified); static_cast<OpenMPFromClause*>(current_clause)->addItem($1);  }
+               | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_unspecified); current_expr_separator = OMPC_CLAUSE_SEP_comma; static_cast<OpenMPFromClause*>(current_clause)->addItem($1); } from_var_list
+               | from_mapper ':' from_var_list
+               | from_iterator ':' from_var_list
+               | PRESENT ':' { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_present); } from_var_list
                ;
 from_mapper : FROM_MAPPER { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_mapper); 
                               }'('EXPR_STRING')' { ((OpenMPFromClause*)current_clause)->setMapperIdentifier($4); }
             ;
 from_iterator : FROM_ITERATOR { current_clause = current_directive->addOpenMPClause(OMPC_from, OMPC_FROM_iterator); tofrom_iterator_args->clear();
                                   } '(' to_iterator_args ')' { addToFromIteratorDefinition(current_clause, tofrom_iterator_args); }
+            ;
+from_var_list : from_var
+              | from_var_list ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } from_var
               ;
+
+from_var : EXPR_STRING {
+             auto *from_clause = static_cast<OpenMPFromClause *>(current_clause);
+             from_clause->addItem($1, current_expr_separator);
+             current_expr_separator = OMPC_CLAUSE_SEP_space;
+           }
+         ;
 link_clause : LINK {
                 current_clause = current_directive->addOpenMPClause(OMPC_link);
 } '(' var_list ')' {
@@ -2496,11 +2526,11 @@ device_type_parameter : HOST { current_clause = current_directive->addOpenMPClau
                     | ANY { current_clause = current_directive->addOpenMPClause(OMPC_device_type, OMPC_DEVICE_TYPE_any); }
                     ;
 
-map_clause : MAP { firstParameter = OMPC_MAP_MODIFIER_unspecified; secondParameter = OMPC_MAP_MODIFIER_unspecified; thirdParameter = OMPC_MAP_MODIFIER_unspecified; }'(' map_parameter')';
+map_clause : MAP { firstParameter = OMPC_MAP_MODIFIER_unspecified; secondParameter = OMPC_MAP_MODIFIER_unspecified; thirdParameter = OMPC_MAP_MODIFIER_unspecified; current_expr_separator = OMPC_CLAUSE_SEP_space; }'(' map_parameter')';
 
-map_parameter : EXPR_STRING { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter,thirdParameter, OMPC_MAP_TYPE_unspecified, firstStringParameter); current_clause->addLangExpr($1); }
-              | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter,thirdParameter, OMPC_MAP_TYPE_unspecified, firstStringParameter); current_expr_separator = OMPC_CLAUSE_SEP_comma; current_clause->addLangExpr($1, OMPC_CLAUSE_SEP_space); } var_list
-              | map_modifier_type ':' var_list
+map_parameter : EXPR_STRING { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter,thirdParameter, OMPC_MAP_TYPE_unspecified, firstStringParameter); static_cast<OpenMPMapClause*>(current_clause)->addItem($1); }
+              | EXPR_STRING ',' { current_clause = current_directive->addOpenMPClause(OMPC_map, firstParameter, secondParameter,thirdParameter, OMPC_MAP_TYPE_unspecified, firstStringParameter); current_expr_separator = OMPC_CLAUSE_SEP_comma; static_cast<OpenMPMapClause*>(current_clause)->addItem($1); } map_var_list
+              | map_modifier_type ':' map_var_list
               ;
 map_modifier_type : map_type
                   | map_modifier_iterator ',' map_type
@@ -2530,6 +2560,17 @@ map_modifier2 : MAP_MODIFIER_ALWAYS { if (firstParameter == OMPC_MAP_MODIFIER_al
               | MAP_MODIFIER_SELF { if (firstParameter == OMPC_MAP_MODIFIER_self) { yyerror("SELF modifier can appear in the map clause only once\n"); YYABORT;} else { secondParameter = OMPC_MAP_MODIFIER_self; }}
               | map_modifier_mapper { if (firstParameter == OMPC_MAP_MODIFIER_mapper) { yyerror("MAPPER modifier can appear in the map clause only once\n"); YYABORT; } else { secondParameter = OMPC_MAP_MODIFIER_mapper; }}
               ;
+
+map_var_list : map_var
+             | map_var_list ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } map_var
+             ;
+
+map_var : EXPR_STRING {
+             auto *map_clause = static_cast<OpenMPMapClause *>(current_clause);
+             map_clause->addItem($1, current_expr_separator);
+             current_expr_separator = OMPC_CLAUSE_SEP_space;
+          }
+        ;
 map_modifier3 : MAP_MODIFIER_ALWAYS { if (firstParameter == OMPC_MAP_MODIFIER_always || secondParameter==OMPC_MAP_MODIFIER_always) { yyerror("ALWAYS modifier can appear in the map clause only once\n"); YYABORT; } else { thirdParameter = OMPC_MAP_MODIFIER_always; }}
               | MAP_MODIFIER_CLOSE  { if (firstParameter == OMPC_MAP_MODIFIER_close || secondParameter==OMPC_MAP_MODIFIER_close) { yyerror("CLOSE modifier can appear in the map clause only once\n"); YYABORT; } else { thirdParameter = OMPC_MAP_MODIFIER_close; }}
               | MAP_MODIFIER_PRESENT { if (firstParameter == OMPC_MAP_MODIFIER_present || secondParameter==OMPC_MAP_MODIFIER_present) { yyerror("PRESENT modifier can appear in the map clause only once\n"); YYABORT; } else { thirdParameter = OMPC_MAP_MODIFIER_present; }}
@@ -4990,7 +5031,7 @@ shared_clause : SHARED {
 
 reduction_clause : REDUCTION { firstParameter = OMPC_REDUCTION_MODIFIER_unspecified;
                                reduction_modifier_expression = nullptr;
-                             } '(' reduction_parameter ':' var_list ')' {
+                             } '(' reduction_parameter ':' reduction_var_list ')' {
                                reduction_modifier_expression = nullptr;
                              }
                  ;
@@ -5014,6 +5055,17 @@ reduction_modifier : MODIFIER_INSCAN { firstParameter = OMPC_REDUCTION_MODIFIER_
                    | MODIFIER_DEFAULT { firstParameter = OMPC_REDUCTION_MODIFIER_default; }
                    | reduction_user_modifier
                    ;
+
+reduction_var_list : reduction_var
+                   | reduction_var_list ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } reduction_var
+                   ;
+
+reduction_var : EXPR_STRING {
+                  auto *red_clause = static_cast<OpenMPReductionClause *>(current_clause);
+                  red_clause->addOperand($1, current_expr_separator);
+                  current_expr_separator = OMPC_CLAUSE_SEP_space;
+                }
+               ;
 
 reduction_enum_identifier : '+'{
                               current_clause = current_directive->addOpenMPClause(
