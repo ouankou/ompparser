@@ -4957,6 +4957,12 @@ order_clause: ORDER '(' order_parameter ')' { }
 
 order_parameter : order_modifier ':' CONCURRENT { current_clause = OpenMPOrderClause::addOrderClause(current_directive, (OpenMPOrderClauseModifier)firstParameter, OMPC_ORDER_concurrent); }
                 | CONCURRENT { current_clause = current_directive->addOpenMPClause(OMPC_order, OMPC_ORDER_concurrent); }
+                | order_modifier ':' CONCURRENT ':' var_list {
+                    current_clause = OpenMPOrderClause::addOrderClause(current_directive, (OpenMPOrderClauseModifier)firstParameter, OMPC_ORDER_concurrent);
+                  }
+                | CONCURRENT ':' var_list {
+                    current_clause = OpenMPOrderClause::addOpenMPClause(OMPC_order, OMPC_ORDER_concurrent);
+                  }
                 ;
 
 order_modifier : REPRODUCIBLE { firstParameter = OMPC_ORDER_MODIFIER_reproducible; }
