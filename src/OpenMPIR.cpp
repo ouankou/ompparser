@@ -354,7 +354,9 @@ void OpenMPDeclareMapperDirective::setDeclareMapperVar(
   var = normalizeRawExpression(_declare_mapper_variable);
 }
 
-void OpenMPClause::addLangExpr(const char *expression, int line, int col) {
+void OpenMPClause::addLangExpr(const char *expression,
+                               OpenMPClauseSeparator sep,
+                               int line, int col) {
   if (expression == nullptr) {
     return;
   }
@@ -374,6 +376,7 @@ void OpenMPClause::addLangExpr(const char *expression, int line, int col) {
   std::memcpy(owned_value.get(), normalized.c_str(), length + 1);
   const char *stored_expression = owned_value.get();
   expressions.push_back(stored_expression);
+  expression_separators.push_back(sep);
   owned_expressions.push_back(std::move(owned_value));
   locations.push_back(SourceLocation(line, col));
 };
