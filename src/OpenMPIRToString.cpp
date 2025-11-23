@@ -1762,7 +1762,18 @@ std::string OpenMPMapClause::toString() {
   if (clause_string.size() > 1) {
     clause_string += " : ";
   };
-  clause_string += this->expressionToString();
+  const auto &items = this->getItems();
+  if (!items.empty()) {
+    for (size_t idx = 0; idx < items.size(); ++idx) {
+      if (idx > 0) {
+        clause_string +=
+            (items[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
+      }
+      clause_string += items[idx].text;
+    }
+  } else {
+    clause_string += this->expressionToString();
+  }
   clause_string += ")";
   if (clause_string.size() > 2) {
     // clang-format: no space before ( for map clause
@@ -1840,7 +1851,14 @@ std::string OpenMPReductionClause::toString() {
   if (clause_string.size() > 1) {
     clause_string += " : ";
   };
-  clause_string += this->expressionToString();
+  const auto &operands = this->getOperands();
+  for (size_t idx = 0; idx < operands.size(); ++idx) {
+    if (idx > 0) {
+      clause_string +=
+          (operands[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
+    }
+    clause_string += operands[idx].text;
+  }
   clause_string += ")";
   if (clause_string.size() > 2) {
     // clang-format: no space before ( for reduction clause

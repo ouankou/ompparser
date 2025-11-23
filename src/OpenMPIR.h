@@ -54,6 +54,11 @@ public:
   void setColumn(int _column) { column = _column; };
 };
 
+struct OpenMPExpressionItem {
+  std::string text;
+  OpenMPClauseSeparator separator = OMPC_CLAUSE_SEP_space;
+};
+
 /**
  * The class or baseclass for all the clause classes. For all the clauses that
  * only take 0 to multiple expression or variables, we use this class to create
@@ -481,6 +486,7 @@ protected:
   OpenMPReductionClauseIdentifier identifier; // identifier
   std::string user_defined_identifier; // user defined identifier if it is used
   std::string user_defined_modifier;
+  std::vector<OpenMPExpressionItem> operands;
 
 public:
   OpenMPReductionClause() : OpenMPClause(OMPC_reduction) {}
@@ -508,6 +514,16 @@ public:
   };
 
   std::string getUserDefinedModifier() const { return user_defined_modifier; };
+  void addOperand(const std::string &operand,
+                  OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
+    operands.push_back(OpenMPExpressionItem{operand, sep});
+    // Keep legacy expressions list populated for DOT/debugger.
+    addLangExpr(operand.c_str(), sep);
+  }
+  const std::vector<OpenMPExpressionItem> &getOperands() const {
+    return operands;
+  }
+  void clearOperands() { operands.clear(); }
 
   static OpenMPClause *addReductionClause(OpenMPDirective *,
                                           OpenMPReductionClauseModifier,
@@ -1409,6 +1425,7 @@ protected:
     std::string step;
   };
   std::vector<Iterator> iterators;
+  std::vector<OpenMPExpressionItem> items;
 
 public:
   OpenMPToClause() : OpenMPClause(OMPC_to) {}
@@ -1432,6 +1449,13 @@ public:
   }
   const std::vector<Iterator> &getIterators() const { return iterators; }
   void clearIterators() { iterators.clear(); }
+  void addItem(const std::string &expr,
+               OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
+    items.push_back(OpenMPExpressionItem{expr, sep});
+    addLangExpr(expr.c_str(), sep);
+  }
+  const std::vector<OpenMPExpressionItem> &getItems() const { return items; }
+  void clearItems() { items.clear(); }
   static OpenMPClause *addToClause(OpenMPDirective *, OpenMPToClauseKind);
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
@@ -1450,6 +1474,7 @@ protected:
     std::string step;
   };
   std::vector<Iterator> iterators;
+  std::vector<OpenMPExpressionItem> items;
 
 public:
   OpenMPFromClause() : OpenMPClause(OMPC_from) {}
@@ -1474,6 +1499,13 @@ public:
   }
   const std::vector<Iterator> &getIterators() const { return iterators; }
   void clearIterators() { iterators.clear(); }
+  void addItem(const std::string &expr,
+               OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
+    items.push_back(OpenMPExpressionItem{expr, sep});
+    addLangExpr(expr.c_str(), sep);
+  }
+  const std::vector<OpenMPExpressionItem> &getItems() const { return items; }
+  void clearItems() { items.clear(); }
   static OpenMPClause *addFromClause(OpenMPDirective *, OpenMPFromClauseKind);
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
@@ -1563,6 +1595,7 @@ protected:
     std::string step;
   };
   std::vector<Iterator> iterators;
+  std::vector<OpenMPExpressionItem> items;
 
 public:
   OpenMPMapClause() : OpenMPClause(OMPC_map) {}
@@ -1594,6 +1627,13 @@ public:
   }
   const std::vector<Iterator> &getIterators() const { return iterators; }
   void clearIterators() { iterators.clear(); }
+  void addItem(const std::string &expr,
+               OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
+    items.push_back(OpenMPExpressionItem{expr, sep});
+    addLangExpr(expr.c_str(), sep);
+  }
+  const std::vector<OpenMPExpressionItem> &getItems() const { return items; }
+  void clearItems() { items.clear(); }
   static OpenMPClause *addMapClause(OpenMPDirective *, OpenMPMapClauseModifier,
                                     OpenMPMapClauseModifier,
                                     OpenMPMapClauseModifier,
