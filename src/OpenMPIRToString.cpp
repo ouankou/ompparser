@@ -37,10 +37,10 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
 
     result += "(";
     for (list_item = list->begin(); list_item != list->end(); list_item++) {
+      if (list_item != list->begin())
+        result += ",";
       result += *list_item;
-      result += ",";
     }
-    result = result.substr(0, result.size() - 1);
     result += ") ";
     break;
   }
@@ -50,10 +50,10 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     std::vector<const char *>::iterator list_item;
     result += "(";
     for (list_item = list->begin(); list_item != list->end(); list_item++) {
+      if (list_item != list->begin())
+        result += ",";
       result += *list_item;
-      result += ",";
     }
-    result = result.substr(0, result.size() - 1);
     result += ")";
     break;
   }
@@ -63,10 +63,10 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     std::vector<const char *>::iterator list_item;
     result += "(";
     for (list_item = list->begin(); list_item != list->end(); list_item++) {
+      if (list_item != list->begin())
+        result += ",";
       result += *list_item;
-      result += ",";
     }
-    result = result.substr(0, result.size() - 1);
     result += ")";
     break;
   }
@@ -203,10 +203,10 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       std::vector<std::string>::iterator list_item;
       result += "(";
       for (list_item = list->begin(); list_item != list->end(); list_item++) {
+        if (list_item != list->begin())
+          result += ",";
         result += *list_item;
-        result += ",";
       }
-      result = result.substr(0, result.size() - 1);
       result += ") ";
     }
     // Don't break - we need to fall through to default to output clauses
@@ -228,10 +228,10 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       std::vector<std::string>::iterator list_item;
       result += "(";
       for (list_item = list->begin(); list_item != list->end(); list_item++) {
+        if (list_item != list->begin())
+          result += ",";
         result += *list_item;
-        result += ",";
       }
-      result = result.substr(0, result.size() - 1);
       result += ") ";
     }
     break;
@@ -680,9 +680,10 @@ std::string OpenMPClause::expressionToString() {
     else {
       std::vector<const char *>::iterator it;
       for (it = expr->begin(); it != expr->end(); it++) {
-        result += std::string(*it) + ", ";
+        if (it != expr->begin())
+          result += ", ";
+        result += std::string(*it);
       };
-      result = result.substr(0, result.size() - 2);
     }
   }
 
@@ -1085,7 +1086,7 @@ std::string OpenMPAtomicDefaultMemOrderClause::toString() {
   if (parameter_string.size() > 0) {
     result += parameter_string + ") ";
   } else {
-    result = result.substr(0, result.size() - 2);
+    return std::string();
   }
 
   return result;
@@ -1533,7 +1534,7 @@ std::string OpenMPDeviceTypeClause::toString() {
   if (parameter_string.size() > 0) {
     result += parameter_string + ") ";
   } else {
-    result = result.substr(0, result.size() - 2);
+    return std::string();
   }
 
   return result;
@@ -2345,6 +2346,7 @@ std::string OpenMPVariantClause::toString() {
       return s;
     }
     s = "construct = {";
+    bool first = true;
     for (auto &entry : *parameter_pair_directives) {
       if (entry.first != "") {
         beginning_symbol = "score(" + entry.first + "): ";
@@ -2356,17 +2358,19 @@ std::string OpenMPVariantClause::toString() {
         beginning_symbol = "";
         ending_symbol = "";
       };
+      if (!first) {
+        s += ", ";
+      }
+      first = false;
       s += entry.second->generatePragmaString("", beginning_symbol,
-                                              ending_symbol) +
-           ", ";
+                                              ending_symbol);
     }
-    s = s.substr(0, s.size() - 2);
     s += "}";
     return s;
   };
 
   auto buildDeviceSelector = [&](bool use_target_device) -> std::string {
-    std::string s;
+    std::vector<std::string> parts;
     std::string local;
     // kind
     std::pair<std::string, OpenMPClauseContextKind> *context_kind =
@@ -2396,42 +2400,51 @@ std::string OpenMPVariantClause::toString() {
       std::cout << "The context kind is not supported.\n";
     };
     if (context_kind->first.size() > 0) {
-      s += "kind(score(" + context_kind->first + "): " + local + "), ";
+      parts.push_back("kind(score(" + context_kind->first + "): " + local +
+                      ")");
     } else if (!local.empty()) {
-      s += "kind(" + local + "), ";
+      parts.push_back("kind(" + local + ")");
     }
     // arch
     parameter_pair_string = nullptr;
     auto *arch = this->getArchExpression();
     if (arch && !arch->score.empty()) {
-      s += "arch(score(" + arch->score + "): " + arch->expression + "), ";
+      parts.push_back("arch(score(" + arch->score + "): " + arch->expression +
+                      ")");
     } else if (arch && !arch->expression.empty()) {
-      s += "arch(" + arch->expression + "), ";
+      parts.push_back("arch(" + arch->expression + ")");
     }
     // isa
     auto *isa = this->getIsaExpression();
     if (isa && !isa->score.empty()) {
-      s += "isa(score(" + isa->score + "): " + isa->expression + "), ";
+      parts.push_back("isa(score(" + isa->score + "): " + isa->expression +
+                      ")");
     } else if (isa && !isa->expression.empty()) {
-      s += "isa(" + isa->expression + "), ";
+      parts.push_back("isa(" + isa->expression + ")");
     }
     // device_num
     auto *devnum = this->getDeviceNumExpression();
     if (devnum && !devnum->score.empty()) {
-      s += "device_num(score(" + devnum->score +
-           "): " + devnum->expression + "), ";
+      parts.push_back("device_num(score(" + devnum->score +
+                      "): " + devnum->expression + ")");
     } else if (devnum && !devnum->expression.empty()) {
-      s += "device_num(" + devnum->expression + "), ";
+      parts.push_back("device_num(" + devnum->expression + ")");
     }
-    if (s.empty()) {
-      return s;
+    if (parts.empty()) {
+      return std::string();
     }
     std::string selector_name = use_target_device ? "target_device" : "device";
-    return selector_name + " = {" + s.substr(0, s.size() - 2) + "}";
+    std::string joined;
+    for (size_t i = 0; i < parts.size(); ++i) {
+      if (i > 0) {
+        joined += ", ";
+      }
+      joined += parts[i];
+    }
+    return selector_name + " = {" + joined + "}";
   };
 
   auto buildImplementationSelector = [&]() -> std::string {
-    std::string s;
     std::string vendor_string;
     std::pair<std::string, OpenMPClauseContextVendor> *context_vendor =
         this->getImplementationKind();
@@ -2480,11 +2493,12 @@ std::string OpenMPVariantClause::toString() {
     default:
       std::cout << "The context vendor is not supported.\n";
     };
+    std::vector<std::string> parts;
     if (context_vendor->first.size() > 0) {
-      s += "vendor(score(" + context_vendor->first +
-           "): " + vendor_string + "), ";
+      parts.push_back("vendor(score(" + context_vendor->first +
+                      "): " + vendor_string + ")");
     } else if (!vendor_string.empty()) {
-      s += "vendor(" + vendor_string + "), ";
+      parts.push_back("vendor(" + vendor_string + ")");
     }
 
     // user-defined implementation selector
@@ -2495,23 +2509,26 @@ std::string OpenMPVariantClause::toString() {
       switch (impl_expr->kind) {
       case OMPC_IMPL_EXPR_requires:
         if (!impl_expr->expression.empty()) {
-          s += "requires(";
+          std::string entry = "requires(";
           if (!score.empty()) {
-            s += "score(" + score + "): ";
+            entry += "score(" + score + "): ";
           }
-          s += impl_expr->expression;
-          s += "), ";
+          entry += impl_expr->expression;
+          entry += ")";
+          parts.push_back(entry);
         }
         break;
       case OMPC_IMPL_EXPR_user:
       case OMPC_IMPL_EXPR_unknown:
       default:
         if (!impl_expr->expression.empty()) {
+          std::string entry;
           if (!score.empty()) {
-            s += "user(score(" + score + "): " + impl_expr->expression + "), ";
+            entry = "user(score(" + score + "): " + impl_expr->expression + ")";
           } else {
-            s += "user(" + impl_expr->expression + "), ";
+            entry = "user(" + impl_expr->expression + ")";
           }
+          parts.push_back(entry);
         }
         break;
       }
@@ -2520,16 +2537,23 @@ std::string OpenMPVariantClause::toString() {
     // extension
     auto *ext_expr = this->getExtensionExpression();
     if (ext_expr && ext_expr->score.size() > 0) {
-      s += "extension(score(" + ext_expr->score +
-           "): " + ext_expr->expression + "), ";
+      parts.push_back("extension(score(" + ext_expr->score +
+                      "): " + ext_expr->expression + ")");
     } else if (ext_expr && ext_expr->expression.size() > 0) {
-      s += "extension(" + ext_expr->expression + "), ";
+      parts.push_back("extension(" + ext_expr->expression + ")");
     }
 
-    if (s.empty()) {
-      return s;
+    if (parts.empty()) {
+      return std::string();
     }
-    return "implementation = {" + s.substr(0, s.size() - 2) + "}";
+    std::string joined;
+    for (size_t i = 0; i < parts.size(); ++i) {
+      if (i > 0) {
+        joined += ", ";
+      }
+      joined += parts[i];
+    }
+    return "implementation = {" + joined + "}";
   };
 
   std::vector<std::string> selector_strings;
@@ -2620,7 +2644,7 @@ std::string OpenMPDefaultClause::toString() {
   if (parameter_string.size() > 0) {
     result += parameter_string + ") ";
   } else {
-    result = result.substr(0, result.size() - 2);
+    return std::string();
   }
 
   return result;
@@ -2657,7 +2681,7 @@ std::string OpenMPOrderClause::toString() {
   if (parameter_string.size() > 0) {
     result += modifier_string + parameter_string + ") ";
   } else {
-    result = result.substr(0, result.size() - 2);
+    return std::string();
   }
 
   return result;
@@ -2685,7 +2709,7 @@ std::string OpenMPBindClause::toString() {
   if (parameter_string.size() > 0) {
     result += parameter_string + ") ";
   } else {
-    result = result.substr(0, result.size() - 2);
+    return std::string();
   }
 
   return result;
@@ -2716,7 +2740,7 @@ std::string OpenMPProcBindClause::toString() {
   if (parameter_string.size() > 0) {
     result += parameter_string + ") ";
   } else {
-    result = result.substr(0, result.size() - 2);
+    return std::string();
   }
 
   return result;
