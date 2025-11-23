@@ -688,13 +688,12 @@ std::string OpenMPClause::expressionToString() {
       } else {
         for (size_t idx = 0; idx < expr->size(); ++idx) {
           if (idx > 0) {
-            OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma;
-            if (idx < expression_separators.size()) {
-              sep = expression_separators[idx];
-            }
-            // FIXME: normalize to comma+space until clause expressions become fully typed.
-            // Once typed payloads land, emit the exact separator that was parsed.
-            result += ", ";
+          // FIXME: normalize to comma+space until clause expressions become fully typed.
+          // Once typed payloads land, emit the exact separator that was parsed.
+          if (idx < expression_separators.size()) {
+            (void)expression_separators[idx];
+          }
+          result += ", ";
           }
           result += std::string((*expr)[idx]);
         }
@@ -2712,10 +2711,22 @@ std::string OpenMPOrderClause::toString() {
   };
 
   if (parameter_string.size() > 0) {
-    result += modifier_string + parameter_string + ") ";
+    result += modifier_string + parameter_string;
   } else {
     return std::string();
   }
+
+  const auto &ops = this->getOperands();
+  if (!ops.empty()) {
+    result += " : ";
+    for (size_t idx = 0; idx < ops.size(); ++idx) {
+      if (idx > 0) {
+        result += (ops[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
+      }
+      result += ops[idx].text;
+    }
+  }
+  result += ") ";
 
   return result;
 };

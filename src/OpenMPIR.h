@@ -1168,6 +1168,7 @@ class OpenMPOrderClause : public OpenMPClause {
 protected:
   OpenMPOrderClauseModifier order_modifier = OMPC_ORDER_MODIFIER_unspecified;
   OpenMPOrderClauseKind order_kind = OMPC_ORDER_unspecified;
+  std::vector<OpenMPExpressionItem> operands;
 
 public:
   OpenMPOrderClause(OpenMPOrderClauseModifier _order_modifier, OpenMPOrderClauseKind _order_kind)
@@ -1178,6 +1179,15 @@ public:
 
   OpenMPOrderClauseModifier getOrderClauseModifier() { return order_modifier; };
   OpenMPOrderClauseKind getOrderClauseKind() { return order_kind; };
+  void addOperand(const std::string &expr,
+                  OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
+    operands.push_back(OpenMPExpressionItem{expr, sep});
+    addLangExpr(expr.c_str(), sep);
+  }
+  const std::vector<OpenMPExpressionItem> &getOperands() const {
+    return operands;
+  }
+  void clearOperands() { operands.clear(); }
 
   static OpenMPClause *addOrderClause(OpenMPDirective *, OpenMPOrderClauseModifier, OpenMPOrderClauseKind);
   static OpenMPClause *addOrderClause(OpenMPDirective *, OpenMPOrderClauseKind);
@@ -1219,6 +1229,7 @@ class OpenMPInReductionClause : public OpenMPClause {
 protected:
   OpenMPInReductionClauseIdentifier identifier; // identifier
   std::string user_defined_identifier; // user defined identifier if it is used
+  std::vector<OpenMPExpressionItem> operands;
 
 public:
   OpenMPInReductionClause() : OpenMPClause(OMPC_in_reduction) {}
@@ -1234,6 +1245,15 @@ public:
   };
 
   std::string getUserDefinedIdentifier() { return user_defined_identifier; };
+  void addOperand(const std::string &operand,
+                  OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
+    operands.push_back(OpenMPExpressionItem{operand, sep});
+    addLangExpr(operand.c_str(), sep);
+  }
+  const std::vector<OpenMPExpressionItem> &getOperands() const {
+    return operands;
+  }
+  void clearOperands() { operands.clear(); }
 
   static OpenMPClause *addInReductionClause(OpenMPDirective *,
                                             OpenMPInReductionClauseIdentifier,
@@ -1556,6 +1576,7 @@ class OpenMPTaskReductionClause : public OpenMPClause {
 protected:
   OpenMPTaskReductionClauseIdentifier identifier; // identifier
   std::string user_defined_identifier; // user defined identifier if it is used
+  std::vector<OpenMPExpressionItem> operands;
 
 public:
   OpenMPTaskReductionClause() : OpenMPClause(OMPC_task_reduction) {}
@@ -1571,6 +1592,15 @@ public:
   };
 
   std::string getUserDefinedIdentifier() { return user_defined_identifier; };
+  void addOperand(const std::string &operand,
+                  OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
+    operands.push_back(OpenMPExpressionItem{operand, sep});
+    addLangExpr(operand.c_str(), sep);
+  }
+  const std::vector<OpenMPExpressionItem> &getOperands() const {
+    return operands;
+  }
+  void clearOperands() { operands.clear(); }
 
   static OpenMPClause *
   addTaskReductionClause(OpenMPDirective *, OpenMPTaskReductionClauseIdentifier,
