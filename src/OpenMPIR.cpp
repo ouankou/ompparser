@@ -592,6 +592,9 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
 
   auto makeClause = [&](OpenMPClauseKind clause_kind)
       -> std::unique_ptr<OpenMPClause> {
+    if (clause_kind == OMPC_inclusive || clause_kind == OMPC_exclusive) {
+      return std::make_unique<OpenMPScanClause>(clause_kind);
+    }
     if (clause_kind == OMPC_apply) {
       return std::make_unique<OpenMPApplyClause>();
     }
@@ -1399,11 +1402,15 @@ void OpenMPLinearClause::mergeLinear(OpenMPDirective *directive,
           ((OpenMPLinearClause *)(*it))->getExpressions();
       std::vector<const char *> *expressions_current_clause =
           current_clause->getExpressions();
+      const auto &current_separators =
+          static_cast<OpenMPLinearClause *>(current_clause)
+              ->getExpressionSeparators();
 
+      size_t idx = 0;
       for (std::vector<const char *>::iterator it_expr_current =
                expressions_current_clause->begin();
            it_expr_current != expressions_current_clause->end();
-           it_expr_current++) {
+           it_expr_current++, ++idx) {
         bool not_normalize = false;
         for (std::vector<const char *>::iterator it_expr_previous =
                  expressions_previous_clause->begin();
@@ -1415,7 +1422,11 @@ void OpenMPLinearClause::mergeLinear(OpenMPDirective *directive,
           }
         }
         if (!not_normalize) {
-          expressions_previous_clause->push_back(*it_expr_current);
+          OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space;
+          if (idx < current_separators.size()) {
+            sep = current_separators[idx];
+          }
+          (*it)->addLangExpr(*it_expr_current, sep);
         }
       }
       current_clauses->pop_back();
@@ -1631,10 +1642,15 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
               ((OpenMPDependClause *)(*it))->getExpressions();
           std::vector<const char *> *expressions_current =
               current_clause->getExpressions();
+          const auto &current_separators =
+              static_cast<OpenMPDependClause *>(current_clause)
+                  ->getExpressionSeparators();
+          bool has_existing = !expressions_previous->empty();
+          size_t idx = 0;
           for (std::vector<const char *>::iterator it_expr_current =
                    expressions_current->begin();
-               it_expr_current != expressions_current->end();
-               it_expr_current++) {
+                it_expr_current != expressions_current->end();
+                it_expr_current++, ++idx) {
             bool para_merge = true;
             for (std::vector<const char *>::iterator it_expr_previous =
                      expressions_previous->begin();
@@ -1645,7 +1661,14 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
               }
             }
             if (para_merge == true)
-              expressions_previous->push_back(*it_expr_current);
+              (*it)->addLangExpr(
+                  *it_expr_current,
+                  (idx < current_separators.size())
+                      ? (has_existing &&
+                                 current_separators[idx] == OMPC_CLAUSE_SEP_space
+                             ? OMPC_CLAUSE_SEP_comma
+                             : current_separators[idx])
+                      : OMPC_CLAUSE_SEP_comma);
           }
           current_clauses->pop_back();
           directive->getClausesInOriginalOrder()->pop_back();
@@ -1665,9 +1688,15 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
           ((OpenMPDependClause *)(*it))->getExpressions();
       std::vector<const char *> *expressions_current =
           current_clause->getExpressions();
+      const auto &current_separators =
+          static_cast<OpenMPDependClause *>(current_clause)
+              ->getExpressionSeparators();
+      bool has_existing = !expressions_previous->empty();
+      size_t idx = 0;
       for (std::vector<const char *>::iterator it_expr_current =
                expressions_current->begin();
-           it_expr_current != expressions_current->end(); it_expr_current++) {
+           it_expr_current != expressions_current->end();
+           it_expr_current++, ++idx) {
         bool para_merge = true;
         for (std::vector<const char *>::iterator it_expr_previous =
                  expressions_previous->begin();
@@ -1678,7 +1707,14 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
           }
         }
         if (para_merge == true)
-          expressions_previous->push_back(*it_expr_current);
+          (*it)->addLangExpr(
+              *it_expr_current,
+              (idx < current_separators.size())
+                  ? (has_existing &&
+                             current_separators[idx] == OMPC_CLAUSE_SEP_space
+                         ? OMPC_CLAUSE_SEP_comma
+                         : current_separators[idx])
+                  : OMPC_CLAUSE_SEP_comma);
       }
       current_clauses->pop_back();
       directive->getClausesInOriginalOrder()->pop_back();

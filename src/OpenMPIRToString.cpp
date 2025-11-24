@@ -678,25 +678,15 @@ std::string OpenMPClause::expressionToString() {
       result = std::string((*expr)[0]) + ": " + std::string((*expr)[1]);
     }
     else {
-      if (expression_separators.empty()) {
-        std::vector<const char *>::iterator it;
-        for (it = expr->begin(); it != expr->end(); it++) {
-          if (it != expr->begin())
-            result += ", ";
-          result += std::string(*it);
-        };
-      } else {
-        for (size_t idx = 0; idx < expr->size(); ++idx) {
-          if (idx > 0) {
-          // FIXME: normalize to comma+space until clause expressions become fully typed.
-          // Once typed payloads land, emit the exact separator that was parsed.
+      for (size_t idx = 0; idx < expr->size(); ++idx) {
+        if (idx > 0) {
+          OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space;
           if (idx < expression_separators.size()) {
-            (void)expression_separators[idx];
+            sep = expression_separators[idx];
           }
-          result += ", ";
-          }
-          result += std::string((*expr)[idx]);
+          result += (sep == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
         }
+        result += std::string((*expr)[idx]);
       }
     }
   }
@@ -1242,10 +1232,22 @@ std::string OpenMPDoacrossClause::toString() {
     result += "unknown:";
   }
 
-  // Add any expressions (for sink: i-1, or source:omp_cur_iteration)
-  std::string expr_string = this->expressionToString();
-  if (expr_string.size() > 0) {
-    result += " " + expr_string;
+  if (type == OMPC_DOACROSS_TYPE_source && this->hasSourceExpression()) {
+    result += " " + this->getSourceExpression().text;
+  } else if (type == OMPC_DOACROSS_TYPE_sink) {
+    const auto &args = this->getSinkArgs();
+    for (size_t idx = 0; idx < args.size(); ++idx) {
+      if (idx > 0) {
+        result += (args[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
+      }
+      result += args[idx].text;
+    }
+  } else {
+    // Fallback to legacy expression list if present
+    std::string expr_string = this->expressionToString();
+    if (!expr_string.empty()) {
+      result += " " + expr_string;
+    }
   }
 
   result += ") ";
@@ -2681,6 +2683,39 @@ std::string OpenMPDefaultClause::toString() {
 
   return result;
 };
+
+std::string OpenMPScanClause::toString() {
+
+  std::string result;
+  switch (this->getKind()) {
+  case OMPC_inclusive:
+    result = "inclusive(";
+    break;
+  case OMPC_exclusive:
+    result = "exclusive(";
+    break;
+  default:
+    return std::string();
+  }
+
+  const auto &ops = this->getOperands();
+  if (!ops.empty()) {
+    for (size_t idx = 0; idx < ops.size(); ++idx) {
+      if (idx > 0) {
+        result += (ops[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
+      }
+      result += ops[idx].text;
+    }
+  } else {
+    std::string fallback = this->expressionToString();
+    if (!fallback.empty()) {
+      result += fallback;
+    }
+  }
+
+  result += ") ";
+  return result;
+}
 
 std::string OpenMPOrderClause::toString() {
 
