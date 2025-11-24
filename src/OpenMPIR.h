@@ -116,6 +116,9 @@ public:
                    int line = 0, int col = 0);
 
   std::vector<const char *> *getExpressions() { return &expressions; };
+  const std::vector<OpenMPClauseSeparator> &getExpressionSeparators() const {
+    return expression_separators;
+  }
 
   virtual std::string toString();
   std::string expressionToString();
@@ -1195,6 +1198,29 @@ public:
   void generateDOT(std::ofstream &, int, int, std::string);
 };
 
+// inclusive/exclusive scan clauses
+class OpenMPScanClause : public OpenMPClause {
+protected:
+  std::vector<OpenMPExpressionItem> operands;
+
+public:
+  OpenMPScanClause(OpenMPClauseKind kind) : OpenMPClause(kind) {}
+
+  void addOperand(const std::string &expr,
+                  OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
+    operands.push_back(OpenMPExpressionItem{expr, sep});
+    addLangExpr(expr.c_str(), sep);
+  }
+
+  const std::vector<OpenMPExpressionItem> &getOperands() const {
+    return operands;
+  }
+
+  void clearOperands() { operands.clear(); }
+
+  std::string toString();
+};
+
 // if Clause
 class OpenMPIfClause : public OpenMPClause {
 
@@ -1328,6 +1354,9 @@ class OpenMPDoacrossClause : public OpenMPClause {
 
 protected:
   OpenMPDoacrossClauseType type; // source or sink
+  bool has_source_expr = false;
+  OpenMPExpressionItem source_expr;
+  std::vector<OpenMPExpressionItem> sink_args;
 
 public:
   OpenMPDoacrossClause() : OpenMPClause(OMPC_doacross) {}
@@ -1336,6 +1365,23 @@ public:
       : OpenMPClause(OMPC_doacross), type(_type) {};
 
   OpenMPDoacrossClauseType getType() { return type; };
+  void setSourceExpression(const std::string &expr,
+                           OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space) {
+    has_source_expr = true;
+    source_expr = OpenMPExpressionItem{expr, sep};
+    addLangExpr(expr.c_str(), sep);
+  }
+  bool hasSourceExpression() const { return has_source_expr; }
+  const OpenMPExpressionItem &getSourceExpression() const { return source_expr; }
+  void addSinkArg(const std::string &expr,
+                  OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
+    sink_args.push_back(OpenMPExpressionItem{expr, sep});
+    addLangExpr(expr.c_str(), sep);
+  }
+  const std::vector<OpenMPExpressionItem> &getSinkArgs() const {
+    return sink_args;
+  }
+  void clearSinkArgs() { sink_args.clear(); }
 
   std::string toString();
 };
