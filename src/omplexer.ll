@@ -24,12 +24,16 @@
 %x BIND_STATE
 %x COLLAPSE_STATE
 %x SIZES_STATE
+%x GRAINSIZE_STATE
+%x NUM_TASKS_STATE
 %x LOOPRANGE_STATE
 %x INIT_STATE
+%x INTEROP_CLAUSE_STATE
 %x APPLY_STATE
 %x CANCEL_STATE
 %x RAW_EXPR_STATE
 %x ADJUST_ARGS_STATE
+%x INDUCTION_STATE
 %x CONDITION_STATE
 %x COPYIN_STATE
 %x COPYPRIVATE_STATE
@@ -55,6 +59,8 @@
 %x IMPLEMENTATION_STATE
 %x INITIALIZER_STATE
 %x IN_REDUCTION_STATE
+%x NOCONTEXT_STATE
+%x NOVARIANTS_STATE
 %x ISA_STATE
 %x LASTPRIVATE_STATE
 %x LINEAR_STATE
@@ -63,6 +69,7 @@
 %x MAP_ITERATOR_STATE
 %x MAP_ITER_EXPR_STATE
 %x MAP_STATE
+%x MAP_VAR_STATE
 %x MATCH_STATE
 %x NONTEMPORAL_STATE
 %x NUM_TEAMS_STATE
@@ -92,13 +99,6 @@
 
 %{
 
-/* DQ (12/10/2016): This is a technique to suppress warnings in generated code
-   that we want to be an error elsewhere in ROSE. See
-   https://gcc.gnu.org/onlinedocs/gcc/Diagnostic-Pragmas.html for more detail. */
-#if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 8)
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#endif
-
 /* lex requires me to use extern "C" here */
 extern "C" int openmp_wrap() { return 1; }
 
@@ -111,6 +111,7 @@ extern void *(*exprParse)(const char *);
 #include <cctype>
 #include <cstring>
 #include <string>
+#include <vector>
 
 /* Moved from Makefile.am to the source file to work with --with-pch Liao
    12/10/2009 */
@@ -130,6 +131,44 @@ static int brace_count = 0;
 static int ternary_count = 0;
 static bool inside_quotes = false;
 static char current_char;
+
+static bool compact_parallel_do = false;
+static bool declare_target_underscore = false;
+static bool compact_enddo = false;
+
+static std::vector<int> apply_paren_depth;
+static int induction_spec_paren_depth = 0;
+static int if_paren_depth = 0;
+
+static inline void push_apply_state();
+static inline void pop_apply_state();
+static inline int &current_apply_paren_depth();
+
+extern "C" void openmp_reset_lexer_flags() {
+  compact_parallel_do = false;
+  declare_target_underscore = false;
+  compact_enddo = false;
+  apply_paren_depth.clear();
+  induction_spec_paren_depth = 0;
+}
+
+extern "C" bool openmp_consume_compact_parallel_do() {
+  bool value = compact_parallel_do;
+  compact_parallel_do = false;
+  return value;
+}
+
+extern "C" bool openmp_consume_declare_target_underscore() {
+  bool value = declare_target_underscore;
+  declare_target_underscore = false;
+  return value;
+}
+
+extern "C" bool openmp_consume_compact_enddo() {
+  bool value = compact_enddo;
+  compact_enddo = false;
+  return value;
+}
 
 /* Helper functions for expression state management */
 static inline void reset_expression_counters() {
@@ -223,10 +262,11 @@ id_char         [a-zA-Z0-9_]
 [!c*]$omp       { ; }
 #pragma         { ; }
 omp/{blank}     { ; }
-parallel        { return PARALLEL; }
+paralleldo      { compact_parallel_do = true; yyless(8); return PARALLEL; }
+parallel        { compact_parallel_do = false; return PARALLEL; }
 metadirective   { return METADIRECTIVE; }
 task            { return TASK; }
-if              { yy_push_state(IF_STATE); return IF; }
+if              { if_paren_depth = 0; yy_push_state(IF_STATE); return IF; }
 simdlen         { yy_push_state(SIMDLEN_STATE); return SIMDLEN; }
 simd/{blank}*\( { yy_push_state(SIMD_STATE); return SIMD; }
 simd            { return SIMD; }
@@ -269,9 +309,9 @@ safelen         { yy_push_state(SAFELEN_STATE); return SAFELEN; }
 nontemporal     { yy_push_state(NONTEMPORAL_STATE); return NONTEMPORAL; }
 aligned         { yy_push_state(ALIGNED_STATE); return ALIGNED; }
 align           { return ALIGN; }
-declare_target  { yyless(7); return DECLARE; }
+declare_target  { declare_target_underscore = true; yyless(7); return DECLARE; }
 "_target"       { return TARGET; }
-declare         { return DECLARE; }
+declare         { declare_target_underscore = false; return DECLARE; }
 uniform         { return UNIFORM; }
 inbranch        { return INBRANCH; }
 notinbranch     { return NOTINBRANCH; }
@@ -309,6 +349,7 @@ error           { return ERROR_DIR; }
 nothing         { return NOTHING; }
 masked          { return MASKED; }
 scope           { return SCOPE; }
+interop/{blank}*\(  { yy_push_state(INTEROP_CLAUSE_STATE); return INTEROP; }
 interop         { return INTEROP; }
 
 assume          { return ASSUME; }
@@ -326,10 +367,19 @@ interchange     { return INTERCHANGE; }
 reverse         { return REVERSE; }
 split           { return SPLIT; }
 stripe          { return STRIPE; }
-induction/{blank}      { return INDUCTION; }
-induction/"("          { return INDUCTION; }
+induction/{blank}      {
+                  induction_spec_paren_depth = 0;
+                  yy_push_state(INDUCTION_STATE);
+                  return INDUCTION;
+                }
+induction/"("          {
+                  induction_spec_paren_depth = 0;
+                  yy_push_state(INDUCTION_STATE);
+                  return INDUCTION;
+                }
 
-end             { return END; }
+enddo           { compact_enddo = true; yyless(3); return END; }
+end             { compact_enddo = false; return END; }
 score           { return SCORE; }
 condition       { yy_push_state(CONDITION_STATE); return CONDITION; }
 kind            { return KIND; }
@@ -362,8 +412,10 @@ detach          { return DETACH; }
 
 taskloop        { return TASKLOOP; }
 taskyield       { return TASKYIELD; }
-grainsize       { return GRAINSIZE; }
-num_tasks       { return NUM_TASKS; }
+grainsize/{blank}       { yy_push_state(GRAINSIZE_STATE); return GRAINSIZE; }
+grainsize/"("           { yy_push_state(GRAINSIZE_STATE); return GRAINSIZE; }
+num_tasks/{blank}       { yy_push_state(NUM_TASKS_STATE); return NUM_TASKS; }
+num_tasks/"("           { yy_push_state(NUM_TASKS_STATE); return NUM_TASKS; }
 nogroup         { return NOGROUP; }
 
 requires                  { return REQUIRES; } 
@@ -477,17 +529,17 @@ combiner                  { return COMBINER; }
 adjust_args/{blank}       { yy_push_state(ADJUST_ARGS_STATE); return ADJUST_ARGS; }
 adjust_args/"("           { yy_push_state(ADJUST_ARGS_STATE); return ADJUST_ARGS; }
 append_args               { return APPEND_ARGS; }
-apply/{blank}             { yy_push_state(APPLY_STATE); return APPLY; }
-apply/"("                 { yy_push_state(APPLY_STATE); return APPLY; }
+apply/{blank}             { push_apply_state(); return APPLY; }
+apply/"("                 { push_apply_state(); return APPLY; }
 traits                    { return TRAITS; }
 no_openmp                 { return NO_OPENMP; }
 no_openmp_constructs      { return NO_OPENMP_CONSTRUCTS; }
 no_openmp_routines        { return NO_OPENMP_ROUTINES; }
 no_parallelism            { return NO_PARALLELISM; }
-nocontext/{blank}         { return NOCONTEXT; }
-nocontext/"("             { return NOCONTEXT; }
-novariants/{blank}        { return NOVARIANTS; }
-novariants/"("            { return NOVARIANTS; }
+nocontext/{blank}         { yy_push_state(NOCONTEXT_STATE); return NOCONTEXT; }
+nocontext/"("             { yy_push_state(NOCONTEXT_STATE); return NOCONTEXT; }
+novariants/{blank}        { yy_push_state(NOVARIANTS_STATE); return NOVARIANTS; }
+novariants/"("            { yy_push_state(NOVARIANTS_STATE); return NOVARIANTS; }
 use                       { return USE; }
 system                    { return SYSTEM; }
 warp                      { return WARP; }
@@ -605,18 +657,53 @@ block                     {
 <IF_STATE>parallel{blank}*/:                { return PARALLEL; }
 <IF_STATE>simd{blank}*/:                    { return SIMD; }
 <IF_STATE>task{blank}*/:                    { return TASK; }
+<IF_STATE>task_iteration{blank}*/:          { return TASK_ITERATION; }
+<IF_STATE>taskgraph{blank}*/:               { return TASKGRAPH; }
 <IF_STATE>taskloop{blank}*/:                { return TASKLOOP; }
+<IF_STATE>teams{blank}*/:                   { return TEAMS; }
 <IF_STATE>cancel{blank}*/:                  { return CANCEL; }
 <IF_STATE>target/{blank}*[{data}{enter}{exit}{update}{:}] { return TARGET; }
 <IF_STATE>data/{blank}*:                    { return DATA; }
 <IF_STATE>enter/{blank}*data                { return ENTER; }
 <IF_STATE>exit/{blank}*data                 { return EXIT; }
 <IF_STATE>update/{blank}*:                  { return UPDATE; }
-<IF_STATE>"("                               { return '('; }
+
+<IF_STATE>"("                               {
+                                              if (if_paren_depth == 0) {
+                                                if_paren_depth++;
+                                                return '(';
+                                              }
+                                              yy_push_state(EXPR_STATE);
+                                              prepare_expression_capture('(');
+                                              parenthesis_local_count++;
+                                              parenthesis_global_count++;
+                                            }
 <IF_STATE>")"                               { yy_pop_state(); return ')'; }
 <IF_STATE>":"                               { return ':'; }
 <IF_STATE>{blank}*                          { ; }
 <IF_STATE>.                                 { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<NOCONTEXT_STATE>dispatch{blank}*/:         { return DISPATCH; }
+<NOCONTEXT_STATE>"("                       { return '('; }
+<NOCONTEXT_STATE>")"                       { yy_pop_state(); return ')'; }
+<NOCONTEXT_STATE>":"                       { return ':'; }
+<NOCONTEXT_STATE>{blank}*                  { ; }
+<NOCONTEXT_STATE>.                         { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<NOVARIANTS_STATE>dispatch{blank}*/:        { return DISPATCH; }
+<NOVARIANTS_STATE>"("                      { return '('; }
+<NOVARIANTS_STATE>")"                      { yy_pop_state(); return ')'; }
+<NOVARIANTS_STATE>":"                      { return ':'; }
+<NOVARIANTS_STATE>{blank}*                 { ; }
+<NOVARIANTS_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<INTEROP_CLAUSE_STATE>dispatch{blank}*/:    { return DISPATCH; }
+<INTEROP_CLAUSE_STATE>"("                  { return '('; }
+<INTEROP_CLAUSE_STATE>")"                  { yy_pop_state(); return ')'; }
+<INTEROP_CLAUSE_STATE>","                  { return ','; }
+<INTEROP_CLAUSE_STATE>":"                  { return ':'; }
+<INTEROP_CLAUSE_STATE>{blank}*             { ; }
+<INTEROP_CLAUSE_STATE>.                    { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 
 <PROC_BIND_STATE>master                     { return MASTER; }
@@ -681,6 +768,8 @@ block                     {
 
 <FIRSTPRIVATE_STATE>"("                     { return '('; }
 <FIRSTPRIVATE_STATE>")"                     { yy_pop_state(); return ')'; }
+<FIRSTPRIVATE_STATE>saved{blank}*/:         { return SAVED; }
+<FIRSTPRIVATE_STATE>":"                     { return ':'; }
 <FIRSTPRIVATE_STATE>{blank}*                { ; }
 <FIRSTPRIVATE_STATE>.                       { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
@@ -757,20 +846,70 @@ block                     {
 <INIT_STATE>"("                             { return '('; }
 <INIT_STATE>")"                             { yy_pop_state(); return ')'; }
 <INIT_STATE>":"                             { return ':'; }
+<INIT_STATE>","                             { return ','; }
+<INIT_STATE>prefer_type{blank}*/"("         { return PREFER_TYPE; }
+<INIT_STATE>mutexinoutset{blank}*/"("       { return MUTEXINOUTSET; }
+<INIT_STATE>inoutset{blank}*/"("            { return INOUTSET; }
+<INIT_STATE>inout{blank}*/"("               { return INOUT; }
+<INIT_STATE>out{blank}*/"("                 { return OUT; }
+<INIT_STATE>in{blank}*/"("                  { return IN; }
+<INIT_STATE>targetsync{blank}*/[,:]         { return TARGETSYNC; }
+<INIT_STATE>target{blank}*/[,:]             { return TARGET; }
+<INIT_STATE>depobj{blank}*/[,:]             { return DEPOBJ; }
+<INIT_STATE>interop{blank}*/[,:]            { return INTEROP; }
 <INIT_STATE>{blank}*                        { ; }
 <INIT_STATE>.                               { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
-<APPLY_STATE>"("                            { return '('; }
-<APPLY_STATE>")"                            { yy_pop_state(); return ')'; }
+<APPLY_STATE>"("                            { current_apply_paren_depth()++; return '('; }
+<APPLY_STATE>")"                            {
+                                              if (current_apply_paren_depth() > 0) {
+                                                current_apply_paren_depth()--;
+                                              }
+                                              if (current_apply_paren_depth() == 0) {
+                                                pop_apply_state();
+                                              }
+                                              return ')';
+                                            }
 <APPLY_STATE>":"                            { return ':'; }
+<APPLY_STATE>","                            { return ','; }
+<APPLY_STATE>unrollpartial                  { yyless(6); return UNROLL; }
+<APPLY_STATE>unrollfull                     { yyless(6); return UNROLL; }
+<APPLY_STATE>unroll                         { return UNROLL; }
+<APPLY_STATE>partial                        { return PARTIAL; }
+<APPLY_STATE>full                           { return FULL; }
+<APPLY_STATE>reverse                        { return REVERSE; }
+<APPLY_STATE>interchange                    { return INTERCHANGE; }
+<APPLY_STATE>nothing                        { return NOTHING; }
+<APPLY_STATE>tile                           { return TILE; }
+<APPLY_STATE>sizes                          { return SIZES; }
+<APPLY_STATE>apply/{blank}                  { push_apply_state(); return APPLY; }
+<APPLY_STATE>apply/"("                      { push_apply_state(); return APPLY; }
 <APPLY_STATE>{blank}*                       { ; }
 <APPLY_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ADJUST_ARGS_STATE>"("                      { return '('; }
 <ADJUST_ARGS_STATE>")"                      { yy_pop_state(); return ')'; }
 <ADJUST_ARGS_STATE>":"                      { return ':'; }
+<ADJUST_ARGS_STATE>","                      { return ','; }
+<ADJUST_ARGS_STATE>need_device_ptr/{blank}*: { return NEED_DEVICE_PTR; }
 <ADJUST_ARGS_STATE>{blank}*                 { ; }
 <ADJUST_ARGS_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<INDUCTION_STATE>step/{blank}*\(            { return STEP; }
+<INDUCTION_STATE>"("                         { induction_spec_paren_depth++; return '('; }
+<INDUCTION_STATE>")"                         {
+                                              if (induction_spec_paren_depth > 0) {
+                                                induction_spec_paren_depth--;
+                                              }
+                                              if (induction_spec_paren_depth == 0) {
+                                                yy_pop_state();
+                                              }
+                                              return ')';
+                                            }
+<INDUCTION_STATE>","                         { return ','; }
+<INDUCTION_STATE>":"                         { return ':'; }
+<INDUCTION_STATE>{blank}*                    { ; }
+<INDUCTION_STATE>.                           { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ORDERED_STATE>"("                          { yy_push_state(EXPR_STATE); return '('; }
 <ORDERED_STATE>")"                          { yy_pop_state(); return ')'; }
@@ -802,6 +941,20 @@ block                     {
 <NUM_THREADS_STATE>":"                      { return ':'; }
 <NUM_THREADS_STATE>{blank}*                 { ; }
 <NUM_THREADS_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<GRAINSIZE_STATE>strict/{blank}*:            { return STRICT; }
+<GRAINSIZE_STATE>"("                         { return '('; }
+<GRAINSIZE_STATE>")"                         { yy_pop_state(); return ')'; }
+<GRAINSIZE_STATE>":"                         { return ':'; }
+<GRAINSIZE_STATE>{blank}*                    { ; }
+<GRAINSIZE_STATE>.                           { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<NUM_TASKS_STATE>strict/{blank}*:            { return STRICT; }
+<NUM_TASKS_STATE>"("                         { return '('; }
+<NUM_TASKS_STATE>")"                         { yy_pop_state(); return ')'; }
+<NUM_TASKS_STATE>":"                         { return ':'; }
+<NUM_TASKS_STATE>{blank}*                    { ; }
+<NUM_TASKS_STATE>.                           { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <ALIGNED_STATE>"("                          { return '('; }
 <ALIGNED_STATE>":"                          { return ':'; }
@@ -1250,6 +1403,9 @@ block                     {
 <MAP_STATE>close/{blank}*,                   { return MAP_MODIFIER_CLOSE; }
 <MAP_STATE>present/{blank}*,                 { return MAP_MODIFIER_PRESENT; }
 <MAP_STATE>self/{blank}*,                    { return MAP_MODIFIER_SELF; }
+<MAP_STATE>ref_ptee/{blank}*[,:]             { return MAP_REF_MODIFIER_REF_PTEE; }
+<MAP_STATE>ref_ptr_ptee/{blank}*[,:]         { return MAP_REF_MODIFIER_REF_PTR_PTEE; }
+<MAP_STATE>ref_ptr/{blank}*[,:]              { return MAP_REF_MODIFIER_REF_PTR; }
 <MAP_STATE>mapper/{blank}*"("                { prepare_expression_capture(); yy_push_state(MAP_MAPPER_STATE);return MAP_MODIFIER_MAPPER; }
 <MAP_STATE>iterator/{blank}*"("              { prepare_expression_capture(); yy_push_state(MAP_ITERATOR_STATE);return MAP_MODIFIER_ITERATOR; }
 <MAP_STATE>"("                               {
@@ -1263,10 +1419,11 @@ block                     {
                                              }
 <MAP_STATE>")"                               { b_within_variable_list = false; yy_pop_state(); return ')'; }
 <MAP_STATE>","                               { return ','; }
-<MAP_STATE>":"                               { return ':'; }
+<MAP_STATE>":"                               { yy_push_state(MAP_VAR_STATE); return ':'; }
 <MAP_STATE>to/{blank}*:                      { return MAP_TYPE_TO; }
 <MAP_STATE>from/{blank}*:                    { return MAP_TYPE_FROM; }
 <MAP_STATE>tofrom/{blank}*:                  { return MAP_TYPE_TOFROM; }
+<MAP_STATE>storage/{blank}*:                 { return MAP_TYPE_STORAGE; }
 <MAP_STATE>alloc/{blank}*:                   { return MAP_TYPE_ALLOC; }
 <MAP_STATE>release/{blank}*:                 { return MAP_TYPE_RELEASE; }
 <MAP_STATE>delete                            { return MAP_TYPE_DELETE; }
@@ -1274,6 +1431,21 @@ block                     {
 <MAP_STATE>self/{blank}*:                    { return MAP_TYPE_SELF; }
 <MAP_STATE>{blank}*                          { ; }
 <MAP_STATE>.                                 { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<MAP_VAR_STATE>"("                           {
+                                               yy_push_state(EXPR_STATE);
+                                               prepare_expression_capture();
+                                               unput('(');
+                                             }
+<MAP_VAR_STATE>")"                           {
+                                               b_within_variable_list = false;
+                                               yy_pop_state();
+                                               yy_pop_state();
+                                               return ')';
+                                             }
+<MAP_VAR_STATE>","                           { return ','; }
+<MAP_VAR_STATE>{blank}*                      { ; }
+<MAP_VAR_STATE>.                             { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <MAP_MAPPER_STATE>"("                        { return '('; }
 <MAP_MAPPER_STATE>")"                        { yy_pop_state(); return ')'; }
@@ -1540,6 +1712,25 @@ expr            {return (EXPRESSION); }
 
 %%
 
+static inline void push_apply_state() {
+  apply_paren_depth.push_back(0);
+  yy_push_state(APPLY_STATE);
+}
+
+static inline void pop_apply_state() {
+  if (!apply_paren_depth.empty()) {
+    apply_paren_depth.pop_back();
+  }
+  yy_pop_state();
+}
+
+static inline int &current_apply_paren_depth() {
+  if (apply_paren_depth.empty()) {
+    apply_paren_depth.push_back(0);
+  }
+  return apply_paren_depth.back();
+}
+
 /* Implementation of inline functions that use parser tokens */
 static inline int emit_expr_string_and_unput(char ch) {
   openmp_lval.stype = strdup(current_string.c_str());
@@ -1584,5 +1775,6 @@ void end_lexer(void) {
   while (yy_start_stack_ptr > 0) {
     yy_pop_state();
   };
+  openmp_reset_lexer_flags();
   yy_delete_buffer(YY_CURRENT_BUFFER);
 }
