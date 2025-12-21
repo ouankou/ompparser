@@ -3507,16 +3507,62 @@ target_parallel_loop_clause : if_target_parallel_clause
 target_parallel_loop_simd_clause : target_parallel_loop_clause
                                 | simd_clause
                                 ;
+target_loop_clause : if_target_clause
+                   | device_clause
+                   | map_clause
+                   | allocate_clause
+                   | private_clause
+                   | firstprivate_clause
+                   | lastprivate_clause
+                   | reduction_clause
+                   | in_reduction_clause
+                   | bind_clause
+                   | order_clause
+                   | collapse_clause
+                   | depend_with_modifier_clause
+                   | nowait_clause
+                   | uses_allocators_clause
+                   | is_device_ptr_clause
+                   | has_device_addr_clause
+                   | defaultmap_clause
+                   ;
+
+target_loop_clause_seq : target_loop_clause
+                       | target_loop_clause_seq target_loop_clause
+                       | target_loop_clause_seq ',' target_loop_clause
+                       ;
+
+target_loop_clause_optseq : /* empty */
+                          | target_loop_clause_seq
+                          ;
+
+target_loop_simd_clause : target_loop_clause
+                        | safelen_clause
+                        | simdlen_clause
+                        | aligned_clause
+                        | nontemporal_clause
+                        | linear_clause
+                        ;
+
+target_loop_simd_clause_seq : target_loop_simd_clause
+                            | target_loop_simd_clause_seq target_loop_simd_clause
+                            | target_loop_simd_clause_seq ',' target_loop_simd_clause
+                            ;
+
+target_loop_simd_clause_optseq : /* empty */
+                               | target_loop_simd_clause_seq
+                               ;
+
 target_loop_directive : TARGET LOOP {
                         current_directive = new OpenMPDirective(OMPD_target_loop);
                      }
-                     target_teams_distribute_parallel_for_simd_clause_optseq
+                     target_loop_clause_optseq
                    ;
 target_loop_simd_directive : TARGET LOOP SIMD {
                              current_directive =
                                  new OpenMPDirective(OMPD_target_loop_simd);
                            }
-                           target_teams_distribute_parallel_for_simd_clause_optseq
+                           target_loop_simd_clause_optseq
                          ;
 target_simd_directive : TARGET SIMD{
                         current_directive = new OpenMPDirective(OMPD_target_simd);
