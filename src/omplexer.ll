@@ -138,6 +138,7 @@ static bool compact_enddo = false;
 
 static std::vector<int> apply_paren_depth;
 static int induction_spec_paren_depth = 0;
+static bool induction_step_waiting = false;  // True when expecting expression after step(
 static int if_paren_depth = 0;
 
 static inline void push_apply_state();
@@ -895,8 +896,17 @@ block                     {
 <ADJUST_ARGS_STATE>{blank}*                 { ; }
 <ADJUST_ARGS_STATE>.                        { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
-<INDUCTION_STATE>step/{blank}*\(            { return STEP; }
-<INDUCTION_STATE>"("                         { induction_spec_paren_depth++; return '('; }
+<INDUCTION_STATE>step/{blank}*\(            { induction_step_waiting = true; return STEP; }
+<INDUCTION_STATE>"("                         {
+                                              induction_spec_paren_depth++;
+                                              if (induction_step_waiting) {
+                                                // After step(, we need to capture expression
+                                                induction_step_waiting = false;
+                                                yy_push_state(EXPR_STATE);
+                                                return '(';
+                                              }
+                                              return '(';
+                                            }
 <INDUCTION_STATE>")"                         {
                                               if (induction_spec_paren_depth > 0) {
                                                 induction_spec_paren_depth--;
