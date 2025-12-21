@@ -750,6 +750,9 @@ void OpenMPMapClause::generateDOT(std::ofstream &dot_file, int depth, int index,
   case OMPC_MAP_TYPE_tofrom:
     parameter_string += "tofrom";
     break;
+  case OMPC_MAP_TYPE_storage:
+    parameter_string += "storage";
+    break;
   case OMPC_MAP_TYPE_alloc:
     parameter_string += "alloc";
     break;

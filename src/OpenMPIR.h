@@ -29,11 +29,6 @@ enum OpenMPBaseLang { Lang_C, Lang_Cplusplus, Lang_Fortran, Lang_unknown };
 // Global flag for clause normalization control
 extern bool normalize_clauses_global;
 
-OpenMPInitClauseKind parseInitKind(const std::string &text,
-                                   std::string &raw_output);
-OpenMPAdjustArgsModifier parseAdjustArgsModifier(const std::string &text,
-                                                 std::string &raw_output);
-
 class SourceLocation {
   int line;
   int column;
@@ -111,7 +106,7 @@ public:
   // a list of expressions or variables that are language-specific for the
   // clause, ompparser does not parse them, instead, it only stores them as
   // strings
-  void addLangExpr(const char *expression,
+  virtual void addLangExpr(const char *expression,
                    OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
                    int line = 0, int col = 0);
 
@@ -588,6 +583,8 @@ public:
   struct ApplyTransform {
     OpenMPApplyTransformKind kind = OMPC_APPLY_TRANSFORM_unknown;
     std::string argument;
+    std::unique_ptr<OpenMPApplyClause> nested_apply;
+    OpenMPClauseSeparator separator = OMPC_CLAUSE_SEP_comma;
   };
 
 protected:
@@ -599,7 +596,10 @@ public:
 
   void setLabel(const std::string &value) { label = value; }
   void addTransformation(OpenMPApplyTransformKind kind,
-                         const std::string &argument = std::string());
+                         const std::string &argument = std::string(),
+                         OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma);
+  void addNestedApply(OpenMPApplyClause *nested,
+                      OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma);
   const std::string &getLabel() const { return label; }
   const std::vector<ApplyTransform> &getTransformations() const {
     return transforms;
@@ -629,7 +629,9 @@ private:
 public:
   OpenMPInductionClause() : OpenMPClause(OMPC_induction) {}
 
-  void setSpecification(const char *raw_spec);
+  void addStepExpression(const char *expression);
+  void addBinding(const char *label, const char *expression);
+  void addPassthroughItem(const char *expression);
   const std::string &getStepExpression() const { return step_expression; }
   const std::vector<Binding> &getBindings() const { return bindings; }
   const std::vector<std::string> &getPassthroughItems() const {
@@ -641,22 +643,57 @@ public:
 
 class OpenMPInitClause : public OpenMPClause {
 private:
-  OpenMPInitClauseKind kind = OMPC_INIT_KIND_unknown;
-  std::string raw_kind;
+  std::vector<OpenMPInitClauseKind> interop_types;
+  std::vector<std::string> raw_interop_types;  // For unknown/vendor types
+  bool has_directive_name_modifier = false;
+  OpenMPDirectiveKind directive_name_modifier = OMPD_unknown;
+  bool has_prefer_type = false;
+  std::string prefer_type_spec;
+  bool has_depinfo = false;
+  OpenMPDependClauseType depinfo_type = OMPC_DEPENDENCE_TYPE_unknown;
+  std::string depinfo_locator;
   std::string operand;
 
 public:
   OpenMPInitClause() : OpenMPClause(OMPC_init) {}
 
-  void setKind(OpenMPInitClauseKind value, const std::string &raw = "") {
-    kind = value;
-    raw_kind = raw;
+  void addInteropType(OpenMPInitClauseKind value);
+  void addInteropType(const std::string &raw_type);  // For unknown types
+  const std::vector<OpenMPInitClauseKind> &getInteropTypes() const {
+    return interop_types;
   }
+  const std::vector<std::string> &getRawInteropTypes() const {
+    return raw_interop_types;
+  }
+
+  void setDirectiveNameModifier(OpenMPDirectiveKind value) {
+    has_directive_name_modifier = true;
+    directive_name_modifier = value;
+  }
+  bool hasDirectiveNameModifier() const { return has_directive_name_modifier; }
+  OpenMPDirectiveKind getDirectiveNameModifier() const {
+    return directive_name_modifier;
+  }
+
+  void setPreferType(const std::string &spec) {
+    has_prefer_type = true;
+    prefer_type_spec = spec;
+  }
+  bool hasPreferType() const { return has_prefer_type; }
+  const std::string &getPreferTypeSpec() const { return prefer_type_spec; }
+
+  void setDepinfo(OpenMPDependClauseType type, const std::string &locator) {
+    has_depinfo = true;
+    depinfo_type = type;
+    depinfo_locator = locator;
+  }
+  bool hasDepinfo() const { return has_depinfo; }
+  OpenMPDependClauseType getDepinfoType() const { return depinfo_type; }
+  const std::string &getDepinfoLocator() const { return depinfo_locator; }
+
   void setOperand(const std::string &value) { operand = value; }
-  OpenMPInitClauseKind getKind() const { return kind; }
-  const std::string &getRawKind() const { return raw_kind; }
   const std::string &getOperand() const { return operand; }
-  std::string toString();
+  std::string toString() override;
 };
 
 class OpenMPAdjustArgsClause : public OpenMPClause {
@@ -1221,6 +1258,31 @@ public:
   std::string toString();
 };
 
+class OpenMPFirstprivateClause : public OpenMPClause {
+  std::vector<bool> saved_statuses;
+  bool current_saved_state = false;
+
+public:
+  OpenMPFirstprivateClause() : OpenMPClause(OMPC_firstprivate) {}
+
+  void setSaved(bool value = true) { current_saved_state = value; }
+  bool isSaved() const { 
+      // Return true if any operand is saved, or based on current state?
+      // For now returning current state might be misleading if used for whole clause.
+      // But preserving checks: return true if any is saved.
+      for(bool b : saved_statuses) if(b) return true;
+      return current_saved_state;
+  }
+  
+  const std::vector<bool>& getSavedStatuses() const { return saved_statuses; }
+
+  void addLangExpr(const char *expression,
+                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
+                   int line = 0, int col = 0) override;
+
+  std::string toString() override;
+};
+
 // if Clause
 class OpenMPIfClause : public OpenMPClause {
 
@@ -1662,6 +1724,7 @@ protected:
   OpenMPMapClauseModifier modifier2;
   OpenMPMapClauseModifier modifier3;
   OpenMPMapClauseType type = OMPC_MAP_TYPE_unknown;
+  OpenMPMapClauseRefModifier ref_modifier = OMPC_MAP_REF_MODIFIER_unspecified;
   std::string mapper_identifier;
   struct Iterator {
     std::string qualifier;
@@ -1679,15 +1742,20 @@ public:
   OpenMPMapClause(OpenMPMapClauseModifier _modifier1,
                   OpenMPMapClauseModifier _modifier2,
                   OpenMPMapClauseModifier _modifier3, OpenMPMapClauseType _type,
+                  OpenMPMapClauseRefModifier _ref_modifier,
                   std::string _mapper_identifier)
       : OpenMPClause(OMPC_map), modifier1(_modifier1), modifier2(_modifier2),
-        modifier3(_modifier3), type(_type),
+        modifier3(_modifier3), type(_type), ref_modifier(_ref_modifier),
         mapper_identifier(_mapper_identifier) {};
 
   OpenMPMapClauseModifier getModifier1() { return modifier1; };
   OpenMPMapClauseModifier getModifier2() { return modifier2; };
   OpenMPMapClauseModifier getModifier3() { return modifier3; };
   OpenMPMapClauseType getType() { return type; };
+  OpenMPMapClauseRefModifier getRefModifier() const { return ref_modifier; }
+  void setRefModifier(OpenMPMapClauseRefModifier value) {
+    ref_modifier = value;
+  }
   std::string getMapperIdentifier() { return mapper_identifier; };
   void addIterator(const Iterator &it) { iterators.push_back(it); }
   void addIterator(const std::string &qualifier, const std::string &var,
@@ -1713,7 +1781,8 @@ public:
   static OpenMPClause *addMapClause(OpenMPDirective *, OpenMPMapClauseModifier,
                                     OpenMPMapClauseModifier,
                                     OpenMPMapClauseModifier,
-                                    OpenMPMapClauseType, std::string);
+                                    OpenMPMapClauseType,
+                                    OpenMPMapClauseRefModifier, std::string);
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
 };
@@ -1832,6 +1901,226 @@ public:
     return &usesAllocatorsAllocatorSequenceView;
   };
   static OpenMPClause *addUsesAllocatorsClause(OpenMPDirective *directive);
+  std::string toString();
+};
+
+// absent clause
+class OpenMPAbsentClause : public OpenMPClause {
+protected:
+  std::vector<OpenMPDirectiveKind> directive_list;
+
+public:
+  OpenMPAbsentClause() : OpenMPClause(OMPC_absent) {};
+
+  void addDirective(OpenMPDirectiveKind kind) {
+    directive_list.push_back(kind);
+  }
+
+  const std::vector<OpenMPDirectiveKind> &getDirectives() const {
+    return directive_list;
+  }
+
+  std::string toString() override;
+};
+
+// contains clause
+class OpenMPContainsClause : public OpenMPClause {
+protected:
+  std::vector<OpenMPDirectiveKind> directive_list;
+
+public:
+  OpenMPContainsClause() : OpenMPClause(OMPC_contains) {};
+
+  void addDirective(OpenMPDirectiveKind kind) {
+    directive_list.push_back(kind);
+  }
+
+  const std::vector<OpenMPDirectiveKind> &getDirectives() const {
+    return directive_list;
+  }
+
+  std::string toString() override;
+};
+
+// graph_id clause
+class OpenMPGraphIdClause : public OpenMPClause {
+public:
+  OpenMPGraphIdClause() : OpenMPClause(OMPC_graph_id) {}
+  std::string toString() override;
+};
+
+// graph_reset clause
+class OpenMPGraphResetClause : public OpenMPClause {
+public:
+  OpenMPGraphResetClause() : OpenMPClause(OMPC_graph_reset) {}
+  std::string toString() override;
+};
+
+// transparent clause
+class OpenMPTransparentClause : public OpenMPClause {
+public:
+  OpenMPTransparentClause() : OpenMPClause(OMPC_transparent) {}
+  std::string toString() override;
+};
+
+// replayable clause
+class OpenMPReplayableClause : public OpenMPClause {
+public:
+  OpenMPReplayableClause() : OpenMPClause(OMPC_replayable) {}
+  std::string toString() override;
+};
+
+// threadset clause
+class OpenMPThreadsetClause : public OpenMPClause {
+public:
+  OpenMPThreadsetClause() : OpenMPClause(OMPC_threadset) {}
+  std::string toString() override;
+};
+
+// indirect clause
+class OpenMPIndirectClause : public OpenMPClause {
+public:
+  OpenMPIndirectClause() : OpenMPClause(OMPC_indirect) {}
+  std::string toString() override;
+};
+
+// local clause
+class OpenMPLocalClause : public OpenMPClause {
+public:
+  OpenMPLocalClause() : OpenMPClause(OMPC_local) {}
+  std::string toString() override;
+};
+
+// init_complete clause
+class OpenMPInitCompleteClause : public OpenMPClause {
+public:
+  OpenMPInitCompleteClause() : OpenMPClause(OMPC_init_complete) {}
+  std::string toString() override;
+};
+
+// safesync clause
+class OpenMPSafesyncClause : public OpenMPClause {
+public:
+  OpenMPSafesyncClause() : OpenMPClause(OMPC_safesync) {}
+  std::string toString() override;
+};
+
+// device_safesync clause
+class OpenMPDeviceSafesyncClause : public OpenMPClause {
+public:
+  OpenMPDeviceSafesyncClause() : OpenMPClause(OMPC_device_safesync) {}
+  std::string toString() override;
+};
+
+// memscope clause
+class OpenMPMemscopeClause : public OpenMPClause {
+public:
+  OpenMPMemscopeClause() : OpenMPClause(OMPC_memscope) {}
+  std::string toString() override;
+};
+
+// looprange clause
+class OpenMPLooprangeClause : public OpenMPClause {
+public:
+  OpenMPLooprangeClause() : OpenMPClause(OMPC_looprange) {}
+  std::string toString() override;
+};
+
+// permutation clause
+class OpenMPPermutationClause : public OpenMPClause {
+public:
+  OpenMPPermutationClause() : OpenMPClause(OMPC_permutation) {}
+  std::string toString() override;
+};
+
+// counts clause
+class OpenMPCountsClause : public OpenMPClause {
+public:
+  OpenMPCountsClause() : OpenMPClause(OMPC_counts) {}
+  std::string toString() override;
+};
+
+// inductor clause
+class OpenMPInductorClause : public OpenMPClause {
+public:
+  OpenMPInductorClause() : OpenMPClause(OMPC_inductor) {}
+  std::string toString() override;
+};
+
+// collector clause
+class OpenMPCollectorClause : public OpenMPClause {
+public:
+  OpenMPCollectorClause() : OpenMPClause(OMPC_collector) {}
+  std::string toString() override;
+};
+
+// combiner clause
+class OpenMPCombinerClause : public OpenMPClause {
+public:
+  OpenMPCombinerClause() : OpenMPClause(OMPC_combiner) {}
+  std::string toString() override;
+};
+
+// no_openmp clause
+class OpenMPNoOpenmpClause : public OpenMPClause {
+public:
+  OpenMPNoOpenmpClause() : OpenMPClause(OMPC_no_openmp) {}
+  std::string toString() override;
+};
+
+// no_openmp_constructs clause
+class OpenMPNoOpenmpConstructsClause : public OpenMPClause {
+public:
+  OpenMPNoOpenmpConstructsClause() : OpenMPClause(OMPC_no_openmp_constructs) {}
+  std::string toString() override;
+};
+
+// no_openmp_routines clause
+class OpenMPNoOpenmpRoutinesClause : public OpenMPClause {
+public:
+  OpenMPNoOpenmpRoutinesClause() : OpenMPClause(OMPC_no_openmp_routines) {}
+  std::string toString() override;
+};
+
+// no_parallelism clause
+class OpenMPNoParallelismClause : public OpenMPClause {
+public:
+  OpenMPNoParallelismClause() : OpenMPClause(OMPC_no_parallelism) {}
+  std::string toString() override;
+};
+
+// nocontext clause
+class OpenMPNocontextClause : public OpenMPClause {
+public:
+  OpenMPNocontextClause() : OpenMPClause(OMPC_nocontext) {}
+  std::string toString() override;
+};
+
+// novariants clause
+class OpenMPNovariantsClause : public OpenMPClause {
+public:
+  OpenMPNovariantsClause() : OpenMPClause(OMPC_novariants) {}
+  std::string toString() override;
+};
+
+// enter clause
+class OpenMPEnterClause : public OpenMPClause {
+public:
+  OpenMPEnterClause() : OpenMPClause(OMPC_enter) {}
+  std::string toString() override;
+};
+
+// use clause
+class OpenMPUseClause : public OpenMPClause {
+public:
+  OpenMPUseClause() : OpenMPClause(OMPC_use) {}
+  std::string toString() override;
+};
+
+// holds clause
+class OpenMPHoldsClause : public OpenMPClause {
+public:
+  OpenMPHoldsClause() : OpenMPClause(OMPC_holds) {}
   std::string toString();
 };
 

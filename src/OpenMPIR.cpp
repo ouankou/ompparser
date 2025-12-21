@@ -103,101 +103,6 @@ std::string formatArraySubscripts(const std::string &expr) {
   return formatted;
 }
 
-std::vector<std::string> splitTopLevel(const std::string &text, char separator) {
-  std::vector<std::string> parts;
-  std::string current;
-  int paren_depth = 0;
-  int bracket_depth = 0;
-  int brace_depth = 0;
-  bool in_single_quote = false;
-  bool in_double_quote = false;
-
-  for (char ch : text) {
-    if (ch == '\'' && !in_double_quote) {
-      in_single_quote = !in_single_quote;
-    } else if (ch == '"' && !in_single_quote) {
-      in_double_quote = !in_double_quote;
-    }
-    if (!in_single_quote && !in_double_quote) {
-      if (ch == '(') {
-        ++paren_depth;
-      } else if (ch == ')') {
-        --paren_depth;
-      } else if (ch == '[') {
-        ++bracket_depth;
-      } else if (ch == ']') {
-        --bracket_depth;
-      } else if (ch == '{') {
-        ++brace_depth;
-      } else if (ch == '}') {
-        --brace_depth;
-      }
-      if (ch == separator && paren_depth == 0 && bracket_depth == 0 &&
-          brace_depth == 0) {
-        parts.push_back(current);
-        current.clear();
-        continue;
-      }
-    }
-    current.push_back(ch);
-  }
-  if (!current.empty()) {
-    parts.push_back(current);
-  }
-  return parts;
-}
-
-size_t findTopLevel(const std::string &text, char target) {
-  int paren_depth = 0;
-  int bracket_depth = 0;
-  int brace_depth = 0;
-  bool in_single_quote = false;
-  bool in_double_quote = false;
-
-  for (size_t i = 0; i < text.size(); ++i) {
-    char ch = text[i];
-    if (ch == '\'' && !in_double_quote) {
-      in_single_quote = !in_single_quote;
-    } else if (ch == '"' && !in_single_quote) {
-      in_double_quote = !in_double_quote;
-    }
-    if (!in_single_quote && !in_double_quote) {
-      if (ch == '(') {
-        ++paren_depth;
-      } else if (ch == ')') {
-        --paren_depth;
-      } else if (ch == '[') {
-        ++bracket_depth;
-      } else if (ch == ']') {
-        --bracket_depth;
-      } else if (ch == '{') {
-        ++brace_depth;
-      } else if (ch == '}') {
-        --brace_depth;
-      }
-      if (ch == target && paren_depth == 0 && bracket_depth == 0 &&
-          brace_depth == 0) {
-        return i;
-      }
-    }
-  }
-  return std::string::npos;
-}
-
-void normalizeApplyToken(std::string &value) {
-  size_t pos = value.find("unrollpartial");
-  if (pos != std::string::npos) {
-    value.replace(pos, std::strlen("unrollpartial"), "unroll partial");
-  }
-  pos = value.find("unrollfull");
-  if (pos != std::string::npos) {
-    value.replace(pos, std::strlen("unrollfull"), "unroll full");
-  }
-  while (!value.empty() && value.back() == ':') {
-    value.pop_back();
-  }
-}
-
 void tightenScopeOps(std::string &text) {
   size_t p = 0;
   while ((p = text.find(":", p)) != std::string::npos) {
@@ -232,9 +137,6 @@ std::string normalizeClauseExpression(OpenMPClauseKind kind,
                                       const char *expression) {
   std::string result = expression ? std::string(expression) : std::string();
   result = formatArraySubscripts(result);
-  if (kind == OMPC_apply) {
-    normalizeApplyToken(result);
-  }
   if (kind == OMPC_combiner) {
     tightenScopeOps(result);
   }
@@ -243,71 +145,25 @@ std::string normalizeClauseExpression(OpenMPClauseKind kind,
 
 } // namespace
 
-OpenMPInitClauseKind parseInitKind(const std::string &text,
-                                   std::string &raw_output) {
-  std::string lowered = text;
-  std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-                 [](unsigned char ch) { return std::tolower(ch); });
-  raw_output = text;
-  if (lowered == "target") {
-    return OMPC_INIT_KIND_target;
-  }
-  if (lowered == "targetsync") {
-    return OMPC_INIT_KIND_targetsync;
-  }
-  return OMPC_INIT_KIND_unknown;
-}
-
-OpenMPAdjustArgsModifier parseAdjustArgsModifier(
-    const std::string &text, std::string &raw_output) {
-  std::string lowered = text;
-  std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-                 [](unsigned char ch) { return std::tolower(ch); });
-  raw_output = text;
-  if (lowered == "need_device_ptr") {
-    return OMPC_ADJUST_ARGS_need_device_ptr;
-  }
-  return OMPC_ADJUST_ARGS_unknown;
-}
-
 void OpenMPApplyClause::addTransformation(OpenMPApplyTransformKind kind,
-                                          const std::string &argument) {
+                                          const std::string &argument,
+                                          OpenMPClauseSeparator sep) {
   ApplyTransform t;
   t.kind = kind;
-  t.argument = argument;
+  t.argument = trimWhitespace(argument);
+  t.separator = sep;
+  transforms.push_back(std::move(t));
+}
 
-  if (kind == OMPC_APPLY_TRANSFORM_unknown) {
-    std::string normalized = argument;
-    normalizeApplyToken(normalized);
-    t.argument = normalized;
-
-    std::string lowered = normalized;
-    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-                   [](unsigned char ch) { return std::tolower(ch); });
-
-    auto extractArgument = [&](const std::string &text,
-                               const std::string &prefix) -> std::string {
-      size_t lparen = text.find('(', prefix.size());
-      size_t rparen = text.find_last_of(')');
-      if (lparen != std::string::npos && rparen != std::string::npos &&
-          rparen > lparen + 1) {
-        return trimWhitespace(text.substr(lparen + 1, rparen - lparen - 1));
-      }
-      return std::string();
-    };
-
-    if (lowered.rfind("unroll partial", 0) == 0) {
-      t.kind = OMPC_APPLY_TRANSFORM_unroll_partial;
-      t.argument = extractArgument(normalized, "unroll partial");
-    } else if (lowered.rfind("unroll full", 0) == 0) {
-      t.kind = OMPC_APPLY_TRANSFORM_unroll_full;
-      t.argument.clear();
-    } else if (lowered.rfind("unroll", 0) == 0) {
-      t.kind = OMPC_APPLY_TRANSFORM_unroll;
-      t.argument = extractArgument(normalized, "unroll");
-    }
+void OpenMPApplyClause::addNestedApply(OpenMPApplyClause *nested,
+                                       OpenMPClauseSeparator sep) {
+  if (nested == nullptr) {
+    return;
   }
-
+  ApplyTransform t;
+  t.kind = OMPC_APPLY_TRANSFORM_apply;
+  t.nested_apply.reset(nested);
+  t.separator = sep;
   transforms.push_back(std::move(t));
 }
 
@@ -381,91 +237,58 @@ void OpenMPClause::addLangExpr(const char *expression,
   locations.push_back(SourceLocation(line, col));
 };
 
-void OpenMPInductionClause::setSpecification(const char *raw_spec) {
-  step_expression.clear();
-  bindings.clear();
-  passthrough_items.clear();
-  sequence.clear();
+void OpenMPFirstprivateClause::addLangExpr(const char *expression,
+                                           OpenMPClauseSeparator sep,
+                                           int line, int col) {
+  size_t old_size = expressions.size();
+  OpenMPClause::addLangExpr(expression, sep, line, col);
+  if (expressions.size() > old_size) {
+    saved_statuses.push_back(current_saved_state);
+  }
+};
 
-  if (raw_spec == nullptr) {
+void OpenMPInductionClause::addStepExpression(const char *expression) {
+  if (expression == nullptr) {
     return;
   }
-  std::string raw = trimWhitespace(normalizeRawExpression(raw_spec));
-  auto items = splitTopLevel(raw, ',');
-  for (const auto &item : items) {
-    std::string cleaned = trimWhitespace(item);
-    if (cleaned.empty()) {
-      continue;
-    }
-    bool handled = false;
+  std::string cleaned = trimWhitespace(std::string(expression));
+  std::string normalized =
+      normalizeClauseExpression(OMPC_induction, cleaned.c_str());
 
-    // Detect step(<expr>) entries
-    size_t lparen = findTopLevel(cleaned, '(');
-    if (lparen != std::string::npos) {
-      std::string head = trimWhitespace(cleaned.substr(0, lparen));
-      std::string lowered_head = head;
-      std::transform(lowered_head.begin(), lowered_head.end(),
-                     lowered_head.begin(),
-                     [](unsigned char ch) { return std::tolower(ch); });
-      int depth = 0;
-      size_t rparen = std::string::npos;
-      for (size_t i = lparen; i < cleaned.size(); ++i) {
-        if (cleaned[i] == '(') {
-          ++depth;
-        } else if (cleaned[i] == ')') {
-          --depth;
-          if (depth == 0) {
-            rparen = i;
-            break;
-          }
-        }
-      }
-      if (lowered_head == "step" && rparen != std::string::npos) {
-        std::string inner =
-            trimWhitespace(cleaned.substr(lparen + 1, rparen - lparen - 1));
-        std::string normalized_inner =
-            normalizeClauseExpression(OMPC_induction, inner.c_str());
-        if (step_expression.empty()) {
-          step_expression = normalized_inner;
-          sequence.push_back({ItemStep, 0});
-        } else {
-          passthrough_items.push_back(normalized_inner);
-          sequence.push_back(
-              {ItemPassthrough, passthrough_items.size() - 1});
-        }
-        std::string trailing = trimWhitespace(cleaned.substr(rparen + 1));
-        if (!trailing.empty()) {
-          passthrough_items.push_back(normalizeClauseExpression(
-              OMPC_induction, trailing.c_str()));
-          sequence.push_back(
-              {ItemPassthrough, passthrough_items.size() - 1});
-        }
-        handled = true;
-      }
-    }
-
-    if (handled) {
-      continue;
-    }
-
-    // Parse <label> : <expr> bindings at the top level
-    size_t colon = findTopLevel(cleaned, ':');
-    if (colon != std::string::npos) {
-      Binding binding;
-      binding.label = trimWhitespace(cleaned.substr(0, colon));
-      binding.expression = normalizeClauseExpression(
-          OMPC_induction, trimWhitespace(cleaned.substr(colon + 1)).c_str());
-      bindings.push_back(std::move(binding));
-      sequence.push_back({ItemBinding, bindings.size() - 1});
-      handled = true;
-    }
-
-    if (!handled) {
-      passthrough_items.push_back(
-          normalizeClauseExpression(OMPC_induction, cleaned.c_str()));
-      sequence.push_back({ItemPassthrough, passthrough_items.size() - 1});
-    }
+  if (step_expression.empty()) {
+    step_expression = std::move(normalized);
+    sequence.push_back({ItemStep, 0});
+    return;
   }
+
+  passthrough_items.push_back(std::move(normalized));
+  sequence.push_back({ItemPassthrough, passthrough_items.size() - 1});
+}
+
+void OpenMPInductionClause::addBinding(const char *label,
+                                       const char *expression) {
+  if (expression == nullptr) {
+    return;
+  }
+  Binding binding;
+  if (label != nullptr) {
+    binding.label = trimWhitespace(std::string(label));
+  }
+  std::string cleaned = trimWhitespace(std::string(expression));
+  binding.expression =
+      normalizeClauseExpression(OMPC_induction, cleaned.c_str());
+  bindings.push_back(std::move(binding));
+  sequence.push_back({ItemBinding, bindings.size() - 1});
+}
+
+void OpenMPInductionClause::addPassthroughItem(const char *expression) {
+  if (expression == nullptr) {
+    return;
+  }
+  std::string cleaned = trimWhitespace(std::string(expression));
+  passthrough_items.push_back(
+      normalizeClauseExpression(OMPC_induction, cleaned.c_str()));
+  sequence.push_back({ItemPassthrough, passthrough_items.size() - 1});
 }
 
 void OpenMPAdjustArgsClause::addArgument(const std::string &arg) {
@@ -544,31 +367,111 @@ void OpenMPUsesAllocatorsClause::addUsesAllocatorsAllocatorSequence(
       std::move(usesAllocatorsAllocator));
 }
 
-std::string OpenMPInitClause::toString() {
-  std::string result = "init(";
-  std::string kind_string;
-  switch (kind) {
-  case OMPC_INIT_KIND_target:
-    kind_string = "target";
-    break;
-  case OMPC_INIT_KIND_targetsync:
-    kind_string = "targetsync";
-    break;
-  case OMPC_INIT_KIND_unknown:
-  default:
-    kind_string = raw_kind;
-    break;
+void OpenMPInitClause::addInteropType(OpenMPInitClauseKind value) {
+  if (value == OMPC_INIT_KIND_unknown) {
+    return;
   }
-
-  if (!kind_string.empty()) {
-    result += kind_string;
-    if (!operand.empty()) {
-      result += ": ";
+  for (OpenMPInitClauseKind existing : interop_types) {
+    if (existing == value) {
+      return;
     }
   }
-  if (!operand.empty()) {
-    result += operand;
+  interop_types.push_back(value);
+}
+
+void OpenMPInitClause::addInteropType(const std::string &raw_type) {
+  if (raw_type.empty()) {
+    return;
   }
+  for (const std::string &existing : raw_interop_types) {
+    if (existing == raw_type) {
+      return;
+    }
+  }
+  raw_interop_types.push_back(raw_type);
+}
+
+std::string OpenMPInitClause::toString() {
+  std::string result = "init(";
+  bool emitted_modifier = false;
+
+  auto appendModifier = [&](const std::string &text) {
+    if (text.empty()) {
+      return;
+    }
+    if (emitted_modifier) {
+      result += ", ";
+    }
+    result += text;
+    emitted_modifier = true;
+  };
+
+  if (has_directive_name_modifier) {
+    switch (directive_name_modifier) {
+    case OMPD_depobj:
+      appendModifier("depobj");
+      break;
+    case OMPD_interop:
+      appendModifier("interop");
+      break;
+    default:
+      break;
+    }
+  }
+
+  if (has_prefer_type) {
+    appendModifier("prefer_type(" + prefer_type_spec + ")");
+  }
+
+  if (has_depinfo) {
+    std::string depinfo_keyword;
+    switch (depinfo_type) {
+    case OMPC_DEPENDENCE_TYPE_in:
+      depinfo_keyword = "in";
+      break;
+    case OMPC_DEPENDENCE_TYPE_out:
+      depinfo_keyword = "out";
+      break;
+    case OMPC_DEPENDENCE_TYPE_inout:
+      depinfo_keyword = "inout";
+      break;
+    case OMPC_DEPENDENCE_TYPE_inoutset:
+      depinfo_keyword = "inoutset";
+      break;
+    case OMPC_DEPENDENCE_TYPE_mutexinoutset:
+      depinfo_keyword = "mutexinoutset";
+      break;
+    default:
+      break;
+    }
+    if (!depinfo_keyword.empty()) {
+      appendModifier(depinfo_keyword + "(" + depinfo_locator + ")");
+    }
+  }
+
+  for (OpenMPInitClauseKind kind : interop_types) {
+    switch (kind) {
+    case OMPC_INIT_KIND_target:
+      appendModifier("target");
+      break;
+    case OMPC_INIT_KIND_targetsync:
+      appendModifier("targetsync");
+      break;
+    case OMPC_INIT_KIND_unknown:
+    default:
+      break;
+    }
+  }
+
+  // Emit raw/unknown interop types
+  for (const std::string &raw_type : raw_interop_types) {
+    appendModifier(raw_type);
+  }
+
+  if (emitted_modifier) {
+    result += ": ";
+  }
+  result += operand;
   result += ")";
   result += " ";
   return result;
@@ -595,6 +498,9 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
     if (clause_kind == OMPC_inclusive || clause_kind == OMPC_exclusive) {
       return std::make_unique<OpenMPScanClause>(clause_kind);
     }
+    if (clause_kind == OMPC_firstprivate) {
+      return std::make_unique<OpenMPFirstprivateClause>();
+    }
     if (clause_kind == OMPC_apply) {
       return std::make_unique<OpenMPApplyClause>();
     }
@@ -610,6 +516,91 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
     if (clause_kind == OMPC_append_args) {
       return std::make_unique<OpenMPAppendArgsClause>();
     }
+    if (clause_kind == OMPC_absent) {
+      return std::make_unique<OpenMPAbsentClause>();
+    }
+    if (clause_kind == OMPC_contains) {
+      return std::make_unique<OpenMPContainsClause>();
+    }
+    if (clause_kind == OMPC_graph_id) {
+      return std::make_unique<OpenMPGraphIdClause>();
+    }
+    if (clause_kind == OMPC_graph_reset) {
+      return std::make_unique<OpenMPGraphResetClause>();
+    }
+    if (clause_kind == OMPC_transparent) {
+      return std::make_unique<OpenMPTransparentClause>();
+    }
+    if (clause_kind == OMPC_replayable) {
+      return std::make_unique<OpenMPReplayableClause>();
+    }
+    if (clause_kind == OMPC_threadset) {
+      return std::make_unique<OpenMPThreadsetClause>();
+    }
+    if (clause_kind == OMPC_indirect) {
+      return std::make_unique<OpenMPIndirectClause>();
+    }
+    if (clause_kind == OMPC_local) {
+      return std::make_unique<OpenMPLocalClause>();
+    }
+    if (clause_kind == OMPC_init_complete) {
+      return std::make_unique<OpenMPInitCompleteClause>();
+    }
+    if (clause_kind == OMPC_safesync) {
+      return std::make_unique<OpenMPSafesyncClause>();
+    }
+    if (clause_kind == OMPC_device_safesync) {
+      return std::make_unique<OpenMPDeviceSafesyncClause>();
+    }
+    if (clause_kind == OMPC_memscope) {
+      return std::make_unique<OpenMPMemscopeClause>();
+    }
+    if (clause_kind == OMPC_looprange) {
+      return std::make_unique<OpenMPLooprangeClause>();
+    }
+    if (clause_kind == OMPC_permutation) {
+      return std::make_unique<OpenMPPermutationClause>();
+    }
+    if (clause_kind == OMPC_counts) {
+      return std::make_unique<OpenMPCountsClause>();
+    }
+    if (clause_kind == OMPC_inductor) {
+      return std::make_unique<OpenMPInductorClause>();
+    }
+    if (clause_kind == OMPC_collector) {
+      return std::make_unique<OpenMPCollectorClause>();
+    }
+    if (clause_kind == OMPC_combiner) {
+      return std::make_unique<OpenMPCombinerClause>();
+    }
+    if (clause_kind == OMPC_no_openmp) {
+      return std::make_unique<OpenMPNoOpenmpClause>();
+    }
+    if (clause_kind == OMPC_no_openmp_constructs) {
+      return std::make_unique<OpenMPNoOpenmpConstructsClause>();
+    }
+    if (clause_kind == OMPC_no_openmp_routines) {
+      return std::make_unique<OpenMPNoOpenmpRoutinesClause>();
+    }
+    if (clause_kind == OMPC_no_parallelism) {
+      return std::make_unique<OpenMPNoParallelismClause>();
+    }
+    if (clause_kind == OMPC_nocontext) {
+      return std::make_unique<OpenMPNocontextClause>();
+    }
+    if (clause_kind == OMPC_novariants) {
+      return std::make_unique<OpenMPNovariantsClause>();
+    }
+    if (clause_kind == OMPC_enter) {
+      return std::make_unique<OpenMPEnterClause>();
+    }
+    if (clause_kind == OMPC_use) {
+      return std::make_unique<OpenMPUseClause>();
+    }
+    if (clause_kind == OMPC_holds) {
+      return std::make_unique<OpenMPHoldsClause>();
+    }
+
     return std::make_unique<OpenMPClause>(clause_kind);
   };
 
@@ -703,6 +694,7 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   case OMPC_init:
   case OMPC_init_complete:
   case OMPC_use:
+  case OMPC_interop:
 
   {
     if (current_clauses->size() == 0) {
@@ -1110,9 +1102,12 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
     OpenMPMapClauseModifier modifier3 =
         (OpenMPMapClauseModifier)va_arg(args, int);
     OpenMPMapClauseType type = (OpenMPMapClauseType)va_arg(args, int);
+    OpenMPMapClauseRefModifier ref_modifier =
+        (OpenMPMapClauseRefModifier)va_arg(args, int);
     std::string mapper_identifier = (std::string)va_arg(args, char *);
-    new_clause = OpenMPMapClause::addMapClause(
-        this, modifier1, modifier2, modifier3, type, mapper_identifier);
+    new_clause =
+        OpenMPMapClause::addMapClause(this, modifier1, modifier2, modifier3,
+                                      type, ref_modifier, mapper_identifier);
     break;
   }
   case OMPC_num_threads: {
@@ -1155,19 +1150,19 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   return new_clause;
 };
 
-OpenMPClause *OpenMPMapClause::addMapClause(OpenMPDirective *directive,
-                                            OpenMPMapClauseModifier modifier1,
-                                            OpenMPMapClauseModifier modifier2,
-                                            OpenMPMapClauseModifier modifier3,
-                                            OpenMPMapClauseType type,
-                                            std::string mapper_identifier) {
+OpenMPClause *OpenMPMapClause::addMapClause(
+    OpenMPDirective *directive, OpenMPMapClauseModifier modifier1,
+    OpenMPMapClauseModifier modifier2, OpenMPMapClauseModifier modifier3,
+    OpenMPMapClauseType type, OpenMPMapClauseRefModifier ref_modifier,
+    std::string mapper_identifier) {
 
   std::vector<OpenMPClause *> *current_clauses =
       directive->getClauses(OMPC_map);
   OpenMPClause *new_clause = NULL;
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPMapClause>(
-        modifier1, modifier2, modifier3, type, mapper_identifier));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPMapClause>(modifier1, modifier2, modifier3, type,
+                                          ref_modifier, mapper_identifier));
     current_clauses->push_back(new_clause);
   } else {
     // Only merge if normalization is enabled
@@ -1177,15 +1172,17 @@ OpenMPClause *OpenMPMapClause::addMapClause(OpenMPDirective *directive,
         if (((OpenMPMapClause *)(*it))->getModifier1() == modifier1 &&
             ((OpenMPMapClause *)(*it))->getModifier2() == modifier2 &&
             ((OpenMPMapClause *)(*it))->getModifier3() == modifier3 &&
-            ((OpenMPMapClause *)(*it))->getType() == type) {
+            ((OpenMPMapClause *)(*it))->getType() == type &&
+            ((OpenMPMapClause *)(*it))->getRefModifier() == ref_modifier) {
           new_clause = (*it);
           return new_clause;
         }
       }
     }
     /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPMapClause>(
-        modifier1, modifier2, modifier3, type, mapper_identifier));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPMapClause>(modifier1, modifier2, modifier3, type,
+                                          ref_modifier, mapper_identifier));
     current_clauses->push_back(new_clause);
   }
   return new_clause;
@@ -2217,3 +2214,151 @@ OpenMPClause *OpenMPUsesAllocatorsClause::addUsesAllocatorsClause(
 
   return new_clause;
 };
+
+// Helper function to convert OpenMPDirectiveKind to string without trailing space.
+static std::string OpenMPDirectiveKindToString(OpenMPDirectiveKind kind) {
+  OpenMPDirective temp(kind);
+  std::string result = temp.toString();
+  // Trim trailing space if present
+  if (!result.empty() && result.back() == ' ') {
+    result.pop_back();
+  }
+  return result;
+}
+
+std::string OpenMPAbsentClause::toString() {
+  std::string result = "absent(";
+  bool first = true;
+  for (auto kind : directive_list) {
+    if (!first) {
+      result += ", ";
+    }
+    result += OpenMPDirectiveKindToString(kind);
+    first = false;
+  }
+  result += ") ";
+  return result;
+}
+
+std::string OpenMPContainsClause::toString() {
+  std::string result = "contains(";
+  bool first = true;
+  for (auto kind : directive_list) {
+    if (!first) {
+      result += ", ";
+    }
+    result += OpenMPDirectiveKindToString(kind);
+    first = false;
+  }
+  result += ") ";
+  return result;
+}
+
+std::string OpenMPGraphIdClause::toString() {
+  return "graph_id(" + expressionToString() + ") ";
+}
+
+std::string OpenMPGraphResetClause::toString() { return "graph_reset "; }
+
+std::string OpenMPTransparentClause::toString() {
+  std::string str = expressionToString();
+  if (str.empty())
+    return "transparent ";
+  return "transparent(" + str + ") ";
+}
+
+std::string OpenMPReplayableClause::toString() { return "replayable "; }
+
+std::string OpenMPThreadsetClause::toString() {
+  return "threadset(" + expressionToString() + ") ";
+}
+
+std::string OpenMPIndirectClause::toString() {
+  std::string str = expressionToString();
+  if (str.empty())
+    return "indirect ";
+  return "indirect(" + str + ") ";
+}
+
+std::string OpenMPLocalClause::toString() {
+  return "local(" + expressionToString() + ") ";
+}
+
+std::string OpenMPInitCompleteClause::toString() { return "init_complete "; }
+
+std::string OpenMPSafesyncClause::toString() {
+  std::string str = expressionToString();
+  if (str.empty())
+    return "safesync ";
+  return "safesync(" + str + ") ";
+}
+
+std::string OpenMPDeviceSafesyncClause::toString() {
+  std::string str = expressionToString();
+  if (str.empty())
+    return "device_safesync ";
+  return "device_safesync(" + str + ") ";
+}
+
+std::string OpenMPMemscopeClause::toString() {
+  return "memscope(" + expressionToString() + ") ";
+}
+
+std::string OpenMPLooprangeClause::toString() {
+  return "looprange(" + expressionToString() + ") ";
+}
+
+std::string OpenMPPermutationClause::toString() {
+  return "permutation(" + expressionToString() + ") ";
+}
+
+std::string OpenMPCountsClause::toString() {
+  return "counts(" + expressionToString() + ") ";
+}
+
+std::string OpenMPInductorClause::toString() {
+  return "inductor(" + expressionToString() + ") ";
+}
+
+std::string OpenMPCollectorClause::toString() {
+  return "collector(" + expressionToString() + ") ";
+}
+
+std::string OpenMPCombinerClause::toString() {
+  return "combiner(" + expressionToString() + ") ";
+}
+
+std::string OpenMPNoOpenmpClause::toString() { return "no_openmp "; }
+
+std::string OpenMPNoOpenmpConstructsClause::toString() {
+  std::string str = expressionToString();
+  if (str.empty())
+    return "no_openmp_constructs ";
+  return "no_openmp_constructs(" + str + ") ";
+}
+
+std::string OpenMPNoOpenmpRoutinesClause::toString() {
+  return "no_openmp_routines ";
+}
+
+std::string OpenMPNoParallelismClause::toString() { return "no_parallelism "; }
+
+std::string OpenMPNocontextClause::toString() {
+  return "nocontext(" + expressionToString() + ") ";
+}
+
+std::string OpenMPNovariantsClause::toString() {
+  return "novariants(" + expressionToString() + ") ";
+}
+
+std::string OpenMPEnterClause::toString() {
+  return "enter(" + expressionToString() + ") ";
+}
+
+std::string OpenMPUseClause::toString() {
+  return "use(" + expressionToString() + ") ";
+}
+
+std::string OpenMPHoldsClause::toString() {
+  return "holds(" + expressionToString() + ") ";
+}
