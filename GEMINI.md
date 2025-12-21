@@ -1,0 +1,1 @@
+For full project context and agent instructions, please read [AGENTS.md](AGENTS.md).

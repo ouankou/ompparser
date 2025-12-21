@@ -1,6 +1,6 @@
 # Repository Agent Instructions
 
-- Always consult the latest OpenMP specification ("openmo spec") when updating or extending the parser to ensure semantic accuracy.
+- Always consult the latest OpenMP 6.0 specification when updating or extending the parser to ensure semantic accuracy.
 - Preserve LLVM coding style across all source files, including C, C++, Flex (.ll), and Bison (.yy) sources.
 - To run the regression tests via CMake/CTest:
   1. Ensure both Flex and Bison are installed and visible to CMake (e.g., `which flex` should succeed).
