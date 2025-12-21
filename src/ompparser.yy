@@ -1357,6 +1357,9 @@ memory_order_clause_seq_after :
                               | memory_order_clause
                               | hint_clause
                               | fail_clause
+                              | memscope_clause
+                              | memory_order_clause memscope_clause
+                              | memscope_clause memory_order_clause
                               ;
 atomic_clause : read_clause
               | write_clause
@@ -5297,15 +5300,25 @@ align_clause: ALIGN {
                 
 thread_limit_clause: THREAD_LIMIT { current_clause = current_directive->addOpenMPClause(OMPC_thread_limit); } '(' expression ')'
                    ;
-memscope_clause : MEMSCOPE { current_clause = current_directive->addOpenMPClause(OMPC_memscope); } '(' variable ')'
+memscope_clause : MEMSCOPE { current_clause = current_directive->addOpenMPClause(OMPC_memscope); } '(' memscope_kind ')'
                 ;
+
+memscope_kind : SYSTEM { if (current_clause) current_clause->addLangExpr("system"); }
+              | WARP { if (current_clause) current_clause->addLangExpr("warp"); }
+              | WAVEFRONT { if (current_clause) current_clause->addLangExpr("wavefront"); }
+              | BLOCK { if (current_clause) current_clause->addLangExpr("block"); }
+              | EXPR_STRING { if (current_clause) current_clause->addLangExpr($1); }
+              ;
 
 device_safesync_clause : DEVICE_SAFESYNC { current_clause = current_directive->addOpenMPClause(OMPC_device_safesync); } opt_device_safesync_parens
                        ;
 
 opt_device_safesync_parens : /* empty */
-                           | '(' variable ')'
+                           | '(' device_safesync_arg ')'
                            ;
+
+device_safesync_arg : EXPR_STRING { if (current_clause) current_clause->addLangExpr($1); }
+                    ;
 
 safesync_clause: SAFESYNC { current_clause = current_directive->addOpenMPClause(OMPC_safesync); } '(' expression ')'
                ;
