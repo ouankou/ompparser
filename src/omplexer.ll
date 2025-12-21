@@ -151,6 +151,8 @@ extern "C" void openmp_reset_lexer_flags() {
   compact_enddo = false;
   apply_paren_depth.clear();
   induction_spec_paren_depth = 0;
+  induction_step_waiting = false;
+  if_paren_depth = 0;
 }
 
 extern "C" bool openmp_consume_compact_parallel_do() {
