@@ -1559,6 +1559,7 @@ init_depinfo_modifier : init_depinfo_kind '(' {
                      ;
 init_kind : TARGET { $$ = OMPC_INIT_KIND_target; }
           | TARGETSYNC { $$ = OMPC_INIT_KIND_targetsync; }
+          | EXPR_STRING { $$ = OMPC_INIT_KIND_unknown; }
           ;
 init_depinfo_kind : IN { $$ = OMPC_DEPENDENCE_TYPE_in; }
                  | OUT { $$ = OMPC_DEPENDENCE_TYPE_out; }
