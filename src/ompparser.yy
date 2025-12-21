@@ -5420,7 +5420,13 @@ firstprivate_clause : FIRSTPRIVATE {
                         } '(' firstprivate_parameter ')' {
                     }
                     ;
-firstprivate_parameter : var_list
+firstprivate_parameter : {
+                          auto *firstprivate_clause =
+                              dynamic_cast<OpenMPFirstprivateClause *>(current_clause);
+                          if (firstprivate_clause != nullptr) {
+                            firstprivate_clause->setSaved(false);
+                          }
+                        } var_list
                       | SAVED ':' {
                           auto *firstprivate_clause =
                               dynamic_cast<OpenMPFirstprivateClause *>(current_clause);

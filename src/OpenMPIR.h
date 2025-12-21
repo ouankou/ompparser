@@ -106,7 +106,7 @@ public:
   // a list of expressions or variables that are language-specific for the
   // clause, ompparser does not parse them, instead, it only stores them as
   // strings
-  void addLangExpr(const char *expression,
+  virtual void addLangExpr(const char *expression,
                    OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
                    int line = 0, int col = 0);
 
@@ -1259,13 +1259,26 @@ public:
 };
 
 class OpenMPFirstprivateClause : public OpenMPClause {
-  bool saved = false;
+  std::vector<bool> saved_statuses;
+  bool current_saved_state = false;
 
 public:
   OpenMPFirstprivateClause() : OpenMPClause(OMPC_firstprivate) {}
 
-  void setSaved(bool value = true) { saved = value; }
-  bool isSaved() const { return saved; }
+  void setSaved(bool value = true) { current_saved_state = value; }
+  bool isSaved() const { 
+      // Return true if any operand is saved, or based on current state?
+      // For now returning current state might be misleading if used for whole clause.
+      // But preserving checks: return true if any is saved.
+      for(bool b : saved_statuses) if(b) return true;
+      return current_saved_state;
+  }
+  
+  const std::vector<bool>& getSavedStatuses() const { return saved_statuses; }
+
+  void addLangExpr(const char *expression,
+                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
+                   int line = 0, int col = 0) override;
 
   std::string toString() override;
 };

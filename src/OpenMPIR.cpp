@@ -237,6 +237,16 @@ void OpenMPClause::addLangExpr(const char *expression,
   locations.push_back(SourceLocation(line, col));
 };
 
+void OpenMPFirstprivateClause::addLangExpr(const char *expression,
+                                           OpenMPClauseSeparator sep,
+                                           int line, int col) {
+  size_t old_size = expressions.size();
+  OpenMPClause::addLangExpr(expression, sep, line, col);
+  if (expressions.size() > old_size) {
+    saved_statuses.push_back(current_saved_state);
+  }
+};
+
 void OpenMPInductionClause::addStepExpression(const char *expression) {
   if (expression == nullptr) {
     return;

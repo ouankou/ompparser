@@ -2172,19 +2172,49 @@ std::string OpenMPIfClause::toString() {
 };
 
 std::string OpenMPFirstprivateClause::toString() {
-  std::string result = "firstprivate";
-  std::string clause_string = "(";
-  if (saved) {
-    clause_string += "saved: ";
+  std::string result = "";
+  if (expressions.empty()) {
+    return "";
   }
-  clause_string += this->expressionToString();
-  clause_string += ")";
-  if (clause_string.size() > 2) {
-    result += clause_string;
-    result += " ";
+
+  bool current_chunk_saved = saved_statuses.empty() ? false : saved_statuses[0];
+  std::string current_chunk_str = "firstprivate(";
+  if (current_chunk_saved) {
+    current_chunk_str += "saved: ";
   }
+
+  for (size_t i = 0; i < expressions.size(); ++i) {
+    bool is_saved = (i < saved_statuses.size()) ? saved_statuses[i] : false;
+
+    if (i > 0) {
+      if (is_saved != current_chunk_saved) {
+        // Close current chunk
+        current_chunk_str += ")";
+        result += current_chunk_str + " ";
+
+        // Start new chunk
+        current_chunk_saved = is_saved;
+        current_chunk_str = "firstprivate(";
+        if (current_chunk_saved) {
+          current_chunk_str += "saved: ";
+        }
+      } else {
+        // Append separator
+        if (expression_separators[i] == OMPC_CLAUSE_SEP_comma) {
+          current_chunk_str += ", ";
+        } else {
+          current_chunk_str += " ";
+        }
+      }
+    }
+    current_chunk_str += expressions[i];
+  }
+  current_chunk_str += ")";
+  result += current_chunk_str + " ";
+
   return result;
-};
+}
+
 
 std::string OpenMPInitializerClause::toString() {
 
