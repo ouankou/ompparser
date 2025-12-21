@@ -1526,12 +1526,26 @@ init_modifier : init_interop_type
               | init_prefer_type_modifier
               | init_directive_name_modifier
               ;
-init_interop_type : init_kind {
+init_interop_type : TARGET {
                      auto *init_clause =
                          static_cast<OpenMPInitClause *>(current_clause);
                      if (init_clause != nullptr) {
-                       init_clause->addInteropType(
-                           static_cast<OpenMPInitClauseKind>($1));
+                       init_clause->addInteropType(OMPC_INIT_KIND_target);
+                     }
+                   }
+                 | TARGETSYNC {
+                     auto *init_clause =
+                         static_cast<OpenMPInitClause *>(current_clause);
+                     if (init_clause != nullptr) {
+                       init_clause->addInteropType(OMPC_INIT_KIND_targetsync);
+                     }
+                   }
+                 | EXPR_STRING {
+                     auto *init_clause =
+                         static_cast<OpenMPInitClause *>(current_clause);
+                     if (init_clause != nullptr) {
+                       // Store raw string for unknown/vendor interop types
+                       init_clause->addInteropType(std::string($1));
                      }
                    }
                  ;

@@ -644,6 +644,7 @@ public:
 class OpenMPInitClause : public OpenMPClause {
 private:
   std::vector<OpenMPInitClauseKind> interop_types;
+  std::vector<std::string> raw_interop_types;  // For unknown/vendor types
   bool has_directive_name_modifier = false;
   OpenMPDirectiveKind directive_name_modifier = OMPD_unknown;
   bool has_prefer_type = false;
@@ -657,8 +658,12 @@ public:
   OpenMPInitClause() : OpenMPClause(OMPC_init) {}
 
   void addInteropType(OpenMPInitClauseKind value);
+  void addInteropType(const std::string &raw_type);  // For unknown types
   const std::vector<OpenMPInitClauseKind> &getInteropTypes() const {
     return interop_types;
+  }
+  const std::vector<std::string> &getRawInteropTypes() const {
+    return raw_interop_types;
   }
 
   void setDirectiveNameModifier(OpenMPDirectiveKind value) {

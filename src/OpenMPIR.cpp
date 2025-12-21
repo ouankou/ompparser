@@ -369,6 +369,18 @@ void OpenMPInitClause::addInteropType(OpenMPInitClauseKind value) {
   interop_types.push_back(value);
 }
 
+void OpenMPInitClause::addInteropType(const std::string &raw_type) {
+  if (raw_type.empty()) {
+    return;
+  }
+  for (const std::string &existing : raw_interop_types) {
+    if (existing == raw_type) {
+      return;
+    }
+  }
+  raw_interop_types.push_back(raw_type);
+}
+
 std::string OpenMPInitClause::toString() {
   std::string result = "init(";
   bool emitted_modifier = false;
@@ -439,6 +451,11 @@ std::string OpenMPInitClause::toString() {
     default:
       break;
     }
+  }
+
+  // Emit raw/unknown interop types
+  for (const std::string &raw_type : raw_interop_types) {
+    appendModifier(raw_type);
   }
 
   if (emitted_modifier) {
