@@ -495,58 +495,84 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
     if (clause_kind == OMPC_contains) {
       return std::make_unique<OpenMPContainsClause>();
     }
-    if (clause_kind == OMPC_graph_id)
+    if (clause_kind == OMPC_graph_id) {
       return std::make_unique<OpenMPGraphIdClause>();
-    if (clause_kind == OMPC_graph_reset)
+    }
+    if (clause_kind == OMPC_graph_reset) {
       return std::make_unique<OpenMPGraphResetClause>();
-    if (clause_kind == OMPC_transparent)
+    }
+    if (clause_kind == OMPC_transparent) {
       return std::make_unique<OpenMPTransparentClause>();
-    if (clause_kind == OMPC_replayable)
+    }
+    if (clause_kind == OMPC_replayable) {
       return std::make_unique<OpenMPReplayableClause>();
-    if (clause_kind == OMPC_threadset)
+    }
+    if (clause_kind == OMPC_threadset) {
       return std::make_unique<OpenMPThreadsetClause>();
-    if (clause_kind == OMPC_indirect)
+    }
+    if (clause_kind == OMPC_indirect) {
       return std::make_unique<OpenMPIndirectClause>();
-    if (clause_kind == OMPC_local)
+    }
+    if (clause_kind == OMPC_local) {
       return std::make_unique<OpenMPLocalClause>();
-    if (clause_kind == OMPC_init_complete)
+    }
+    if (clause_kind == OMPC_init_complete) {
       return std::make_unique<OpenMPInitCompleteClause>();
-    if (clause_kind == OMPC_safesync)
+    }
+    if (clause_kind == OMPC_safesync) {
       return std::make_unique<OpenMPSafesyncClause>();
-    if (clause_kind == OMPC_device_safesync)
+    }
+    if (clause_kind == OMPC_device_safesync) {
       return std::make_unique<OpenMPDeviceSafesyncClause>();
-    if (clause_kind == OMPC_memscope)
+    }
+    if (clause_kind == OMPC_memscope) {
       return std::make_unique<OpenMPMemscopeClause>();
-    if (clause_kind == OMPC_looprange)
+    }
+    if (clause_kind == OMPC_looprange) {
       return std::make_unique<OpenMPLooprangeClause>();
-    if (clause_kind == OMPC_permutation)
+    }
+    if (clause_kind == OMPC_permutation) {
       return std::make_unique<OpenMPPermutationClause>();
-    if (clause_kind == OMPC_counts)
+    }
+    if (clause_kind == OMPC_counts) {
       return std::make_unique<OpenMPCountsClause>();
-    if (clause_kind == OMPC_inductor)
+    }
+    if (clause_kind == OMPC_inductor) {
       return std::make_unique<OpenMPInductorClause>();
-    if (clause_kind == OMPC_collector)
+    }
+    if (clause_kind == OMPC_collector) {
       return std::make_unique<OpenMPCollectorClause>();
-    if (clause_kind == OMPC_combiner)
+    }
+    if (clause_kind == OMPC_combiner) {
       return std::make_unique<OpenMPCombinerClause>();
-    if (clause_kind == OMPC_no_openmp)
+    }
+    if (clause_kind == OMPC_no_openmp) {
       return std::make_unique<OpenMPNoOpenmpClause>();
-    if (clause_kind == OMPC_no_openmp_constructs)
+    }
+    if (clause_kind == OMPC_no_openmp_constructs) {
       return std::make_unique<OpenMPNoOpenmpConstructsClause>();
-    if (clause_kind == OMPC_no_openmp_routines)
+    }
+    if (clause_kind == OMPC_no_openmp_routines) {
       return std::make_unique<OpenMPNoOpenmpRoutinesClause>();
-    if (clause_kind == OMPC_no_parallelism)
+    }
+    if (clause_kind == OMPC_no_parallelism) {
       return std::make_unique<OpenMPNoParallelismClause>();
-    if (clause_kind == OMPC_nocontext)
+    }
+    if (clause_kind == OMPC_nocontext) {
       return std::make_unique<OpenMPNocontextClause>();
-    if (clause_kind == OMPC_novariants)
+    }
+    if (clause_kind == OMPC_novariants) {
       return std::make_unique<OpenMPNovariantsClause>();
-    if (clause_kind == OMPC_enter)
+    }
+    if (clause_kind == OMPC_enter) {
       return std::make_unique<OpenMPEnterClause>();
-    if (clause_kind == OMPC_use)
+    }
+    if (clause_kind == OMPC_use) {
       return std::make_unique<OpenMPUseClause>();
-    if (clause_kind == OMPC_holds)
+    }
+    if (clause_kind == OMPC_holds) {
       return std::make_unique<OpenMPHoldsClause>();
+    }
 
     return std::make_unique<OpenMPClause>(clause_kind);
   };
@@ -2162,6 +2188,17 @@ OpenMPClause *OpenMPUsesAllocatorsClause::addUsesAllocatorsClause(
   return new_clause;
 };
 
+// Helper function to convert OpenMPDirectiveKind to string without trailing space.
+static std::string OpenMPDirectiveKindToString(OpenMPDirectiveKind kind) {
+  OpenMPDirective temp(kind);
+  std::string result = temp.toString();
+  // Trim trailing space if present
+  if (!result.empty() && result.back() == ' ') {
+    result.pop_back();
+  }
+  return result;
+}
+
 std::string OpenMPAbsentClause::toString() {
   std::string result = "absent(";
   bool first = true;
@@ -2169,17 +2206,7 @@ std::string OpenMPAbsentClause::toString() {
     if (!first) {
       result += ", ";
     }
-    // We need a way to convert OpenMPDirectiveKind to string.
-    // Creating a temporary directive to use its toString is a bit hacky but
-    // works if the enum to string logic is in OpenMPDirective::toString.
-    // However, OpenMPDirective::toString returns "parallel " (with space).
-    // Let's rely on OpenMPDirective(kind).toString() and trim it.
-    OpenMPDirective dir(kind);
-    std::string dirStr = dir.toString();
-    if (!dirStr.empty() && dirStr.back() == ' ') {
-      dirStr.pop_back();
-    }
-    result += dirStr;
+    result += OpenMPDirectiveKindToString(kind);
     first = false;
   }
   result += ") ";
@@ -2193,12 +2220,7 @@ std::string OpenMPContainsClause::toString() {
     if (!first) {
       result += ", ";
     }
-    OpenMPDirective dir(kind);
-    std::string dirStr = dir.toString();
-    if (!dirStr.empty() && dirStr.back() == ' ') {
-      dirStr.pop_back();
-    }
-    result += dirStr;
+    result += OpenMPDirectiveKindToString(kind);
     first = false;
   }
   result += ") ";

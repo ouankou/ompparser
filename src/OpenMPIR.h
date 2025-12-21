@@ -1902,7 +1902,7 @@ public:
     return directive_list;
   }
 
-  std::string toString();
+  std::string toString() override;
 };
 
 // contains clause
@@ -1921,182 +1921,182 @@ public:
     return directive_list;
   }
 
-  std::string toString();
+  std::string toString() override;
 };
 
 // graph_id clause
 class OpenMPGraphIdClause : public OpenMPClause {
 public:
   OpenMPGraphIdClause() : OpenMPClause(OMPC_graph_id) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // graph_reset clause
 class OpenMPGraphResetClause : public OpenMPClause {
 public:
   OpenMPGraphResetClause() : OpenMPClause(OMPC_graph_reset) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // transparent clause
 class OpenMPTransparentClause : public OpenMPClause {
 public:
   OpenMPTransparentClause() : OpenMPClause(OMPC_transparent) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // replayable clause
 class OpenMPReplayableClause : public OpenMPClause {
 public:
   OpenMPReplayableClause() : OpenMPClause(OMPC_replayable) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // threadset clause
 class OpenMPThreadsetClause : public OpenMPClause {
 public:
   OpenMPThreadsetClause() : OpenMPClause(OMPC_threadset) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // indirect clause
 class OpenMPIndirectClause : public OpenMPClause {
 public:
   OpenMPIndirectClause() : OpenMPClause(OMPC_indirect) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // local clause
 class OpenMPLocalClause : public OpenMPClause {
 public:
   OpenMPLocalClause() : OpenMPClause(OMPC_local) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // init_complete clause
 class OpenMPInitCompleteClause : public OpenMPClause {
 public:
   OpenMPInitCompleteClause() : OpenMPClause(OMPC_init_complete) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // safesync clause
 class OpenMPSafesyncClause : public OpenMPClause {
 public:
   OpenMPSafesyncClause() : OpenMPClause(OMPC_safesync) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // device_safesync clause
 class OpenMPDeviceSafesyncClause : public OpenMPClause {
 public:
   OpenMPDeviceSafesyncClause() : OpenMPClause(OMPC_device_safesync) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // memscope clause
 class OpenMPMemscopeClause : public OpenMPClause {
 public:
   OpenMPMemscopeClause() : OpenMPClause(OMPC_memscope) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // looprange clause
 class OpenMPLooprangeClause : public OpenMPClause {
 public:
   OpenMPLooprangeClause() : OpenMPClause(OMPC_looprange) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // permutation clause
 class OpenMPPermutationClause : public OpenMPClause {
 public:
   OpenMPPermutationClause() : OpenMPClause(OMPC_permutation) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // counts clause
 class OpenMPCountsClause : public OpenMPClause {
 public:
   OpenMPCountsClause() : OpenMPClause(OMPC_counts) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // inductor clause
 class OpenMPInductorClause : public OpenMPClause {
 public:
   OpenMPInductorClause() : OpenMPClause(OMPC_inductor) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // collector clause
 class OpenMPCollectorClause : public OpenMPClause {
 public:
   OpenMPCollectorClause() : OpenMPClause(OMPC_collector) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // combiner clause
 class OpenMPCombinerClause : public OpenMPClause {
 public:
   OpenMPCombinerClause() : OpenMPClause(OMPC_combiner) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // no_openmp clause
 class OpenMPNoOpenmpClause : public OpenMPClause {
 public:
   OpenMPNoOpenmpClause() : OpenMPClause(OMPC_no_openmp) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // no_openmp_constructs clause
 class OpenMPNoOpenmpConstructsClause : public OpenMPClause {
 public:
   OpenMPNoOpenmpConstructsClause() : OpenMPClause(OMPC_no_openmp_constructs) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // no_openmp_routines clause
 class OpenMPNoOpenmpRoutinesClause : public OpenMPClause {
 public:
   OpenMPNoOpenmpRoutinesClause() : OpenMPClause(OMPC_no_openmp_routines) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // no_parallelism clause
 class OpenMPNoParallelismClause : public OpenMPClause {
 public:
   OpenMPNoParallelismClause() : OpenMPClause(OMPC_no_parallelism) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // nocontext clause
 class OpenMPNocontextClause : public OpenMPClause {
 public:
   OpenMPNocontextClause() : OpenMPClause(OMPC_nocontext) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // novariants clause
 class OpenMPNovariantsClause : public OpenMPClause {
 public:
   OpenMPNovariantsClause() : OpenMPClause(OMPC_novariants) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // enter clause
 class OpenMPEnterClause : public OpenMPClause {
 public:
   OpenMPEnterClause() : OpenMPClause(OMPC_enter) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // use clause
 class OpenMPUseClause : public OpenMPClause {
 public:
   OpenMPUseClause() : OpenMPClause(OMPC_use) {}
-  std::string toString();
+  std::string toString() override;
 };
 
 // holds clause

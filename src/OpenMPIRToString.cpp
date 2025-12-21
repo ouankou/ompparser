@@ -1677,45 +1677,43 @@ std::string OpenMPMapClause::toString() {
   default:;
   }
 
+
+  // Helper to append modifier text with separator
+  auto append_modifier = [&](const std::string& text) {
+    if (has_content) {
+      clause_string += ", ";
+    }
+    clause_string += text;
+    has_content = true;
+  };
+
   switch (modifier1) {
   case OMPC_MAP_MODIFIER_always:
-    if (has_content)
-      clause_string += ", ";
-    clause_string += "always";
-    has_content = true;
+    append_modifier("always");
     break;
   case OMPC_MAP_MODIFIER_close:
-    if (has_content)
-      clause_string += ", ";
-    clause_string += "close";
-    has_content = true;
+    append_modifier("close");
     break;
   case OMPC_MAP_MODIFIER_present:
-    if (has_content)
-      clause_string += ", ";
-    clause_string += "present";
-    has_content = true;
+    append_modifier("present");
     break;
   case OMPC_MAP_MODIFIER_self:
-    if (has_content)
-      clause_string += ", ";
-    clause_string += "self";
-    has_content = true;
+    append_modifier("self");
     break;
   case OMPC_MAP_MODIFIER_mapper:
-    if (has_content)
+    if (has_content) {
       clause_string += ", ";
-    clause_string += "mapper";
-    clause_string += "(";
+    }
+    clause_string += "mapper(";
     clause_string += this->getMapperIdentifier();
     clause_string += ")";
     has_content = true;
     break;
   case OMPC_MAP_MODIFIER_iterator: {
-    if (has_content)
+    if (has_content) {
       clause_string += ", ";
-    clause_string += "iterator";
-    clause_string += "(";
+    }
+    clause_string += "iterator(";
     for (size_t i = 0; i < iterator_defs.size(); ++i) {
       if (i > 0) {
         clause_string += ", ";
@@ -1733,29 +1731,22 @@ std::string OpenMPMapClause::toString() {
   }
   switch (modifier2) {
   case OMPC_MAP_MODIFIER_always:
-    if (has_content) clause_string += ", ";
-    clause_string += "always";
-    has_content = true;
+    append_modifier("always");
     break;
   case OMPC_MAP_MODIFIER_close:
-    if (has_content) clause_string += ", ";
-    clause_string += "close";
-    has_content = true;
+    append_modifier("close");
     break;
   case OMPC_MAP_MODIFIER_present:
-    if (has_content) clause_string += ", ";
-    clause_string += "present";
-    has_content = true;
+    append_modifier("present");
     break;
   case OMPC_MAP_MODIFIER_self:
-    if (has_content) clause_string += ", ";
-    clause_string += "self";
-    has_content = true;
+    append_modifier("self");
     break;
   case OMPC_MAP_MODIFIER_mapper:
-    if (has_content) clause_string += ", ";
-    clause_string += "mapper";
-    clause_string += "(";
+    if (has_content) {
+      clause_string += ", ";
+    }
+    clause_string += "mapper(";
     clause_string += this->getMapperIdentifier();
     clause_string += ")";
     has_content = true;
@@ -1764,29 +1755,22 @@ std::string OpenMPMapClause::toString() {
   }
   switch (modifier3) {
   case OMPC_MAP_MODIFIER_always:
-    if (has_content) clause_string += ", ";
-    clause_string += "always";
-    has_content = true;
+    append_modifier("always");
     break;
   case OMPC_MAP_MODIFIER_close:
-    if (has_content) clause_string += ", ";
-    clause_string += "close";
-    has_content = true;
+    append_modifier("close");
     break;
   case OMPC_MAP_MODIFIER_present:
-    if (has_content) clause_string += ", ";
-    clause_string += "present";
-    has_content = true;
+    append_modifier("present");
     break;
   case OMPC_MAP_MODIFIER_self:
-    if (has_content) clause_string += ", ";
-    clause_string += "self";
-    has_content = true;
+    append_modifier("self");
     break;
   case OMPC_MAP_MODIFIER_mapper:
-    if (has_content) clause_string += ", ";
-    clause_string += "mapper";
-    clause_string += "(";
+    if (has_content) {
+      clause_string += ", ";
+    }
+    clause_string += "mapper(";
     clause_string += this->getMapperIdentifier();
     clause_string += ")";
     has_content = true;
@@ -1796,41 +1780,31 @@ std::string OpenMPMapClause::toString() {
 
   switch (type) {
   case OMPC_MAP_TYPE_to:
-    if (has_content) clause_string += ", ";
-    clause_string += "to";
+    append_modifier("to");
     break;
   case OMPC_MAP_TYPE_from:
-    if (has_content) clause_string += ", ";
-    clause_string += "from";
+    append_modifier("from");
     break;
   case OMPC_MAP_TYPE_tofrom:
-    if (has_content) clause_string += ", ";
-    clause_string += "tofrom";
+    append_modifier("tofrom");
     break;
   case OMPC_MAP_TYPE_storage:
-    if (has_content)
-      clause_string += ", ";
-    clause_string += "storage";
+    append_modifier("storage");
     break;
   case OMPC_MAP_TYPE_alloc:
-    if (has_content) clause_string += ", ";
-    clause_string += "alloc";
+    append_modifier("alloc");
     break;
   case OMPC_MAP_TYPE_release:
-    if (has_content) clause_string += ", ";
-    clause_string += "release";
+    append_modifier("release");
     break;
   case OMPC_MAP_TYPE_delete:
-    if (has_content) clause_string += ", ";
-    clause_string += "delete";
+    append_modifier("delete");
     break;
   case OMPC_MAP_TYPE_present:
-    if (has_content) clause_string += ", ";
-    clause_string += "present";
+    append_modifier("present");
     break;
   case OMPC_MAP_TYPE_self:
-    if (has_content) clause_string += ", ";
-    clause_string += "self";
+    append_modifier("self");
     break;
   default:;
   }
