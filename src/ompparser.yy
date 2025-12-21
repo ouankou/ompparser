@@ -3242,11 +3242,11 @@ teams_loop_simd_clause_optseq : /* empty */
                               ;
 teams_loop_clause_seq : teams_loop_clause
                       | teams_loop_clause_seq teams_loop_clause
-                      | teams_loop_clause_seq ',' teams_loop_clause
+                      | teams_loop_clause_seq ',' { clause_separator_comma = true; } teams_loop_clause
                       ;
 teams_loop_simd_clause_seq : teams_loop_simd_clause
                            | teams_loop_simd_clause_seq teams_loop_simd_clause
-                           | teams_loop_simd_clause_seq ',' teams_loop_simd_clause
+                           | teams_loop_simd_clause_seq ',' { clause_separator_comma = true; } teams_loop_simd_clause
                            ;
 teams_loop_clause : num_teams_clause
                   | thread_limit_clause
@@ -3529,7 +3529,7 @@ target_loop_clause : if_target_clause
 
 target_loop_clause_seq : target_loop_clause
                        | target_loop_clause_seq target_loop_clause
-                       | target_loop_clause_seq ',' target_loop_clause
+                       | target_loop_clause_seq ',' { clause_separator_comma = true; } target_loop_clause
                        ;
 
 target_loop_clause_optseq : /* empty */
@@ -3546,7 +3546,7 @@ target_loop_simd_clause : target_loop_clause
 
 target_loop_simd_clause_seq : target_loop_simd_clause
                             | target_loop_simd_clause_seq target_loop_simd_clause
-                            | target_loop_simd_clause_seq ',' target_loop_simd_clause
+                            | target_loop_simd_clause_seq ',' { clause_separator_comma = true; } target_loop_simd_clause
                             ;
 
 target_loop_simd_clause_optseq : /* empty */
@@ -3719,11 +3719,11 @@ target_teams_loop_simd_clause_optseq : /* empty */
                                     ;
 target_teams_loop_clause_seq : target_teams_loop_clause
                              | target_teams_loop_clause_seq target_teams_loop_clause
-                             | target_teams_loop_clause_seq ',' target_teams_loop_clause
+                             | target_teams_loop_clause_seq ',' { clause_separator_comma = true; } target_teams_loop_clause
                              ;
 target_teams_loop_simd_clause_seq : target_teams_loop_simd_clause
                                   | target_teams_loop_simd_clause_seq target_teams_loop_simd_clause
-                                  | target_teams_loop_simd_clause_seq ',' target_teams_loop_simd_clause
+                                  | target_teams_loop_simd_clause_seq ',' { clause_separator_comma = true; } target_teams_loop_simd_clause
                                   ;
 target_teams_loop_clause : if_target_clause
                          | device_clause
