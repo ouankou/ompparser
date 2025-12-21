@@ -3493,11 +3493,11 @@ target_parallel_loop_simd_clause_optseq : /* empty */
                                        ;
 target_parallel_loop_clause_seq : target_parallel_loop_clause
                                 | target_parallel_loop_clause_seq target_parallel_loop_clause
-                                | target_parallel_loop_clause_seq ',' target_parallel_loop_clause
+                                | target_parallel_loop_clause_seq ',' { clause_separator_comma = true; } target_parallel_loop_clause
                                 ;
 target_parallel_loop_simd_clause_seq : target_parallel_loop_simd_clause
                                      | target_parallel_loop_simd_clause_seq target_parallel_loop_simd_clause
-                                     | target_parallel_loop_simd_clause_seq ',' target_parallel_loop_simd_clause
+                                     | target_parallel_loop_simd_clause_seq ',' { clause_separator_comma = true; } target_parallel_loop_simd_clause
                                      ;
 target_parallel_loop_clause : if_target_parallel_clause
                             | device_clause
