@@ -7,12 +7,12 @@
  */
 
 #include "OpenMPIR.h"
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <memory>
-#include <cctype>
 #include <stdarg.h>
 #include <utility>
-#include <algorithm>
 
 extern bool clause_separator_comma;
 
@@ -69,8 +69,8 @@ namespace {
 std::string formatArraySubscripts(const std::string &expr) {
   std::string formatted = expr;
   size_t pos = 0;
-  int bracket_depth = 0;  // Tracks [] for C/C++
-  int paren_depth = 0;    // Tracks () for Fortran arrays
+  int bracket_depth = 0; // Tracks [] for C/C++
+  int paren_depth = 0;   // Tracks () for Fortran arrays
 
   while (pos < formatted.size()) {
     if (formatted[pos] == '[') {
@@ -85,9 +85,11 @@ std::string formatArraySubscripts(const std::string &expr) {
     } else if (formatted[pos] == ')') {
       paren_depth--;
       pos++;
-    } else if (formatted[pos] == ':' && (bracket_depth > 0 || paren_depth > 0)) {
+    } else if (formatted[pos] == ':' &&
+               (bracket_depth > 0 || paren_depth > 0)) {
       bool space_before = (pos > 0 && formatted[pos - 1] == ' ');
-      bool space_after = (pos + 1 < formatted.size() && formatted[pos + 1] == ' ');
+      bool space_after =
+          (pos + 1 < formatted.size() && formatted[pos + 1] == ' ');
       if (!space_after && pos + 1 < formatted.size()) {
         formatted.insert(pos + 1, " ");
       }
@@ -167,8 +169,8 @@ void OpenMPApplyClause::addNestedApply(OpenMPApplyClause *nested,
   transforms.push_back(std::move(t));
 }
 
-OpenMPClause *OpenMPDirective::registerClause(
-    std::unique_ptr<OpenMPClause> clause) {
+OpenMPClause *
+OpenMPDirective::registerClause(std::unique_ptr<OpenMPClause> clause) {
   OpenMPClause *raw_ptr = clause.get();
   clause_storage.push_back(std::move(clause));
   return raw_ptr;
@@ -211,8 +213,7 @@ void OpenMPDeclareMapperDirective::setDeclareMapperVar(
 }
 
 void OpenMPClause::addLangExpr(const char *expression,
-                               OpenMPClauseSeparator sep,
-                               int line, int col) {
+                               OpenMPClauseSeparator sep, int line, int col) {
   if (expression == nullptr) {
     return;
   }
@@ -238,8 +239,8 @@ void OpenMPClause::addLangExpr(const char *expression,
 };
 
 void OpenMPFirstprivateClause::addLangExpr(const char *expression,
-                                           OpenMPClauseSeparator sep,
-                                           int line, int col) {
+                                           OpenMPClauseSeparator sep, int line,
+                                           int col) {
   size_t old_size = expressions.size();
   OpenMPClause::addLangExpr(expression, sep, line, col);
   if (expressions.size() > old_size) {
@@ -292,7 +293,8 @@ void OpenMPInductionClause::addPassthroughItem(const char *expression) {
 }
 
 void OpenMPAdjustArgsClause::addArgument(const std::string &arg) {
-  std::string cleaned = normalizeClauseExpression(OMPC_adjust_args, arg.c_str());
+  std::string cleaned =
+      normalizeClauseExpression(OMPC_adjust_args, arg.c_str());
   arguments.push_back(cleaned);
 }
 
@@ -356,8 +358,8 @@ std::string OpenMPAppendArgsClause::toString() {
 void OpenMPUsesAllocatorsClause::addUsesAllocatorsAllocatorSequence(
     OpenMPUsesAllocatorsClauseAllocator _allocator,
     std::string _allocator_traits_array, std::string _allocator_user) {
-  std::string traits_cleaned =
-      normalizeClauseExpression(OMPC_uses_allocators, _allocator_traits_array.c_str());
+  std::string traits_cleaned = normalizeClauseExpression(
+      OMPC_uses_allocators, _allocator_traits_array.c_str());
   std::string user_cleaned =
       normalizeClauseExpression(OMPC_uses_allocators, _allocator_user.c_str());
   auto usesAllocatorsAllocator = std::make_unique<usesAllocatorParameter>(
@@ -493,8 +495,8 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   va_start(args, k);
   OpenMPClause *new_clause = NULL;
 
-  auto makeClause = [&](OpenMPClauseKind clause_kind)
-      -> std::unique_ptr<OpenMPClause> {
+  auto makeClause =
+      [&](OpenMPClauseKind clause_kind) -> std::unique_ptr<OpenMPClause> {
     if (clause_kind == OMPC_inclusive || clause_kind == OMPC_exclusive) {
       return std::make_unique<OpenMPScanClause>(clause_kind);
     }
@@ -816,7 +818,8 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
     OpenMPFailClauseMemoryOrder memory_order =
         (OpenMPFailClauseMemoryOrder)va_arg(args, int);
     if (current_clauses->size() == 0) {
-      new_clause = registerClause(std::make_unique<OpenMPFailClause>(memory_order));
+      new_clause =
+          registerClause(std::make_unique<OpenMPFailClause>(memory_order));
       current_clauses->push_back(new_clause);
     } else {
       std::cerr << "Cannot have two fail clauses for the directive, ignored\n";
@@ -828,17 +831,18 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
     OpenMPSeverityClauseKind severity_kind =
         (OpenMPSeverityClauseKind)va_arg(args, int);
     if (current_clauses->size() == 0) {
-      new_clause = registerClause(std::make_unique<OpenMPSeverityClause>(severity_kind));
+      new_clause =
+          registerClause(std::make_unique<OpenMPSeverityClause>(severity_kind));
       current_clauses->push_back(new_clause);
     } else {
-      std::cerr << "Cannot have two severity clauses for the directive, ignored\n";
+      std::cerr
+          << "Cannot have two severity clauses for the directive, ignored\n";
     }
     break;
   }
 
   case OMPC_at: {
-    OpenMPAtClauseKind at_kind =
-        (OpenMPAtClauseKind)va_arg(args, int);
+    OpenMPAtClauseKind at_kind = (OpenMPAtClauseKind)va_arg(args, int);
     if (current_clauses->size() == 0) {
       new_clause = registerClause(std::make_unique<OpenMPAtClause>(at_kind));
       current_clauses->push_back(new_clause);
@@ -1037,7 +1041,8 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         (OpenMPGrainsizeClauseModifier)va_arg(args, int);
     std::vector<OpenMPClause *> *current_clauses = getClauses(OMPC_grainsize);
     if (current_clauses->size() == 0) {
-      new_clause = registerClause(std::make_unique<OpenMPGrainsizeClause>(modifier));
+      new_clause =
+          registerClause(std::make_unique<OpenMPGrainsizeClause>(modifier));
       current_clauses->push_back(new_clause);
     } else {
       std::cerr << "Cannot have two grainsize clauses, ignored\n";
@@ -1049,7 +1054,8 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
         (OpenMPNumTasksClauseModifier)va_arg(args, int);
     std::vector<OpenMPClause *> *current_clauses = getClauses(OMPC_num_tasks);
     if (current_clauses->size() == 0) {
-      new_clause = registerClause(std::make_unique<OpenMPNumTasksClause>(modifier));
+      new_clause =
+          registerClause(std::make_unique<OpenMPNumTasksClause>(modifier));
       current_clauses->push_back(new_clause);
     } else {
       std::cerr << "Cannot have two num_tasks clauses, ignored\n";
@@ -1179,7 +1185,8 @@ OpenMPClause *OpenMPMapClause::addMapClause(
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
     new_clause = directive->registerClause(
         std::make_unique<OpenMPMapClause>(modifier1, modifier2, modifier3, type,
                                           ref_modifier, mapper_identifier));
@@ -1196,9 +1203,8 @@ OpenMPClause *OpenMPTaskReductionClause::addTaskReductionClause(
       directive->getClauses(OMPC_task_reduction);
   OpenMPClause *new_clause = NULL;
   if (current_clauses->size() == 0) {
-    new_clause =
-        directive->registerClause(std::make_unique<OpenMPTaskReductionClause>(
-            identifier));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPTaskReductionClause>(identifier));
     if (identifier == OMPC_TASK_REDUCTION_IDENTIFIER_user &&
         user_defined_identifier) {
       ((OpenMPTaskReductionClause *)new_clause)
@@ -1215,7 +1221,8 @@ OpenMPClause *OpenMPTaskReductionClause::addTaskReductionClause(
           current_user_defined_identifier_expression =
               std::string(user_defined_identifier);
         };
-        if (((OpenMPTaskReductionClause *)(*it))->getIdentifier() == identifier &&
+        if (((OpenMPTaskReductionClause *)(*it))->getIdentifier() ==
+                identifier &&
             current_user_defined_identifier_expression.compare(
                 ((OpenMPTaskReductionClause *)(*it))
                     ->getUserDefinedIdentifier()) == 0) {
@@ -1224,10 +1231,10 @@ OpenMPClause *OpenMPTaskReductionClause::addTaskReductionClause(
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause =
-        directive->registerClause(std::make_unique<OpenMPTaskReductionClause>(
-            identifier));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPTaskReductionClause>(identifier));
     if (identifier == OMPC_TASK_REDUCTION_IDENTIFIER_user)
       ((OpenMPTaskReductionClause *)new_clause)
           ->setUserDefinedIdentifier(user_defined_identifier);
@@ -1259,7 +1266,8 @@ OpenMPClause *OpenMPDefaultmapClause::addDefaultmapClause(
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
     new_clause = directive->registerClause(
         std::make_unique<OpenMPDefaultmapClause>(behavior, category));
     current_clauses->push_back(new_clause);
@@ -1472,17 +1480,18 @@ OpenMPClause *OpenMPReductionClause::addReductionClause(
         if (((OpenMPReductionClause *)(*it))->getModifier() == modifier &&
             ((OpenMPReductionClause *)(*it))->getIdentifier() == identifier &&
             current_user_defined_identifier_expression.compare(
-                ((OpenMPReductionClause *)(*it))
-                    ->getUserDefinedIdentifier()) == 0 &&
+                ((OpenMPReductionClause *)(*it))->getUserDefinedIdentifier()) ==
+                0 &&
             current_user_defined_modifier_expression.compare(
-                ((OpenMPReductionClause *)(*it))
-                    ->getUserDefinedModifier()) == 0) {
+                ((OpenMPReductionClause *)(*it))->getUserDefinedModifier()) ==
+                0) {
           new_clause = (*it);
           return new_clause;
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
     new_clause = directive->registerClause(
         std::make_unique<OpenMPReductionClause>(modifier, identifier));
     ((OpenMPReductionClause *)new_clause)
@@ -1503,7 +1512,8 @@ OpenMPClause *OpenMPFromClause::addFromClause(OpenMPDirective *directive,
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPFromClause>(from_kind));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPFromClause>(from_kind));
     current_clauses->push_back(new_clause);
   } else {
     // Only merge if normalization is enabled
@@ -1516,8 +1526,10 @@ OpenMPClause *OpenMPFromClause::addFromClause(OpenMPDirective *directive,
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPFromClause>(from_kind));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPFromClause>(from_kind));
     current_clauses->push_back(new_clause);
   }
   return new_clause;
@@ -1530,7 +1542,8 @@ OpenMPClause *OpenMPToClause::addToClause(OpenMPDirective *directive,
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPToClause>(to_kind));
+    new_clause =
+        directive->registerClause(std::make_unique<OpenMPToClause>(to_kind));
     current_clauses->push_back(new_clause);
   } else {
     // Only merge if normalization is enabled
@@ -1543,8 +1556,10 @@ OpenMPClause *OpenMPToClause::addToClause(OpenMPDirective *directive,
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPToClause>(to_kind));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause =
+        directive->registerClause(std::make_unique<OpenMPToClause>(to_kind));
     current_clauses->push_back(new_clause);
   }
   return new_clause;
@@ -1559,7 +1574,8 @@ OpenMPAffinityClause::addAffinityClause(OpenMPDirective *directive,
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPAffinityClause>(modifier));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPAffinityClause>(modifier));
     current_clauses->push_back(new_clause);
   } else {
     // Only merge if normalization is enabled
@@ -1572,8 +1588,10 @@ OpenMPAffinityClause::addAffinityClause(OpenMPDirective *directive,
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPAffinityClause>(modifier));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPAffinityClause>(modifier));
     current_clauses->push_back(new_clause);
   }
   return new_clause;
@@ -1589,10 +1607,12 @@ OpenMPDependClause::addDependClause(OpenMPDirective *directive,
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPDependClause>(modifier, type));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPDependClause>(modifier, type));
     current_clauses->push_back(new_clause);
   } else {
-    new_clause = directive->registerClause(std::make_unique<OpenMPDependClause>(modifier, type));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPDependClause>(modifier, type));
     current_clauses->push_back(new_clause);
   }
   return new_clause;
@@ -1646,8 +1666,8 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
           size_t idx = 0;
           for (std::vector<const char *>::iterator it_expr_current =
                    expressions_current->begin();
-                it_expr_current != expressions_current->end();
-                it_expr_current++, ++idx) {
+               it_expr_current != expressions_current->end();
+               it_expr_current++, ++idx) {
             bool para_merge = true;
             for (std::vector<const char *>::iterator it_expr_previous =
                      expressions_previous->begin();
@@ -1661,8 +1681,8 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
               (*it)->addLangExpr(
                   *it_expr_current,
                   (idx < current_separators.size())
-                      ? (has_existing &&
-                                 current_separators[idx] == OMPC_CLAUSE_SEP_space
+                      ? (has_existing && current_separators[idx] ==
+                                             OMPC_CLAUSE_SEP_space
                              ? OMPC_CLAUSE_SEP_comma
                              : current_separators[idx])
                       : OMPC_CLAUSE_SEP_comma);
@@ -1704,14 +1724,13 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
           }
         }
         if (para_merge == true)
-          (*it)->addLangExpr(
-              *it_expr_current,
-              (idx < current_separators.size())
-                  ? (has_existing &&
-                             current_separators[idx] == OMPC_CLAUSE_SEP_space
-                         ? OMPC_CLAUSE_SEP_comma
-                         : current_separators[idx])
-                  : OMPC_CLAUSE_SEP_comma);
+          (*it)->addLangExpr(*it_expr_current,
+                             (idx < current_separators.size())
+                                 ? (has_existing && current_separators[idx] ==
+                                                        OMPC_CLAUSE_SEP_space
+                                        ? OMPC_CLAUSE_SEP_comma
+                                        : current_separators[idx])
+                                 : OMPC_CLAUSE_SEP_comma);
       }
       current_clauses->pop_back();
       directive->getClausesInOriginalOrder()->pop_back();
@@ -1728,7 +1747,8 @@ OpenMPClause *OpenMPDepobjUpdateClause::addDepobjUpdateClause(
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPDepobjUpdateClause>(type));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPDepobjUpdateClause>(type));
     current_clauses->push_back(new_clause);
   } else {
     // Only merge if normalization is enabled
@@ -1741,8 +1761,10 @@ OpenMPClause *OpenMPDepobjUpdateClause::addDepobjUpdateClause(
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPDepobjUpdateClause>(type));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPDepobjUpdateClause>(type));
     current_clauses->push_back(new_clause);
   }
   return new_clause;
@@ -1755,7 +1777,8 @@ OpenMPClause *OpenMPInReductionClause::addInReductionClause(
       directive->getClauses(OMPC_in_reduction);
   OpenMPClause *new_clause = NULL;
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPInReductionClause>(identifier));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPInReductionClause>(identifier));
     if (identifier == OMPC_IN_REDUCTION_IDENTIFIER_user &&
         user_defined_identifier) {
       ((OpenMPInReductionClause *)new_clause)
@@ -1774,15 +1797,17 @@ OpenMPClause *OpenMPInReductionClause::addInReductionClause(
         };
         if (((OpenMPInReductionClause *)(*it))->getIdentifier() == identifier &&
             current_user_defined_identifier_expression.compare(
-                ((OpenMPInReductionClause *)(*it))->getUserDefinedIdentifier()) ==
-                0) {
+                ((OpenMPInReductionClause *)(*it))
+                    ->getUserDefinedIdentifier()) == 0) {
           new_clause = (*it);
           return new_clause;
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPInReductionClause>(identifier));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPInReductionClause>(identifier));
     if (identifier == OMPC_IN_REDUCTION_IDENTIFIER_user)
       ((OpenMPInReductionClause *)new_clause)
           ->setUserDefinedIdentifier(user_defined_identifier);
@@ -1817,7 +1842,8 @@ OpenMPClause *OpenMPAllocatorClause::addAllocatorClause(
       directive->getClauses(OMPC_allocator);
   OpenMPClause *new_clause = NULL;
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPAllocatorClause>(allocator));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPAllocatorClause>(allocator));
     if (allocator == OMPC_ALLOCATOR_ALLOCATOR_user)
       ((OpenMPAllocatorClause *)new_clause)
           ->setUserDefinedAllocator(user_defined_allocator);
@@ -1841,8 +1867,10 @@ OpenMPClause *OpenMPAllocatorClause::addAllocatorClause(
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPAllocatorClause>(allocator));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPAllocatorClause>(allocator));
     if (allocator == OMPC_ALLOCATOR_ALLOCATOR_user)
       ((OpenMPAllocatorClause *)new_clause)
           ->setUserDefinedAllocator(user_defined_allocator);
@@ -1860,7 +1888,8 @@ OpenMPAllocateClause::addAllocateClause(OpenMPDirective *directive,
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPAllocateClause>(allocator));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPAllocateClause>(allocator));
     if (allocator == OMPC_ALLOCATE_ALLOCATOR_user)
       ((OpenMPAllocateClause *)new_clause)
           ->setUserDefinedAllocator(user_defined_allocator);
@@ -1884,8 +1913,10 @@ OpenMPAllocateClause::addAllocateClause(OpenMPDirective *directive,
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPAllocateClause>(allocator));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPAllocateClause>(allocator));
     if (allocator == OMPC_ALLOCATE_ALLOCATOR_user)
       ((OpenMPAllocateClause *)new_clause)
           ->setUserDefinedAllocator(user_defined_allocator);
@@ -1903,7 +1934,8 @@ OpenMPInitializerClause::addInitializerClause(OpenMPDirective *directive,
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPInitializerClause>(priv));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPInitializerClause>(priv));
     if (priv == OMPC_INITIALIZER_PRIV_user)
       ((OpenMPInitializerClause *)new_clause)
           ->setUserDefinedPriv(user_defined_priv);
@@ -1920,14 +1952,17 @@ OpenMPInitializerClause::addInitializerClause(OpenMPDirective *directive,
         };
         if (((OpenMPInitializerClause *)(*it))->getPriv() == priv &&
             current_user_defined_priv_expression.compare(
-                ((OpenMPInitializerClause *)(*it))->getUserDefinedPriv()) == 0) {
+                ((OpenMPInitializerClause *)(*it))->getUserDefinedPriv()) ==
+                0) {
           new_clause = (*it);
           return new_clause;
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPInitializerClause>(priv));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPInitializerClause>(priv));
     if (priv == OMPC_INITIALIZER_PRIV_user)
       ((OpenMPInitializerClause *)new_clause)
           ->setUserDefinedPriv(user_defined_priv);
@@ -1944,7 +1979,8 @@ OpenMPDeviceClause::addDeviceClause(OpenMPDirective *directive,
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPDeviceClause>(modifier));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPDeviceClause>(modifier));
     current_clauses->push_back(new_clause);
   } else {
     // Only merge if normalization is enabled
@@ -1957,8 +1993,10 @@ OpenMPDeviceClause::addDeviceClause(OpenMPDirective *directive,
         }
       }
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPDeviceClause>(modifier));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPDeviceClause>(modifier));
     current_clauses->push_back(new_clause);
   }
   return new_clause;
@@ -1973,9 +2011,9 @@ OpenMPClause *OpenMPScheduleClause::addScheduleClause(
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(
-        std::make_unique<OpenMPScheduleClause>(modifier1, modifier2,
-                                               schedule_kind));
+    new_clause =
+        directive->registerClause(std::make_unique<OpenMPScheduleClause>(
+            modifier1, modifier2, schedule_kind));
     if (schedule_kind == OMPC_SCHEDULE_KIND_user)
       ((OpenMPScheduleClause *)new_clause)
           ->setUserDefinedKind(user_defined_kind);
@@ -1995,7 +2033,8 @@ OpenMPClause *OpenMPDistScheduleClause::addDistScheduleClause(
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPDistScheduleClause>(dist_schedule_kind));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPDistScheduleClause>(dist_schedule_kind));
     current_clauses->push_back(new_clause);
   } else {
     std::cerr << "Cannot have two dist_schedule clause for the directive "
@@ -2012,7 +2051,8 @@ OpenMPClause *OpenMPLastprivateClause::addLastprivateClause(
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPLastprivateClause>(modifier));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPLastprivateClause>(modifier));
     current_clauses->push_back(new_clause);
   } else {
     // Only merge if normalization is enabled
@@ -2026,8 +2066,10 @@ OpenMPClause *OpenMPLastprivateClause::addLastprivateClause(
         };
       };
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPLastprivateClause>(modifier));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPLastprivateClause>(modifier));
     current_clauses->push_back(new_clause);
   }
   return new_clause;
@@ -2041,7 +2083,8 @@ OpenMPClause *OpenMPIfClause::addIfClause(OpenMPDirective *directive,
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPIfClause>(modifier));
+    new_clause =
+        directive->registerClause(std::make_unique<OpenMPIfClause>(modifier));
     if (modifier == OMPC_IF_MODIFIER_user) {
       ((OpenMPIfClause *)new_clause)
           ->setUserDefinedModifier(user_defined_modifier);
@@ -2065,8 +2108,10 @@ OpenMPClause *OpenMPIfClause::addIfClause(OpenMPDirective *directive,
         };
       };
     }
-    /* could not find the matching object for this clause, or normalization is disabled */
-    new_clause = directive->registerClause(std::make_unique<OpenMPIfClause>(modifier));
+    /* could not find the matching object for this clause, or normalization is
+     * disabled */
+    new_clause =
+        directive->registerClause(std::make_unique<OpenMPIfClause>(modifier));
     if (modifier == OMPC_IF_MODIFIER_user) {
       ((OpenMPIfClause *)new_clause)
           ->setUserDefinedModifier(user_defined_modifier);
@@ -2085,7 +2130,8 @@ OpenMPDefaultClause::addDefaultClause(OpenMPDirective *directive,
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPDefaultClause>(default_kind));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPDefaultClause>(default_kind));
     current_clauses->push_back(new_clause);
   } else { /* could be an error since if clause may only appear once */
     std::cerr << "Cannot have two default clause for the directive "
@@ -2105,12 +2151,14 @@ OpenMPOrderClause::addOrderClause(OpenMPDirective *directive,
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPOrderClause>(order_modifier, order_kind));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPOrderClause>(order_modifier, order_kind));
     current_clauses->push_back(new_clause);
     // Add to clauses_in_original_order
     if (new_clause != NULL && new_clause->getClausePosition() == -1) {
       directive->getClausesInOriginalOrder()->push_back(new_clause);
-      new_clause->setClausePosition(directive->getClausesInOriginalOrder()->size() - 1);
+      new_clause->setClausePosition(
+          directive->getClausesInOriginalOrder()->size() - 1);
     }
   } else { /* could be an error since if clause may only appear once */
     std::cerr << "Cannot have two order clause for the directive "
@@ -2129,12 +2177,14 @@ OpenMPOrderClause::addOrderClause(OpenMPDirective *directive,
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPOrderClause>(order_kind));
+    new_clause = directive->registerClause(
+        std::make_unique<OpenMPOrderClause>(order_kind));
     current_clauses->push_back(new_clause);
     // Add to clauses_in_original_order
     if (new_clause != NULL && new_clause->getClausePosition() == -1) {
       directive->getClausesInOriginalOrder()->push_back(new_clause);
-      new_clause->setClausePosition(directive->getClausesInOriginalOrder()->size() - 1);
+      new_clause->setClausePosition(
+          directive->getClausesInOriginalOrder()->size() - 1);
     }
   } else { /* could be an error since if clause may only appear once */
     std::cerr << "Cannot have two order clause for the directive "
@@ -2152,7 +2202,8 @@ OpenMPAlignedClause::addAlignedClause(OpenMPDirective *directive) {
   OpenMPClause *new_clause = NULL;
 
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPAlignedClause>());
+    new_clause =
+        directive->registerClause(std::make_unique<OpenMPAlignedClause>());
     current_clauses->push_back(new_clause);
   }
 
@@ -2173,7 +2224,8 @@ OpenMPClause *OpenMPWhenClause::addWhenClause(OpenMPDirective *directive) {
   return new_clause;
 };
 
-OpenMPClause *OpenMPOtherwiseClause::addOtherwiseClause(OpenMPDirective *directive) {
+OpenMPClause *
+OpenMPOtherwiseClause::addOtherwiseClause(OpenMPDirective *directive) {
 
   std::vector<OpenMPClause *> *current_clauses =
       directive->getClauses(OMPC_otherwise);
@@ -2181,7 +2233,8 @@ OpenMPClause *OpenMPOtherwiseClause::addOtherwiseClause(OpenMPDirective *directi
 
   if (current_clauses->size() == 0) {
   };
-  new_clause = directive->registerClause(std::make_unique<OpenMPOtherwiseClause>());
+  new_clause =
+      directive->registerClause(std::make_unique<OpenMPOtherwiseClause>());
   current_clauses->push_back(new_clause);
 
   return new_clause;
@@ -2192,7 +2245,8 @@ OpenMPClause *OpenMPMatchClause::addMatchClause(OpenMPDirective *directive) {
       directive->getClauses(OMPC_match);
   OpenMPClause *new_clause = NULL;
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(std::make_unique<OpenMPMatchClause>());
+    new_clause =
+        directive->registerClause(std::make_unique<OpenMPMatchClause>());
     current_clauses->push_back(new_clause);
   } else {
     /* we can have multiple clause and we merge them together now, thus we
@@ -2209,13 +2263,15 @@ OpenMPClause *OpenMPUsesAllocatorsClause::addUsesAllocatorsClause(
   OpenMPClause *new_clause = NULL;
   if (current_clauses->size() == 0) {
   };
-  new_clause = directive->registerClause(std::make_unique<OpenMPUsesAllocatorsClause>());
+  new_clause =
+      directive->registerClause(std::make_unique<OpenMPUsesAllocatorsClause>());
   current_clauses->push_back(new_clause);
 
   return new_clause;
 };
 
-// Helper function to convert OpenMPDirectiveKind to string without trailing space.
+// Helper function to convert OpenMPDirectiveKind to string without trailing
+// space.
 static std::string OpenMPDirectiveKindToString(OpenMPDirectiveKind kind) {
   OpenMPDirective temp(kind);
   std::string result = temp.toString();
@@ -2301,7 +2357,22 @@ std::string OpenMPDeviceSafesyncClause::toString() {
 }
 
 std::string OpenMPMemscopeClause::toString() {
-  return "memscope(" + expressionToString() + ") ";
+  const char *value = "device";
+  switch (scope) {
+  case OMPC_MEMSCOPE_all:
+    value = "all";
+    break;
+  case OMPC_MEMSCOPE_cgroup:
+    value = "cgroup";
+    break;
+  case OMPC_MEMSCOPE_device:
+    value = "device";
+    break;
+  case OMPC_MEMSCOPE_unknown:
+    break;
+  }
+
+  return std::string("memscope(") + value + ") ";
 }
 
 std::string OpenMPLooprangeClause::toString() {

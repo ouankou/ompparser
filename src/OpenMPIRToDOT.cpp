@@ -970,9 +970,8 @@ void OpenMPDirective::generateDOT() {
   switch (kind) {
   case OMPD_allocate: {
     std::string indent = std::string(1, '\t');
-    std::vector<const char *> *list =
-        ((OpenMPAllocateDirective *)this)->getAllocateList();
-    std::vector<const char *>::iterator list_item;
+    const auto &list =
+        static_cast<const OpenMPAllocateDirective *>(this)->getAllocateList();
     int list_index = 0;
     std::string list_name;
     std::string expr_name;
@@ -980,22 +979,21 @@ void OpenMPDirective::generateDOT() {
     list_name = tkind + "_directive_list_" + std::to_string(list_index);
     current_line = indent + tkind + " -- " + list_name + "\n";
     output << current_line.c_str();
-    for (list_item = list->begin(); list_item != list->end(); list_item++) {
+    for (auto it = list.begin(); it != list.end(); ++it) {
       expr_name = list_name + "_expr" + std::to_string(list_index);
       list_index += 1;
       current_line = indent + indent + list_name + " -- " + expr_name + "\n";
       output << current_line.c_str();
       current_line = indent + indent + "\t" + expr_name + " [label = \"" +
-                     expr_name + "\\n " + std::string(*list_item) + "\"]\n";
+                     expr_name + "\\n " + *it + "\"]\n";
       output << current_line.c_str();
     }
     break;
   }
   case OMPD_threadprivate: {
     std::string indent = std::string(1, '\t');
-    std::vector<const char *> *list =
-        ((OpenMPThreadprivateDirective *)this)->getThreadprivateList();
-    std::vector<const char *>::iterator list_item;
+    const auto &list = static_cast<const OpenMPThreadprivateDirective *>(this)
+                           ->getThreadprivateList();
     int list_index = 0;
     std::string list_name;
     std::string expr_name;
@@ -1003,13 +1001,13 @@ void OpenMPDirective::generateDOT() {
     list_name = tkind + "_directive_list_" + std::to_string(list_index);
     current_line = indent + tkind + " -- " + list_name + "\n";
     output << current_line.c_str();
-    for (list_item = list->begin(); list_item != list->end(); list_item++) {
+    for (auto it = list.begin(); it != list.end(); ++it) {
       expr_name = list_name + "_expr" + std::to_string(list_index);
       list_index += 1;
       current_line = indent + indent + list_name + " -- " + expr_name + "\n";
       output << current_line.c_str();
       current_line = indent + indent + "\t" + expr_name + " [label = \"" +
-                     expr_name + "\\n " + std::string(*list_item) + "\"]\n";
+                     expr_name + "\\n " + *it + "\"]\n";
       output << current_line.c_str();
     }
     break;
@@ -1236,9 +1234,8 @@ void OpenMPDirective::generateDOT(std::ofstream &dot_file, int depth, int index,
 
   switch (kind) {
   case OMPD_allocate: {
-    std::vector<const char *> *list =
-        ((OpenMPAllocateDirective *)this)->getAllocateList();
-    std::vector<const char *>::iterator list_item;
+    const auto &list =
+        static_cast<const OpenMPAllocateDirective *>(this)->getAllocateList();
     int list_index = 0;
     std::string list_name;
     std::string expr_name;
@@ -1246,21 +1243,20 @@ void OpenMPDirective::generateDOT(std::ofstream &dot_file, int depth, int index,
     list_name = tkind + "_directive_list_" + std::to_string(list_index);
     current_line = indent + tkind + " -- " + list_name + "\n";
     dot_file << current_line.c_str();
-    for (list_item = list->begin(); list_item != list->end(); list_item++) {
+    for (auto it = list.begin(); it != list.end(); ++it) {
       expr_name = list_name + "_expr" + std::to_string(list_index);
       list_index += 1;
       current_line = indent + indent + list_name + " -- " + expr_name + "\n";
       dot_file << current_line.c_str();
       current_line = indent + indent + "\t" + expr_name + " [label = \"" +
-                     expr_name + "\\n " + std::string(*list_item) + "\"]\n";
+                     expr_name + "\\n " + *it + "\"]\n";
       dot_file << current_line.c_str();
     }
     break;
   }
   case OMPD_threadprivate: {
-    std::vector<const char *> *list =
-        ((OpenMPThreadprivateDirective *)this)->getThreadprivateList();
-    std::vector<const char *>::iterator list_item;
+    const auto &list = static_cast<const OpenMPThreadprivateDirective *>(this)
+                           ->getThreadprivateList();
     int list_index = 0;
     std::string list_name;
     std::string expr_name;
@@ -1268,13 +1264,13 @@ void OpenMPDirective::generateDOT(std::ofstream &dot_file, int depth, int index,
     list_name = tkind + "_directive_list_" + std::to_string(list_index);
     current_line = indent + tkind + " -- " + list_name + "\n";
     dot_file << current_line.c_str();
-    for (list_item = list->begin(); list_item != list->end(); list_item++) {
+    for (auto it = list.begin(); it != list.end(); ++it) {
       expr_name = list_name + "_expr" + std::to_string(list_index);
       list_index += 1;
       current_line = indent + indent + list_name + " -- " + expr_name + "\n";
       dot_file << current_line.c_str();
       current_line = indent + indent + "\t" + expr_name + " [label = \"" +
-                     expr_name + "\\n " + std::string(*list_item) + "\"]\n";
+                     expr_name + "\\n " + *it + "\"]\n";
       dot_file << current_line.c_str();
     }
     break;
@@ -1848,8 +1844,8 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
           indent + "\t\t" + node_id + "_arch -- " + node_id + "_arch_score\n";
       dot_file << current_line.c_str();
       current_line = indent + "\t\t\t" + node_id +
-                     "_arch_score [label = \"score\\n " +
-                     scored_expr->score + "\"]\n";
+                     "_arch_score [label = \"score\\n " + scored_expr->score +
+                     "\"]\n";
       dot_file << current_line.c_str();
     };
     // output arch expression
@@ -1857,8 +1853,8 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
         indent + "\t\t" + node_id + "_arch -- " + node_id + "_arch_expr\n";
     dot_file << current_line.c_str();
     current_line = indent + "\t\t\t" + node_id +
-                   "_arch_expr [label = \"expr\\n " +
-                   scored_expr->expression + "\"]\n";
+                   "_arch_expr [label = \"expr\\n " + scored_expr->expression +
+                   "\"]\n";
     dot_file << current_line.c_str();
   };
 
@@ -1883,8 +1879,8 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
           indent + "\t\t" + node_id + "_isa -- " + node_id + "_isa_score\n";
       dot_file << current_line.c_str();
       current_line = indent + "\t\t\t" + node_id +
-                     "_isa_score [label = \"score\\n " +
-                     scored_expr->score + "\"]\n";
+                     "_isa_score [label = \"score\\n " + scored_expr->score +
+                     "\"]\n";
       dot_file << current_line.c_str();
     };
     // output isa expression
@@ -1892,8 +1888,8 @@ void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
         indent + "\t\t" + node_id + "_isa -- " + node_id + "_isa_expr\n";
     dot_file << current_line.c_str();
     current_line = indent + "\t\t\t" + node_id +
-                   "_isa_expr [label = \"expr\\n " +
-                   scored_expr->expression + "\"]\n";
+                   "_isa_expr [label = \"expr\\n " + scored_expr->expression +
+                   "\"]\n";
     dot_file << current_line.c_str();
   };
 
