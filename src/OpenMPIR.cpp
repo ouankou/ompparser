@@ -2357,8 +2357,13 @@ std::string OpenMPDeviceSafesyncClause::toString() {
 }
 
 std::string OpenMPMemscopeClause::toString() {
+  OpenMPMemscopeClauseKind effective_scope = scope;
+  if (effective_scope == OMPC_MEMSCOPE_unknown) {
+    effective_scope = OMPC_MEMSCOPE_device;
+  }
+
   std::string value;
-  switch (scope) {
+  switch (effective_scope) {
   case OMPC_MEMSCOPE_all:
     value = "all";
     break;
@@ -2372,13 +2377,8 @@ std::string OpenMPMemscopeClause::toString() {
     break;
   }
 
-  if (value.empty()) {
-    std::string expr = expressionToString();
-    if (!expr.empty()) {
-      return "memscope(" + expr + ") ";
-    }
+  if (value.empty())
     return "memscope ";
-  }
   return "memscope(" + value + ") ";
 }
 

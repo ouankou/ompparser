@@ -128,6 +128,14 @@ static void addToFromIteratorDefinition(OpenMPClause *clause,
   }
   args->clear();
 }
+
+static void setMemscopeDefault(OpenMPClause *clause) {
+  if (clause == nullptr) {
+    return;
+  }
+  auto *memscope_clause = static_cast<OpenMPMemscopeClause *>(clause);
+  memscope_clause->setScope(OMPC_MEMSCOPE_device);
+}
 static const char *trait_score = "";
 /* Treat the entire expression as a string for now */
 extern void openmp_parse_expr();
@@ -5346,8 +5354,13 @@ thread_limit_clause: THREAD_LIMIT { current_clause = current_directive->addOpenM
 memscope_clause : MEMSCOPE {
                   current_clause =
                       current_directive->addOpenMPClause(OMPC_memscope);
-                } '(' memscope_kind ')'
+                } memscope_clause_args
                ;
+
+memscope_clause_args : '(' memscope_kind ')'
+                     | '(' ')' { setMemscopeDefault(current_clause); }
+                     | /* empty */ { setMemscopeDefault(current_clause); }
+                     ;
 
 memscope_kind : DEVICE {
                  auto *memscope_clause =
