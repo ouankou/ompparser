@@ -110,6 +110,7 @@ extern void *(*exprParse)(const char *);
 #include <cstdio>
 #include <cctype>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -140,6 +141,15 @@ static std::vector<int> apply_paren_depth;
 static int induction_spec_paren_depth = 0;
 static bool induction_step_waiting = false;  // True when expecting expression after step(
 static int if_paren_depth = 0;
+static std::vector<std::unique_ptr<char[]>> lexeme_storage;
+
+static const char *store_lexeme(const std::string &text) {
+  auto buffer = std::make_unique<char[]>(text.size() + 1);
+  std::memcpy(buffer.get(), text.c_str(), text.size() + 1);
+  const char *ptr = buffer.get();
+  lexeme_storage.push_back(std::move(buffer));
+  return ptr;
+}
 
 static inline void push_apply_state();
 static inline void pop_apply_state();
@@ -522,6 +532,8 @@ target_exit_data/{blank}  { yyless(7); return TARGET; }
 target{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
 data{id_char}+            { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
 device{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
+all{id_char}+             { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
+cgroup{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
 memscope                  { return MEMSCOPE; }
 looprange                 { yy_push_state(LOOPRANGE_STATE); return LOOPRANGE; }
 permutation               { return PERMUTATION; }
@@ -544,17 +556,8 @@ nocontext/"("             { yy_push_state(NOCONTEXT_STATE); return NOCONTEXT; }
 novariants/{blank}        { yy_push_state(NOVARIANTS_STATE); return NOVARIANTS; }
 novariants/"("            { yy_push_state(NOVARIANTS_STATE); return NOVARIANTS; }
 use                       { return USE; }
-system                    { return SYSTEM; }
-warp                      { return WARP; }
-wavefront                 { return WAVEFRONT; }
-block                     {
-                            if (b_within_variable_list) {
-                              yy_push_state(EXPR_STATE);
-                              prepare_expression_capture_str("block");
-                            } else {
-                              return BLOCK;
-                            }
-                          }
+all                       { return ALL; }
+cgroup                    { return CGROUP; }
 
 
 <RAW_EXPR_STATE>"("                        { parenthesis_local_count++; parenthesis_global_count++; current_string.push_back('('); }
@@ -620,7 +623,8 @@ block                     {
                                                 len--;
                                               }
                                               std::string allocator(yytext, len);
-                                              openmp_lval.stype = strdup(allocator.c_str());
+                                              openmp_lval.stype =
+                                                  store_lexeme(allocator);
                                               return ALLOCATOR_IDENTIFIER;
                                             }
 <ALLOCATE_STATE>"("                                   { return '('; }
@@ -643,7 +647,8 @@ block                     {
                                                 std::string allocator_expr = current_string;
                                                 clear_expression_buffer();
                                                 yy_pop_state();
-                                                openmp_lval.stype = strdup(allocator_expr.c_str());
+                                                openmp_lval.stype =
+                                                    store_lexeme(allocator_expr);
                                                 return ALLOCATOR_IDENTIFIER;
                                               }
                                             }
@@ -1683,7 +1688,8 @@ block                     {
                                                 case ' ': {
                                                     if (parenthesis_global_count == 0 && !inside_quotes) {
                                                         yy_pop_state();
-                                                        openmp_lval.stype = strdup(current_string.c_str());
+                                                        openmp_lval.stype =
+                                                            store_lexeme(current_string);
                                                         current_string.clear();
                                                         parenthesis_local_count = 0;
                                                         parenthesis_global_count = 1;
@@ -1745,14 +1751,14 @@ static inline int &current_apply_paren_depth() {
 
 /* Implementation of inline functions that use parser tokens */
 static inline int emit_expr_string_and_unput(char ch) {
-  openmp_lval.stype = strdup(current_string.c_str());
+  openmp_lval.stype = store_lexeme(current_string);
   clear_expression_buffer();
   unput(ch);
   return EXPR_STRING;
 }
 
 static inline int emit_expr_string_no_unput() {
-  openmp_lval.stype = strdup(current_string.c_str());
+  openmp_lval.stype = store_lexeme(current_string);
   clear_expression_buffer();
   return EXPR_STRING;
 }
@@ -1789,4 +1795,5 @@ void end_lexer(void) {
   };
   openmp_reset_lexer_flags();
   yy_delete_buffer(YY_CURRENT_BUFFER);
+  lexeme_storage.clear();
 }

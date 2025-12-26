@@ -9,9 +9,9 @@
 #ifndef OMPPARSER_OPENMPAST_H
 #define OMPPARSER_OPENMPAST_H
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
-#include <algorithm>
 
 #include "OpenMPKinds.h"
 #include <cassert>
@@ -107,8 +107,8 @@ public:
   // clause, ompparser does not parse them, instead, it only stores them as
   // strings
   virtual void addLangExpr(const char *expression,
-                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
-                   int line = 0, int col = 0);
+                           OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
+                           int line = 0, int col = 0);
 
   std::vector<const char *> *getExpressions() { return &expressions; };
   const std::vector<OpenMPClauseSeparator> &getExpressionSeparators() const {
@@ -131,7 +131,7 @@ class OpenMPDirective : public SourceLocation {
 protected:
   OpenMPDirectiveKind kind;
   OpenMPBaseLang lang;
-  bool normalize_clauses = true;  // Control clause normalization
+  bool normalize_clauses = true; // Control clause normalization
   bool use_declare_target_underscore = false;
   bool compact_parallel_do = false;
 
@@ -166,7 +166,8 @@ protected:
   std::vector<std::unique_ptr<OpenMPClause>> clause_storage;
 
   // Owned storage for clause vector containers
-  std::vector<std::unique_ptr<std::vector<OpenMPClause *>>> clause_vector_storage;
+  std::vector<std::unique_ptr<std::vector<OpenMPClause *>>>
+      clause_vector_storage;
   /**
    *
    * This method searches the clauses map to see whether one or more
@@ -268,7 +269,8 @@ class OpenMPAtomicDirective : public OpenMPDirective {
 protected:
   map<OpenMPClauseKind, vector<OpenMPClause *> *> clauses_atomic_after;
   map<OpenMPClauseKind, vector<OpenMPClause *> *> clauses_atomic_clauses;
-  std::vector<std::unique_ptr<std::vector<OpenMPClause *>>> atomic_clause_vector_storage;
+  std::vector<std::unique_ptr<std::vector<OpenMPClause *>>>
+      atomic_clause_vector_storage;
 
 public:
   OpenMPAtomicDirective() : OpenMPDirective(OMPD_atomic) {};
@@ -374,43 +376,51 @@ public:
 // allocate directive
 class OpenMPAllocateDirective : public OpenMPDirective {
 protected:
-  std::vector<const char *> allocate_list;
+  std::vector<std::string> allocate_list;
 
 public:
   OpenMPAllocateDirective() : OpenMPDirective(OMPD_allocate) {};
   void addAllocateList(const char *_allocate_list) {
-    allocate_list.push_back(_allocate_list);
+    if (_allocate_list != nullptr) {
+      allocate_list.emplace_back(_allocate_list);
+    }
   };
-  std::vector<const char *> *getAllocateList() { return &allocate_list; };
+  const std::vector<std::string> &getAllocateList() const {
+    return allocate_list;
+  };
 };
 
 // threadprivate directive
 class OpenMPThreadprivateDirective : public OpenMPDirective {
 protected:
-  std::vector<const char *> threadprivate_list;
+  std::vector<std::string> threadprivate_list;
 
 public:
   OpenMPThreadprivateDirective() : OpenMPDirective(OMPD_threadprivate) {};
   void addThreadprivateList(const char *_threadprivate_list) {
-    threadprivate_list.push_back(_threadprivate_list);
+    if (_threadprivate_list != nullptr) {
+      threadprivate_list.emplace_back(_threadprivate_list);
+    }
   };
-  std::vector<const char *> *getThreadprivateList() {
-    return &threadprivate_list;
+  const std::vector<std::string> &getThreadprivateList() const {
+    return threadprivate_list;
   };
 };
 
 // groupprivate directive
 class OpenMPGroupprivateDirective : public OpenMPDirective {
 protected:
-  std::vector<const char *> groupprivate_list;
+  std::vector<std::string> groupprivate_list;
 
 public:
   OpenMPGroupprivateDirective() : OpenMPDirective(OMPD_groupprivate) {};
   void addGroupprivateList(const char *_groupprivate_list) {
-    groupprivate_list.push_back(_groupprivate_list);
+    if (_groupprivate_list != nullptr) {
+      groupprivate_list.emplace_back(_groupprivate_list);
+    }
   };
-  std::vector<const char *> *getGroupprivateList() {
-    return &groupprivate_list;
+  const std::vector<std::string> &getGroupprivateList() const {
+    return groupprivate_list;
   };
 };
 
@@ -644,7 +654,7 @@ public:
 class OpenMPInitClause : public OpenMPClause {
 private:
   std::vector<OpenMPInitClauseKind> interop_types;
-  std::vector<std::string> raw_interop_types;  // For unknown/vendor types
+  std::vector<std::string> raw_interop_types; // For unknown/vendor types
   bool has_directive_name_modifier = false;
   OpenMPDirectiveKind directive_name_modifier = OMPD_unknown;
   bool has_prefer_type = false;
@@ -658,7 +668,7 @@ public:
   OpenMPInitClause() : OpenMPClause(OMPC_init) {}
 
   void addInteropType(OpenMPInitClauseKind value);
-  void addInteropType(const std::string &raw_type);  // For unknown types
+  void addInteropType(const std::string &raw_type); // For unknown types
   const std::vector<OpenMPInitClauseKind> &getInteropTypes() const {
     return interop_types;
   }
@@ -705,7 +715,8 @@ private:
 public:
   OpenMPAdjustArgsClause() : OpenMPClause(OMPC_adjust_args) {}
 
-  void setModifier(OpenMPAdjustArgsModifier value, const std::string &raw = "") {
+  void setModifier(OpenMPAdjustArgsModifier value,
+                   const std::string &raw = "") {
     modifier = value;
     raw_modifier = raw;
   }
@@ -826,7 +837,8 @@ protected:
   OpenMPLinearClauseModifier modifier; // linear modifier
 
   std::string user_defined_step = "";
-  bool modifier_first_syntax = false; // true if syntax is modifier(vars), false if vars: modifier
+  bool modifier_first_syntax =
+      false; // true if syntax is modifier(vars), false if vars: modifier
 
 public:
   OpenMPLinearClause(OpenMPLinearClauseModifier _modifier)
@@ -834,7 +846,9 @@ public:
 
   OpenMPLinearClauseModifier getModifier() { return modifier; };
 
-  void setModifier(OpenMPLinearClauseModifier _modifier) { modifier = _modifier; };
+  void setModifier(OpenMPLinearClauseModifier _modifier) {
+    modifier = _modifier;
+  };
 
   void setUserDefinedStep(const char *_step) { user_defined_step = _step; };
 
@@ -949,7 +963,9 @@ protected:
   OpenMPGrainsizeClauseModifier modifier;
 
 public:
-  OpenMPGrainsizeClause() : OpenMPClause(OMPC_grainsize), modifier(OMPC_GRAINSIZE_MODIFIER_unspecified) {}
+  OpenMPGrainsizeClause()
+      : OpenMPClause(OMPC_grainsize),
+        modifier(OMPC_GRAINSIZE_MODIFIER_unspecified) {}
 
   OpenMPGrainsizeClause(OpenMPGrainsizeClauseModifier _modifier)
       : OpenMPClause(OMPC_grainsize), modifier(_modifier) {};
@@ -965,7 +981,9 @@ protected:
   OpenMPNumTasksClauseModifier modifier;
 
 public:
-  OpenMPNumTasksClause() : OpenMPClause(OMPC_num_tasks), modifier(OMPC_NUM_TASKS_MODIFIER_unspecified) {}
+  OpenMPNumTasksClause()
+      : OpenMPClause(OMPC_num_tasks),
+        modifier(OMPC_NUM_TASKS_MODIFIER_unspecified) {}
 
   OpenMPNumTasksClause(OpenMPNumTasksClauseModifier _modifier)
       : OpenMPClause(OMPC_num_tasks), modifier(_modifier) {};
@@ -1021,7 +1039,8 @@ public:
   void setUserCondition(const char *_score,
                         const char *_user_condition_expression) {
     user_condition_expression.score = std::string(_score);
-    user_condition_expression.expression = std::string(_user_condition_expression);
+    user_condition_expression.expression =
+        std::string(_user_condition_expression);
   };
   ScoredExpression *getUserCondition() { return &user_condition_expression; };
   void addConstructDirective(const char *_score,
@@ -1050,7 +1069,8 @@ public:
   std::pair<std::string, OpenMPClauseContextKind> *getContextKind() {
     return &context_kind_name;
   };
-  void setDeviceNumExpression(const char *_score, const char *_device_num_expression) {
+  void setDeviceNumExpression(const char *_score,
+                              const char *_device_num_expression) {
     device_num_expression.score = std::string(_score);
     device_num_expression.expression = std::string(_device_num_expression);
   };
@@ -1088,9 +1108,7 @@ public:
   void setIsTargetDeviceSelector(bool _is_target_device) {
     is_target_device_selector = _is_target_device;
   };
-  bool getIsTargetDeviceSelector() {
-    return is_target_device_selector;
-  };
+  bool getIsTargetDeviceSelector() { return is_target_device_selector; };
   void addSelectorKind(OpenMPContextSelectorSequenceKind kind) {
     selector_order.push_back(kind);
   };
@@ -1211,8 +1229,10 @@ protected:
   std::vector<OpenMPExpressionItem> operands;
 
 public:
-  OpenMPOrderClause(OpenMPOrderClauseModifier _order_modifier, OpenMPOrderClauseKind _order_kind)
-      : OpenMPClause(OMPC_order), order_modifier(_order_modifier), order_kind(_order_kind) {};
+  OpenMPOrderClause(OpenMPOrderClauseModifier _order_modifier,
+                    OpenMPOrderClauseKind _order_kind)
+      : OpenMPClause(OMPC_order), order_modifier(_order_modifier),
+        order_kind(_order_kind) {};
 
   OpenMPOrderClause(OpenMPOrderClauseKind _order_kind)
       : OpenMPClause(OMPC_order), order_kind(_order_kind) {};
@@ -1229,7 +1249,9 @@ public:
   }
   void clearOperands() { operands.clear(); }
 
-  static OpenMPClause *addOrderClause(OpenMPDirective *, OpenMPOrderClauseModifier, OpenMPOrderClauseKind);
+  static OpenMPClause *addOrderClause(OpenMPDirective *,
+                                      OpenMPOrderClauseModifier,
+                                      OpenMPOrderClauseKind);
   static OpenMPClause *addOrderClause(OpenMPDirective *, OpenMPOrderClauseKind);
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
@@ -1266,15 +1288,17 @@ public:
   OpenMPFirstprivateClause() : OpenMPClause(OMPC_firstprivate) {}
 
   void setSaved(bool value = true) { current_saved_state = value; }
-  bool isSaved() const { 
-      // Return true if any operand is saved, or based on current state?
-      // For now returning current state might be misleading if used for whole clause.
-      // But preserving checks: return true if any is saved.
-      for(bool b : saved_statuses) if(b) return true;
-      return current_saved_state;
+  bool isSaved() const {
+    // Return true if any operand is saved, or based on current state?
+    // For now returning current state might be misleading if used for whole
+    // clause. But preserving checks: return true if any is saved.
+    for (bool b : saved_statuses)
+      if (b)
+        return true;
+    return current_saved_state;
   }
-  
-  const std::vector<bool>& getSavedStatuses() const { return saved_statuses; }
+
+  const std::vector<bool> &getSavedStatuses() const { return saved_statuses; }
 
   void addLangExpr(const char *expression,
                    OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
@@ -1380,25 +1404,20 @@ public:
   void addIterator(const Iterator &it) { iterators.push_back(it); }
   const std::vector<Iterator> &getIterators() const { return iterators; }
   void clearIterators() { iterators.clear(); }
-  void
-  setDependIteratorsDefinitionClass(std::vector<std::vector<const char *> *>
-                                        *_depend_iterators_definition_class) {
-    // Legacy entry point: convert existing string vectors into Iterator structs.
+  void setDependIteratorsDefinitionClass(
+      const std::vector<std::vector<const char *>> &definition_class) {
     iterators.clear();
-    if (_depend_iterators_definition_class == nullptr) {
-      return;
-    }
-    for (auto *vec : *_depend_iterators_definition_class) {
-      if (vec == nullptr || vec->size() < 4) {
+    for (const auto &vec : definition_class) {
+      if (vec.size() < 4) {
         continue;
       }
       Iterator it;
-      it.qualifier = (*vec)[0] ? std::string((*vec)[0]) : "";
-      it.var = (*vec)[1] ? std::string((*vec)[1]) : "";
-      it.begin = (*vec)[2] ? std::string((*vec)[2]) : "";
-      it.end = (*vec)[3] ? std::string((*vec)[3]) : "";
-      if (vec->size() > 4 && (*vec)[4]) {
-        it.step = std::string((*vec)[4]);
+      it.qualifier = vec[0] ? std::string(vec[0]) : "";
+      it.var = vec[1] ? std::string(vec[1]) : "";
+      it.begin = vec[2] ? std::string(vec[2]) : "";
+      it.end = vec[3] ? std::string(vec[3]) : "";
+      if (vec.size() > 4 && vec[4]) {
+        it.step = std::string(vec[4]);
       }
       iterators.push_back(it);
     }
@@ -1434,7 +1453,9 @@ public:
     addLangExpr(expr.c_str(), sep);
   }
   bool hasSourceExpression() const { return has_source_expr; }
-  const OpenMPExpressionItem &getSourceExpression() const { return source_expr; }
+  const OpenMPExpressionItem &getSourceExpression() const {
+    return source_expr;
+  }
   void addSinkArg(const std::string &expr,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
     sink_args.push_back(OpenMPExpressionItem{expr, sep});
@@ -1467,26 +1488,20 @@ public:
 
   OpenMPAffinityClause(OpenMPAffinityClauseModifier _modifier)
       : OpenMPClause(OMPC_affinity), modifier(_modifier) {};
-  void
-  addIteratorsDefinitionClass(std::vector<const char *> *_iterator_definition) {
-    if (_iterator_definition == nullptr || _iterator_definition->size() < 4) {
+  void addIteratorsDefinitionClass(
+      const std::vector<const char *> &iterator_definition) {
+    if (iterator_definition.size() < 4) {
       return;
     }
     Iterator it;
     it.qualifier =
-        (*_iterator_definition)[0] ? std::string((*_iterator_definition)[0])
-                                   : "";
-    it.var =
-        (*_iterator_definition)[1] ? std::string((*_iterator_definition)[1])
-                                   : "";
+        iterator_definition[0] ? std::string(iterator_definition[0]) : "";
+    it.var = iterator_definition[1] ? std::string(iterator_definition[1]) : "";
     it.begin =
-        (*_iterator_definition)[2] ? std::string((*_iterator_definition)[2])
-                                   : "";
-    it.end =
-        (*_iterator_definition)[3] ? std::string((*_iterator_definition)[3])
-                                   : "";
-    if (_iterator_definition->size() > 4 && (*_iterator_definition)[4]) {
-      it.step = std::string((*_iterator_definition)[4]);
+        iterator_definition[2] ? std::string(iterator_definition[2]) : "";
+    it.end = iterator_definition[3] ? std::string(iterator_definition[3]) : "";
+    if (iterator_definition.size() > 4 && iterator_definition[4]) {
+      it.step = std::string(iterator_definition[4]);
     }
     iterators.push_back(it);
   };
@@ -1888,7 +1903,8 @@ public:
 class OpenMPUsesAllocatorsClause : public OpenMPClause {
 protected:
   // Owned storage for allocator parameters
-  std::vector<std::unique_ptr<usesAllocatorParameter>> usesAllocatorsAllocatorSequenceStorage;
+  std::vector<std::unique_ptr<usesAllocatorParameter>>
+      usesAllocatorsAllocatorSequenceStorage;
   // View for compatibility with existing code
   std::vector<usesAllocatorParameter *> usesAllocatorsAllocatorSequenceView;
 
@@ -2014,8 +2030,12 @@ public:
 
 // memscope clause
 class OpenMPMemscopeClause : public OpenMPClause {
+  OpenMPMemscopeClauseKind scope = OMPC_MEMSCOPE_unknown;
+
 public:
   OpenMPMemscopeClause() : OpenMPClause(OMPC_memscope) {}
+  void setScope(OpenMPMemscopeClauseKind value) { scope = value; }
+  OpenMPMemscopeClauseKind getScope() const { return scope; }
   std::string toString() override;
 };
 

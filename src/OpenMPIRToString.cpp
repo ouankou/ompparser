@@ -31,41 +31,37 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     break;
   }
   case OMPD_allocate: {
-    std::vector<const char *> *list =
-        ((OpenMPAllocateDirective *)this)->getAllocateList();
-    std::vector<const char *>::iterator list_item;
-
+    const auto &list =
+        static_cast<const OpenMPAllocateDirective *>(this)->getAllocateList();
     result += "(";
-    for (list_item = list->begin(); list_item != list->end(); list_item++) {
-      if (list_item != list->begin())
+    for (auto it = list.begin(); it != list.end(); ++it) {
+      if (it != list.begin())
         result += ",";
-      result += *list_item;
+      result += *it;
     }
     result += ") ";
     break;
   }
   case OMPD_threadprivate: {
-    std::vector<const char *> *list =
-        ((OpenMPThreadprivateDirective *)this)->getThreadprivateList();
-    std::vector<const char *>::iterator list_item;
+    const auto &list = static_cast<const OpenMPThreadprivateDirective *>(this)
+                           ->getThreadprivateList();
     result += "(";
-    for (list_item = list->begin(); list_item != list->end(); list_item++) {
-      if (list_item != list->begin())
+    for (auto it = list.begin(); it != list.end(); ++it) {
+      if (it != list.begin())
         result += ",";
-      result += *list_item;
+      result += *it;
     }
     result += ")";
     break;
   }
   case OMPD_groupprivate: {
-    std::vector<const char *> *list =
-        ((OpenMPGroupprivateDirective *)this)->getGroupprivateList();
-    std::vector<const char *>::iterator list_item;
+    const auto &list = static_cast<const OpenMPGroupprivateDirective *>(this)
+                           ->getGroupprivateList();
     result += "(";
-    for (list_item = list->begin(); list_item != list->end(); list_item++) {
-      if (list_item != list->begin())
+    for (auto it = list.begin(); it != list.end(); ++it) {
+      if (it != list.begin())
         result += ",";
-      result += *list_item;
+      result += *it;
     }
     result += ")";
     break;
@@ -180,8 +176,8 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
   case OMPD_end: {
     auto *end_directive = static_cast<OpenMPEndDirective *>(this);
     OpenMPDirective *paired = end_directive->getPairedDirective();
-    if (this->getBaseLang() == Lang_Fortran &&
-        paired != nullptr && paired->getKind() == OMPD_do) {
+    if (this->getBaseLang() == Lang_Fortran && paired != nullptr &&
+        paired->getKind() == OMPD_do) {
       result = prefix;
       if (end_directive->getUseCompactEndDo()) {
         result += "enddo";
@@ -277,8 +273,7 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
         if (!clause_str.empty() && clause_str.front() != ' ') {
           result += " ";
         }
-      }
-      else if (!result.empty() && result.back() != ' ') {
+      } else if (!result.empty() && result.back() != ' ') {
         result += " ";
       }
       result += clause_str;
@@ -288,7 +283,8 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       result.pop_back();
     }
   } else {
-    // No clauses - remove trailing space from directive name to match clang-format
+    // No clauses - remove trailing space from directive name to match
+    // clang-format
     if (!result.empty() && result.back() == ' ') {
       result.pop_back();
     }
@@ -473,13 +469,16 @@ std::string OpenMPDirective::toString() {
     result += "target update ";
     break;
   case OMPD_declare_target:
-    result += this->getDeclareTargetUnderscore() ? "declare_target " : "declare target ";
+    result += this->getDeclareTargetUnderscore() ? "declare_target "
+                                                 : "declare target ";
     break;
   case OMPD_begin_declare_target:
-    result += this->getDeclareTargetUnderscore() ? "begin declare_target " : "begin declare target ";
+    result += this->getDeclareTargetUnderscore() ? "begin declare_target "
+                                                 : "begin declare target ";
     break;
   case OMPD_end_declare_target:
-    result += this->getDeclareTargetUnderscore() ? "end declare_target " : "end declare target ";
+    result += this->getDeclareTargetUnderscore() ? "end declare_target "
+                                                 : "end declare target ";
     break;
   case OMPD_master:
     result += "master ";
@@ -709,11 +708,12 @@ std::string OpenMPClause::expressionToString() {
   std::string result;
   std::vector<const char *> *expr = this->getExpressions();
   if (expr != NULL) {
-    // For init/adjust_args clauses with exactly 2 expressions, use ":" separator
-    if ((this->getKind() == OMPC_init || this->getKind() == OMPC_adjust_args) && expr->size() == 2) {
+    // For init/adjust_args clauses with exactly 2 expressions, use ":"
+    // separator
+    if ((this->getKind() == OMPC_init || this->getKind() == OMPC_adjust_args) &&
+        expr->size() == 2) {
       result = std::string((*expr)[0]) + ": " + std::string((*expr)[1]);
-    }
-    else {
+    } else {
       for (size_t idx = 0; idx < expr->size(); ++idx) {
         if (idx > 0) {
           OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space;
@@ -1064,10 +1064,10 @@ std::string OpenMPClause::toString() {
   if (clause_string.size() > 2) {
     // clang-format: space before ( only for 'if' clause
     if (this->getKind() != OMPC_if && !result.empty() && result.back() == ' ') {
-      result.pop_back();  // Remove trailing space before (
+      result.pop_back(); // Remove trailing space before (
     }
     result += clause_string;
-    result += " ";  // Add space after )
+    result += " "; // Add space after )
   }
 
   return result;
@@ -1075,10 +1075,8 @@ std::string OpenMPClause::toString() {
 
 namespace {
 std::string iteratorToString(const std::string &qualifier,
-                             const std::string &var,
-                             const std::string &begin,
-                             const std::string &end,
-                             const std::string &step) {
+                             const std::string &var, const std::string &begin,
+                             const std::string &end, const std::string &step) {
   std::string result;
   if (!qualifier.empty()) {
     result += qualifier + " ";
@@ -1202,11 +1200,9 @@ std::string OpenMPDependClause::toString() {
       if (i > 0) {
         clause_string += ", ";
       }
-      clause_string += iteratorToString(iterator_defs[i].qualifier,
-                                        iterator_defs[i].var,
-                                        iterator_defs[i].begin,
-                                        iterator_defs[i].end,
-                                        iterator_defs[i].step);
+      clause_string += iteratorToString(
+          iterator_defs[i].qualifier, iterator_defs[i].var,
+          iterator_defs[i].begin, iterator_defs[i].end, iterator_defs[i].step);
     }
     clause_string += " )";
   }
@@ -1388,11 +1384,9 @@ std::string OpenMPToClause::toString() {
       if (i > 0) {
         clause_string += ", ";
       }
-      clause_string += iteratorToString(iterator_defs[i].qualifier,
-                                        iterator_defs[i].var,
-                                        iterator_defs[i].begin,
-                                        iterator_defs[i].end,
-                                        iterator_defs[i].step);
+      clause_string += iteratorToString(
+          iterator_defs[i].qualifier, iterator_defs[i].var,
+          iterator_defs[i].begin, iterator_defs[i].end, iterator_defs[i].step);
     }
     clause_string += ")";
     break;
@@ -1440,11 +1434,9 @@ std::string OpenMPFromClause::toString() {
       if (i > 0) {
         clause_string += ", ";
       }
-      clause_string += iteratorToString(iterator_defs[i].qualifier,
-                                        iterator_defs[i].var,
-                                        iterator_defs[i].begin,
-                                        iterator_defs[i].end,
-                                        iterator_defs[i].step);
+      clause_string += iteratorToString(
+          iterator_defs[i].qualifier, iterator_defs[i].var,
+          iterator_defs[i].begin, iterator_defs[i].end, iterator_defs[i].step);
     }
     clause_string += ")";
     break;
@@ -1677,9 +1669,8 @@ std::string OpenMPMapClause::toString() {
   default:;
   }
 
-
   // Helper to append modifier text with separator
-  auto append_modifier = [&](const std::string& text) {
+  auto append_modifier = [&](const std::string &text) {
     if (has_content) {
       clause_string += ", ";
     }
@@ -1718,10 +1709,9 @@ std::string OpenMPMapClause::toString() {
       if (i > 0) {
         clause_string += ", ";
       }
-      clause_string +=
-          iteratorToString(iterator_defs[i].qualifier, iterator_defs[i].var,
-                           iterator_defs[i].begin, iterator_defs[i].end,
-                           iterator_defs[i].step);
+      clause_string += iteratorToString(
+          iterator_defs[i].qualifier, iterator_defs[i].var,
+          iterator_defs[i].begin, iterator_defs[i].end, iterator_defs[i].step);
     }
     clause_string += ")";
     has_content = true;
@@ -1976,7 +1966,8 @@ std::string OpenMPLinearClause::toString() {
       clause_string += ":";
     }
   } else {
-    // Variable-first syntax: linear(vars) or linear(vars: mod) or linear(vars: mod, step)
+    // Variable-first syntax: linear(vars) or linear(vars: mod) or linear(vars:
+    // mod, step)
     clause_string += this->expressionToString();
     if (has_modifier) {
       clause_string += " : ";
@@ -2214,7 +2205,6 @@ std::string OpenMPFirstprivateClause::toString() {
 
   return result;
 }
-
 
 std::string OpenMPInitializerClause::toString() {
 
@@ -2483,7 +2473,8 @@ std::string OpenMPVariantClause::toString() {
       return s;
     }
     if (!expr->score.empty()) {
-      s = "user = {condition(score(" + expr->score + "): " + expr->expression + ")}";
+      s = "user = {condition(score(" + expr->score + "): " + expr->expression +
+          ")}";
     } else if (!expr->expression.empty()) {
       s = "user = {condition(" + expr->expression + ")}";
     }
@@ -2654,8 +2645,9 @@ std::string OpenMPVariantClause::toString() {
 
     // user-defined implementation selector
     auto *impl_expr = this->getImplementationExpression();
-    if (impl_expr && (!impl_expr->score.empty() || !impl_expr->expression.empty() ||
-                      impl_expr->kind != OMPC_IMPL_EXPR_unknown)) {
+    if (impl_expr &&
+        (!impl_expr->score.empty() || !impl_expr->expression.empty() ||
+         impl_expr->kind != OMPC_IMPL_EXPR_unknown)) {
       const std::string score = impl_expr->score;
       switch (impl_expr->kind) {
       case OMPC_IMPL_EXPR_requires:
@@ -2995,7 +2987,8 @@ std::string OpenMPUsesAllocatorsClause::toString() {
     default:;
     }
 
-    if (entry->getUsesAllocatorsAllocator() != OMPC_USESALLOCATORS_ALLOCATOR_unspecified &&
+    if (entry->getUsesAllocatorsAllocator() !=
+            OMPC_USESALLOCATORS_ALLOCATOR_unspecified &&
         !entry->getAllocatorTraitsArray().empty()) {
       result += "(" + entry->getAllocatorTraitsArray() + ")";
     }
