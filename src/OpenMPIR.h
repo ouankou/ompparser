@@ -1505,8 +1505,9 @@ public:
     }
     iterators.push_back(it);
   };
+  const std::vector<Iterator> &getIterators() const { return iterators; };
   const std::vector<Iterator> &getIteratorsDefinitionClass() const {
-    return iterators;
+    return getIterators();
   };
   OpenMPAffinityClauseModifier getModifier() { return modifier; };
   static OpenMPClause *addAffinityClause(OpenMPDirective *,
