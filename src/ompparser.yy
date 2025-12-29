@@ -3324,7 +3324,7 @@ teams_loop_simd_clause : num_teams_clause
                       | private_clause
                       | firstprivate_clause
                       | shared_clause
-                      | reduction_default_only_clause
+                      | reduction_clause
                       | allocate_clause
                       | bind_clause
                       | collapse_clause
@@ -3861,7 +3861,7 @@ target_teams_loop_simd_clause : if_target_simd_clause
                              | thread_limit_clause
                              | default_clause
                              | shared_clause
-                             | reduction_default_only_clause
+                             | reduction_clause
                              | bind_clause
                              | collapse_clause
                              | order_clause
