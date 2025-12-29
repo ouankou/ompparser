@@ -211,7 +211,6 @@ corresponding C type is union name defaults to YYSTYPE.
 %nonassoc ':'
 
 %type <stype> expression
-%type <itype> init_kind
 %type <itype> init_depinfo_kind
 %type <itype> directive_name
 
@@ -1565,10 +1564,6 @@ init_depinfo_modifier : init_depinfo_kind '(' {
                          }
                        }
                      ;
-init_kind : TARGET { $$ = OMPC_INIT_KIND_target; }
-          | TARGETSYNC { $$ = OMPC_INIT_KIND_targetsync; }
-          | EXPR_STRING { $$ = OMPC_INIT_KIND_unknown; }
-          ;
 init_depinfo_kind : IN { $$ = OMPC_DEPENDENCE_TYPE_in; }
                  | OUT { $$ = OMPC_DEPENDENCE_TYPE_out; }
                  | INOUT { $$ = OMPC_DEPENDENCE_TYPE_inout; }
@@ -3323,8 +3318,24 @@ teams_loop_clause : num_teams_clause
                   | order_clause
                   | lastprivate_clause
                   ;
-teams_loop_simd_clause : teams_loop_clause
-                      | simd_clause
+teams_loop_simd_clause : num_teams_clause
+                      | thread_limit_clause
+                      | default_clause
+                      | private_clause
+                      | firstprivate_clause
+                      | shared_clause
+                      | reduction_default_only_clause
+                      | allocate_clause
+                      | bind_clause
+                      | collapse_clause
+                      | order_clause
+                      | lastprivate_clause
+                      | if_simd_clause
+                      | safelen_clause
+                      | simdlen_clause
+                      | linear_clause
+                      | aligned_clause
+                      | nontemporal_clause
                       ;
 target_parallel_directive : TARGET PARALLEL{
                         current_directive = new OpenMPDirective(OMPD_target_parallel);
@@ -3566,8 +3577,33 @@ target_parallel_loop_clause : if_target_parallel_clause
                             | bind_clause
                             | order_clause 
                             ;
-target_parallel_loop_simd_clause : target_parallel_loop_clause
-                                | simd_clause
+target_parallel_loop_simd_clause : if_target_parallel_simd_clause
+                                | device_clause
+                                | private_clause
+                                | firstprivate_clause
+                                | in_reduction_clause
+                                | map_clause
+                                | is_device_ptr_clause
+                                | defaultmap_clause
+                                | nowait_clause
+                                | allocate_clause
+                                | depend_with_modifier_clause
+                                | uses_allocators_clause
+                                | num_threads_clause
+                                | default_clause
+                                | shared_clause
+                                | copyin_clause
+                                | reduction_clause
+                                | proc_bind_clause
+                                | lastprivate_clause
+                                | collapse_clause
+                                | bind_clause
+                                | order_clause
+                                | safelen_clause
+                                | simdlen_clause
+                                | linear_clause
+                                | aligned_clause
+                                | nontemporal_clause
                                 ;
 target_loop_clause : if_target_clause
                    | device_clause
@@ -3809,8 +3845,32 @@ target_teams_loop_clause : if_target_clause
                          | order_clause
                          | lastprivate_clause
                          ;
-target_teams_loop_simd_clause : target_teams_loop_clause
-                             | simd_clause
+target_teams_loop_simd_clause : if_target_simd_clause
+                             | device_clause
+                             | private_clause
+                             | firstprivate_clause
+                             | in_reduction_clause
+                             | map_clause
+                             | is_device_ptr_clause
+                             | defaultmap_clause
+                             | nowait_clause
+                             | allocate_clause
+                             | depend_with_modifier_clause
+                             | uses_allocators_clause
+                             | num_teams_clause
+                             | thread_limit_clause
+                             | default_clause
+                             | shared_clause
+                             | reduction_default_only_clause
+                             | bind_clause
+                             | collapse_clause
+                             | order_clause
+                             | lastprivate_clause
+                             | safelen_clause
+                             | simdlen_clause
+                             | linear_clause
+                             | aligned_clause
+                             | nontemporal_clause
                              ;
 target_teams_distribute_parallel_for_directive : TARGET TEAMS DISTRIBUTE PARALLEL FOR{
                         current_directive = new OpenMPDirective(OMPD_target_teams_distribute_parallel_for);
@@ -4964,8 +5024,26 @@ parallel_loop_clause : if_parallel_clause
                      | order_clause 
                      | induction_clause
                      ;
-parallel_loop_simd_clause : parallel_loop_clause
-                         | simd_clause
+parallel_loop_simd_clause : if_parallel_simd_clause
+                         | num_threads_clause
+                         | default_clause
+                         | private_clause
+                         | firstprivate_clause
+                         | shared_clause
+                         | copyin_clause
+                         | reduction_clause
+                         | proc_bind_clause
+                         | allocate_clause
+                         | lastprivate_clause
+                         | collapse_clause
+                         | bind_clause
+                         | order_clause
+                         | induction_clause
+                         | safelen_clause
+                         | simdlen_clause
+                         | linear_clause
+                         | aligned_clause
+                         | nontemporal_clause
                          ;
 parallel_sections_clause : if_parallel_clause
                          | num_threads_clause

@@ -1,18 +1,22 @@
 # ompparser: A Standalone and Unified OpenMP Parser
 
-ompparser is a standalone and unified OpenMP parser for both C/C++ and Fortran. It can be used as an independent tool as well as an integral component of an OpenMP compiler. It has syntax and semantics checking functionalitity for OpenMP constructs for validating and verifying usage of existing constructs. The formal grammar included in ompparser, developed with Flex and Bison tools, can help interpretation of the OpenMP standard. The implementation supports the full and latest OpenMP 5.0 and is released as open-source with BSD-license. 
+ompparser is a standalone OpenMP parser for C/C++ and Fortran. It can be used as an independent tool or embedded into compiler pipelines. The Flex/Bison grammar parses OpenMP directives and builds an intermediate representation (IR) that supports normalization and round-trip unparsing. The implementation tracks OpenMP 6.0 constructs and is released under the BSD-3-Clause license.
 
 ## Build and Usage
-1. clone the repo, create build folder and use cmake to create Makefile
+1. clone the repo and configure a build directory
 
-       git clone https://github.com/passlab/ompparser.git
-       mkdir ompparser-build
-       cd ompparser-build
-       cmake -DCMAKE_INSTALL_PREFIX=../ompparser-install ../ompparser 
+       git clone https://github.com/ouankou/ompparser.git
+       cmake -S ompparser -B build -DCMAKE_BUILD_TYPE=Release
 
 2. build and install
-     
-       make; make install
+
+       cmake --build build
+       cmake --install build --prefix /path/to/install
+
+3. run the regression tests (requires Flex and Bison in PATH)
+
+       cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+       cmake --build build --target check
 
 ## omparser API
 
@@ -37,17 +41,16 @@ extern  OpenMPDirective * parseOpenMP(const char *, void * exprParse(const char 
 ```
 
 ## Features and Limitation
-1. Full OpenMP 5.0 standard support for both C/C++ and Fortran, including parsing and unparsing
-1. Flex lexer rules and Bison grammars for OpenMP 5.0 syntax
+1. OpenMP 6.0 standard support for both C/C++ and Fortran, including parsing and unparsing
+1. Flex lexer rules and Bison grammars for OpenMP 6.0 syntax
 1. Intermediate representation of OpenMP constructs
-1. Easy-to-use interface to parse OpenMP constructs and to emit OpenMP intermediate representation
-1. Syntax checking in grammar, OpenMP parsing and IR construction, and post-parsing
-1. Clause normalization, e.g. combining multiple shared clauses into one shared clause
-1. Limited semantics checking when a construct use C/C++/Fortran identifiers or expressions
-1. Testing driver and test cases for extensive testing of OpenMP constructs (ongoing work)
-1. DOT graph output of OpenMP constructs (ongoing work)
+1. Interface to parse OpenMP constructs and emit the OpenMP IR
+1. Syntax checking in grammar, parsing, IR construction, and post-parsing
+1. Clause normalization, e.g., combining multiple shared clauses into one shared clause
+1. Limited semantics checking when a construct uses C/C++/Fortran identifiers or expressions
+1. Testing driver and test cases for OpenMP constructs
+1. DOT graph output of OpenMP constructs
 1. Conversion between perfectly-nested OpenMP constructs and combined constructs (ongoing work)
-1. Being integrated with ROSE compiler (ongoing work)
 
 ## Contribution
 Submit contribution as github pull request to this repository. We require all new contributions must be made with the similar license. 
@@ -72,4 +75,3 @@ Please contact Yonghong Yan (@yanyh15) from github or gmail.
 ompparser is released under a BSD license. For more details see the file LICENSE.
 
 LLNL-CODE-798101
-
