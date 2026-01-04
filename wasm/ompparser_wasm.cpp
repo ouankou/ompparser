@@ -87,6 +87,46 @@ std::string StripBlockComments(const std::string &line,
   return result;
 }
 
+std::string StripFortranInlineComment(const std::string &text) {
+  bool in_single_quote = false;
+  bool in_double_quote = false;
+
+  for (size_t i = 0; i < text.size(); ++i) {
+    char current = text[i];
+
+    if (current == '\'' && !in_double_quote) {
+      if (in_single_quote) {
+        if (i + 1 < text.size() && text[i + 1] == '\'') {
+          ++i;
+        } else {
+          in_single_quote = false;
+        }
+      } else {
+        in_single_quote = true;
+      }
+      continue;
+    }
+
+    if (current == '"' && !in_single_quote) {
+      if (in_double_quote) {
+        if (i + 1 < text.size() && text[i + 1] == '"') {
+          ++i;
+        } else {
+          in_double_quote = false;
+        }
+      } else {
+        in_double_quote = true;
+      }
+      continue;
+    }
+
+    if (current == '!' && !in_single_quote && !in_double_quote)
+      return text.substr(0, i);
+  }
+
+  return text;
+}
+
 std::vector<std::string> ExtractPragmas(const std::string &input) {
   std::vector<std::string> pragmas;
   std::istringstream stream(input);
@@ -139,7 +179,7 @@ std::vector<std::string> ExtractPragmas(const std::string &input) {
       std::regex_match(stripped_line, fortran_match, fortran_regex);
       sentinel = fortran_match[1].str();
       spacing = fortran_match[2].str();
-      combined_body = fortran_match[3].str();
+      combined_body = StripFortranInlineComment(fortran_match[3].str());
 
       auto strip_trailing_ampersand = [](std::string &text) -> bool {
         size_t end = text.find_last_not_of(" \t");
@@ -179,6 +219,7 @@ std::vector<std::string> ExtractPragmas(const std::string &input) {
         }
 
         std::string continuation_body = continuation_match[3].str();
+        continuation_body = StripFortranInlineComment(continuation_body);
         combined_body += " " + continuation_body;
         continue_line = strip_trailing_ampersand(combined_body);
       }
