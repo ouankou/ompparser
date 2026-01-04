@@ -58,51 +58,85 @@ void StripTrailingCarriageReturn(std::string &line) {
     line.pop_back();
 }
 
+std::string StripBlockComments(const std::string &line,
+                               bool &in_block_comment) {
+  std::string result;
+  size_t pos = 0;
+
+  while (pos < line.size()) {
+    if (in_block_comment) {
+      size_t end = line.find("*/", pos);
+      if (end == std::string::npos)
+        return result;
+      in_block_comment = false;
+      pos = end + 2;
+      continue;
+    }
+
+    size_t start = line.find("/*", pos);
+    if (start == std::string::npos) {
+      result.append(line.substr(pos));
+      break;
+    }
+
+    result.append(line.substr(pos, start - pos));
+    in_block_comment = true;
+    pos = start + 2;
+  }
+
+  return result;
+}
+
 std::vector<std::string> ExtractPragmas(const std::string &input) {
   std::vector<std::string> pragmas;
   std::istringstream stream(input);
   std::string current_line;
   std::regex c_regex(
-      "^([[:blank:]]*#pragma)([[:blank:]]+)(omp)[[:blank:]]+(.*)");
+      "^([[:blank:]]*#[[:blank:]]*pragma)([[:blank:]]+)(omp)[[:blank:]]+(.*)");
   std::regex fortran_regex(
       "^([[:blank:]]*[!cC*]\\$omp&?)([[:blank:]]*)(.*)",
       std::regex_constants::icase);
-  std::regex comment_regex("[/][*]([^*]|[*][^/])*[*][/]");
   std::regex line_comment_regex("//.*$");
   std::regex continue_regex("([\\\\]+[[:blank:]]*$)");
+  bool in_block_comment = false;
 
   while (std::getline(stream, current_line)) {
     StripTrailingCarriageReturn(current_line);
+    std::string stripped_line =
+        StripBlockComments(current_line, in_block_comment);
+    if (stripped_line.empty())
+      continue;
 
-    current_line = std::regex_replace(current_line, comment_regex, "");
-
-    if (std::regex_match(current_line, c_regex)) {
+    if (std::regex_match(stripped_line, c_regex)) {
       std::string input_pragma;
-      current_line = std::regex_replace(current_line, line_comment_regex, "");
+      stripped_line =
+          std::regex_replace(stripped_line, line_comment_regex, "");
 
-      while (std::regex_search(current_line, continue_regex)) {
-        current_line = std::regex_replace(current_line, continue_regex, "");
-        input_pragma += current_line;
+      while (std::regex_search(stripped_line, continue_regex)) {
+        stripped_line =
+            std::regex_replace(stripped_line, continue_regex, "");
+        input_pragma += stripped_line;
         if (!std::getline(stream, current_line)) {
-          current_line.clear();
+          stripped_line.clear();
           break;
         }
         StripTrailingCarriageReturn(current_line);
-        current_line = std::regex_replace(current_line, comment_regex, "");
-        current_line = std::regex_replace(current_line, line_comment_regex, "");
+        stripped_line = StripBlockComments(current_line, in_block_comment);
+        stripped_line =
+            std::regex_replace(stripped_line, line_comment_regex, "");
       }
-      input_pragma += current_line;
+      input_pragma += stripped_line;
       pragmas.push_back(input_pragma);
       continue;
     }
 
-    if (std::regex_match(current_line, fortran_regex)) {
+    if (std::regex_match(stripped_line, fortran_regex)) {
       std::smatch fortran_match;
       std::string combined_body;
       std::string sentinel;
       std::string spacing;
 
-      std::regex_match(current_line, fortran_match, fortran_regex);
+      std::regex_match(stripped_line, fortran_match, fortran_regex);
       sentinel = fortran_match[1].str();
       spacing = fortran_match[2].str();
       combined_body = fortran_match[3].str();
@@ -133,8 +167,8 @@ std::vector<std::string> ExtractPragmas(const std::string &input) {
         if (!std::getline(stream, continuation_line))
           break;
         StripTrailingCarriageReturn(continuation_line);
-        continuation_line = std::regex_replace(continuation_line, comment_regex,
-                                               "");
+        continuation_line =
+            StripBlockComments(continuation_line, in_block_comment);
 
         std::smatch continuation_match;
         if (!std::regex_match(continuation_line, continuation_match,
