@@ -7,6 +7,7 @@
  */
 
 #include "OpenMPIR.h"
+#include <cctype>
 #include <emscripten/bind.h>
 #include <regex>
 #include <sstream>
@@ -58,8 +59,8 @@ void StripTrailingCarriageReturn(std::string &line) {
     line.pop_back();
 }
 
-std::string StripBlockComments(const std::string &line,
-                               bool &in_block_comment) {
+std::string StripBlockComments(const std::string &line, bool &in_block_comment,
+                               bool &pending_space) {
   std::string result;
   size_t pos = 0;
 
@@ -70,6 +71,12 @@ std::string StripBlockComments(const std::string &line,
         return result;
       in_block_comment = false;
       pos = end + 2;
+      if (pending_space && pos < line.size()) {
+        char next_char = line[pos];
+        if (!std::isspace(static_cast<unsigned char>(next_char)))
+          result.push_back(' ');
+      }
+      pending_space = false;
       continue;
     }
 
@@ -80,6 +87,8 @@ std::string StripBlockComments(const std::string &line,
     }
 
     result.append(line.substr(pos, start - pos));
+    pending_space = !result.empty() &&
+                    !std::isspace(static_cast<unsigned char>(result.back()));
     in_block_comment = true;
     pos = start + 2;
   }
@@ -146,11 +155,12 @@ std::vector<std::string> ExtractPragmas(const std::string &input) {
   std::regex line_comment_regex("//.*$");
   std::regex continue_regex("([\\\\]+[[:blank:]]*$)");
   bool in_block_comment = false;
+  bool pending_space = false;
 
   while (std::getline(stream, current_line)) {
     StripTrailingCarriageReturn(current_line);
     std::string stripped_line =
-        StripBlockComments(current_line, in_block_comment);
+        StripBlockComments(current_line, in_block_comment, pending_space);
     if (stripped_line.empty())
       continue;
 
@@ -168,7 +178,8 @@ std::vector<std::string> ExtractPragmas(const std::string &input) {
           break;
         }
         StripTrailingCarriageReturn(current_line);
-        stripped_line = StripBlockComments(current_line, in_block_comment);
+        stripped_line =
+            StripBlockComments(current_line, in_block_comment, pending_space);
         stripped_line =
             std::regex_replace(stripped_line, line_comment_regex, "");
       }
@@ -215,7 +226,8 @@ std::vector<std::string> ExtractPragmas(const std::string &input) {
           break;
         StripTrailingCarriageReturn(continuation_line);
         continuation_line =
-            StripBlockComments(continuation_line, in_block_comment);
+            StripBlockComments(continuation_line, in_block_comment,
+                               pending_space);
 
         std::smatch continuation_match;
         if (!std::regex_match(continuation_line, continuation_match,
