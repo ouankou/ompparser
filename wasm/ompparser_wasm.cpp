@@ -127,6 +127,13 @@ std::string StripFortranInlineComment(const std::string &text) {
   return text;
 }
 
+std::string TrimLeadingWhitespace(const std::string &text) {
+  size_t start = text.find_first_not_of(" \t");
+  if (start == std::string::npos)
+    return "";
+  return text.substr(start);
+}
+
 std::vector<std::string> ExtractPragmas(const std::string &input) {
   std::vector<std::string> pragmas;
   std::istringstream stream(input);
@@ -247,7 +254,10 @@ std::string ParseAndUnparse(const std::string &input, int lang_mode,
       lang = Lang_Fortran;
 
     setLang(lang);
-    OpenMPDirective *openmp_ast = parseOpenMP(pragma.c_str(), nullptr);
+    std::string parse_input = pragma;
+    if (lang == Lang_Fortran)
+      parse_input = TrimLeadingWhitespace(pragma);
+    OpenMPDirective *openmp_ast = parseOpenMP(parse_input.c_str(), nullptr);
     if (!openmp_ast)
       continue;
 
