@@ -18,8 +18,37 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Wait for Pages artifact
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const runId = ${{ github.event.workflow_run.id }};
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const name = 'site-dist';
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            for (let attempt = 1; attempt <= 10; attempt++) {
+              const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+                owner,
+                repo,
+                run_id: runId,
+              });
+              const artifact = data.artifacts.find((item) => item.name === name);
+              if (artifact) {
+                core.info(`Found artifact ${name} (id ${artifact.id}).`);
+                return;
+              }
+              core.info(`Artifact ${name} not found yet (attempt ${attempt}/10).`);
+              await sleep(10000);
+            }
+
+            core.setFailed(`Artifact ${name} not found after waiting.`);
       - uses: actions/download-artifact@v4
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.event.workflow_run.repository.full_name }}
           run-id: ${{ github.event.workflow_run.id }}
           name: site-dist
           path: dist
