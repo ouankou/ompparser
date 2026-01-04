@@ -71,6 +71,8 @@ jobs:
   build-wasm:
     name: Build & Test (WASM)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - run: |
@@ -110,17 +112,19 @@ jobs:
       - run: cmake --build build-wasm --target ompparser_wasm -- -j
       - name: Run WASM builtin tests
         run: node wasm/tests/run_wasm_builtin_tests.js --js build-wasm/wasm/ompparser.js --wasm build-wasm/wasm/ompparser.wasm
-      - name: Prepare Pages artifact
-        if: github.ref == 'refs/heads/main'
+      - name: Prepare gh-pages content
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           rm -rf dist
           mkdir -p dist
           cp -R web/* dist/
           cp build-wasm/wasm/ompparser.js build-wasm/wasm/ompparser.wasm dist/
-      - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/main' && env.ACT != 'true'
-        uses: actions/upload-artifact@v4
+      - name: Deploy to gh-pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.ACT != 'true'
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          name: site-dist
-          path: dist
-          if-no-files-found: error
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: dist
+          force_orphan: true
+          cname: ompparser.ouankou.com
