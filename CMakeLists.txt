@@ -26,6 +26,14 @@ set(OMPPARSER_VERSION_MAJOR 0)
 set(OMPPARSER_VERSION_MINOR 2)
 set(OMPPARSER_VERSION ${OMPPARSER_VERSION_MAJOR}.${OMPPARSER_VERSION_MINOR})
 
+option(OMPPARSER_ENABLE_WASM "Build the WebAssembly module." OFF)
+if(EMSCRIPTEN)
+  set(OMPPARSER_ENABLE_WASM ON CACHE BOOL "Build the WebAssembly module." FORCE)
+endif()
+if(OMPPARSER_ENABLE_WASM AND NOT EMSCRIPTEN)
+  message(FATAL_ERROR "OMPPARSER_ENABLE_WASM requires the Emscripten toolchain.")
+endif()
+
 find_package(BISON)
 find_package(FLEX)
 
@@ -56,7 +64,12 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # The ompparser library for install and distribution
-add_library(ompparser SHARED ${BISON_OMPBISONParser_OUTPUTS} ${FLEX_OMPFLEXScanner_OUTPUTS} ${OMPIR_SOURCE_FILES})
+set(OMPPARSER_LIB_TYPE SHARED)
+if(EMSCRIPTEN)
+  set(OMPPARSER_LIB_TYPE STATIC)
+endif()
+add_library(ompparser ${OMPPARSER_LIB_TYPE} ${BISON_OMPBISONParser_OUTPUTS}
+    ${FLEX_OMPFLEXScanner_OUTPUTS} ${OMPIR_SOURCE_FILES})
 target_include_directories(ompparser PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -64,6 +77,10 @@ target_include_directories(ompparser PUBLIC
 
 if(BUILD_TESTING)
   add_subdirectory(tests)
+endif()
+
+if(OMPPARSER_ENABLE_WASM)
+  add_subdirectory(wasm)
 endif()
 
 set(ompparser_targets ompparser)
