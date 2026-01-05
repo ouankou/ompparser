@@ -1,94 +1,92 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ompparser :: wasm</title>
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap"
-      rel="stylesheet"
-    >
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css"
-    >
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/molokai.min.css"
-    >
-    <link rel="stylesheet" href="styles.css">
-  </head>
-  <body>
-    <div class="app">
-      <header class="app-header">
-        <div class="brand">
-          <div class="brand-title">ompparser</div>
-          <div class="brand-sub">OpenMP 6.0 parser · WebAssembly</div>
-        </div>
-        <div class="status">
-          <span id="wasm-status" class="status-pill">loading wasm...</span>
-        </div>
-      </header>
 
-      <section class="toolbar">
-        <label class="file-input">
-          <input
-            id="file-input"
-            type="file"
-            accept=".c,.cc,.cpp,.cxx,.c++,.f,.F,.f90,.F90,.f95,.F95,.f03,.F03,.for"
-          >
-          <span>Upload source</span>
-        </label>
-        <div class="toolbar-group">
-          <label class="label" for="lang-select">Language</label>
-          <select id="lang-select">
-            <option value="auto" selected>Auto</option>
-            <option value="c">C</option>
-            <option value="cpp">C++</option>
-            <option value="fortran">Fortran</option>
-          </select>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ompparser :: wasm</title>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/molokai.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-title">ompparser</div>
+        <div class="brand-sub">
+          <span>OpenMP 6.0 parser · WebAssembly</span>
+          <span class="sep">|</span>
+          <a href="https://github.com/ouankou/ompparser" target="_blank" rel="noopener noreferrer" class="repo-link">
+            <i class="fab fa-github"></i>
+            <span>GitHub</span>
+          </a>
         </div>
-        <button id="parse-btn" class="primary" disabled>Parse</button>
+      </div>
+      <div class="status">
+        <span id="wasm-status" class="status-pill">loading wasm...</span>
+      </div>
+    </header>
+
+    <section class="toolbar">
+      <label class="file-input">
+        <input id="file-input" type="file" accept=".c,.cc,.cpp,.cxx,.c++,.f,.F,.f90,.F90,.f95,.F95,.f03,.F03,.for">
+        <span>Upload source</span>
+      </label>
+      <div class="toolbar-group">
+        <label class="label" for="lang-select">Language</label>
+        <select id="lang-select">
+          <option value="auto" selected>Auto</option>
+          <option value="c">C</option>
+          <option value="cpp">C++</option>
+          <option value="fortran">Fortran</option>
+        </select>
+      </div>
+      <button id="parse-btn" class="primary" disabled>Parse</button>
+    </section>
+
+    <main class="panels">
+      <section class="panel">
+        <header class="panel-header">
+          <div class="panel-title">Input</div>
+          <div class="panel-meta">Paste or upload C/C++/Fortran</div>
+        </header>
+        <div class="panel-body">
+          <textarea id="input-editor"></textarea>
+        </div>
       </section>
 
-      <main class="panels">
-        <section class="panel">
-          <header class="panel-header">
-            <div class="panel-title">Input</div>
-            <div class="panel-meta">Paste or upload C/C++/Fortran</div>
-          </header>
-          <div class="panel-body">
-            <textarea id="input-editor"></textarea>
+      <section class="panel">
+        <header class="panel-header">
+          <div class="panel-title">Output</div>
+          <div class="tabs">
+            <button class="tab is-active" data-tab="unparse">Unparse</button>
+            <button class="tab" data-tab="log">Log</button>
           </div>
-        </section>
-
-        <section class="panel">
-          <header class="panel-header">
-            <div class="panel-title">Output</div>
-            <div class="tabs">
-              <button class="tab is-active" data-tab="unparse">Unparse</button>
-              <button class="tab" data-tab="log">Log</button>
-            </div>
-          </header>
-          <div class="panel-body">
-            <div class="tab-panel is-active" data-panel="unparse">
-              <textarea id="output-editor"></textarea>
-            </div>
-            <div class="tab-panel" data-panel="log">
-              <div id="log-output" class="log-output"></div>
-            </div>
+        </header>
+        <div class="panel-body">
+          <div class="tab-panel is-active" data-panel="unparse">
+            <textarea id="output-editor"></textarea>
           </div>
-        </section>
-      </main>
-    </div>
+          <div class="tab-panel" data-panel="log">
+            <div id="log-output" class="log-output"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/fortran/fortran.min.js"></script>
-    <script src="ompparser.js"></script>
-    <script src="app.js"></script>
-  </body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/fortran/fortran.min.js"></script>
+  <script src="ompparser.js"></script>
+  <script src="app.js"></script>
+</body>
+
 </html>

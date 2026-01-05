@@ -1,13 +1,13 @@
 :root {
-  --bg-0: #151617;
-  --bg-1: #1f2021;
-  --bg-2: #272822;
-  --panel: #222324;
-  --border: #3b3d3e;
-  --shadow: rgba(0, 0, 0, 0.4);
+  --bg-0: #101112;
+  --bg-1: #1a1b1c;
+  --bg-2: #232425;
+  --panel: #1e1f20;
+  --border: #333;
+  --shadow: rgba(0, 0, 0, 0.6);
   --fg-0: #f8f8f2;
   --fg-1: #cfcfc2;
-  --muted: #8f908a;
+  --muted: #75715e;
   --accent: #a6e22e;
   --accent-2: #66d9ef;
   --accent-3: #f92672;
@@ -19,21 +19,25 @@
 
 body {
   margin: 0;
-  font-family: "Fira Code", "Courier New", monospace;
+  font-family: "JetBrains Mono", monospace;
   color: var(--fg-0);
-  background: radial-gradient(circle at top, #2a2d2e 0%, #1a1b1c 55%),
-    linear-gradient(145deg, #151617 0%, #1f2021 100%);
+  background: var(--bg-0);
   min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 body::before {
   content: "";
   position: fixed;
   inset: 0;
-  background-image: linear-gradient(
-      rgba(255, 255, 255, 0.03) 1px,
-      transparent 1px
-    ),
+  background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px,
+      transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 32px 32px;
   pointer-events: none;
@@ -65,14 +69,39 @@ body::before {
 .brand-sub {
   font-size: 13px;
   color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Control spacing between text, sep, and link */
+}
+
+.sep {
+  opacity: 0.3;
+  margin-top: -1px;
+  /* Optical alignment */
+}
+
+.repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  color: var(--muted);
+  font-size: 12px;
+  transition: color 0.2s ease;
+}
+
+.repo-link:hover {
+  color: var(--fg-0);
 }
 
 .status-pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  gap: 8px;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--muted);
@@ -98,9 +127,9 @@ body::before {
   border: 1px dashed rgba(102, 217, 239, 0.6);
   color: var(--accent-2);
   padding: 10px 16px;
-  border-radius: 8px;
+  border-radius: 4px;
   cursor: pointer;
-  transition: border 0.2s ease, color 0.2s ease;
+  transition: all 0.2s ease;
 }
 
 .file-input input {
@@ -129,8 +158,9 @@ body::before {
 select {
   background: var(--bg-1);
   color: var(--fg-0);
+  color: var(--fg-0);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 6px 12px;
   font-family: inherit;
   font-size: 13px;
@@ -140,7 +170,7 @@ button.primary {
   background: var(--accent);
   color: #1a1b1c;
   border: none;
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 10px 18px;
   font-weight: 600;
   cursor: pointer;
@@ -168,19 +198,20 @@ button.primary:not(:disabled):hover {
 .panel {
   display: flex;
   flex-direction: column;
-  background: var(--panel);
+  background: var(--bg-1);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 4px;
   overflow: hidden;
   min-height: 520px;
-  box-shadow: 0 20px 40px var(--shadow);
+  box-shadow: 0 10px 30px var(--shadow);
 }
 
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 18px;
+  padding: 0 18px;
+  height: 50px;
   background: rgba(27, 28, 29, 0.9);
   border-bottom: 1px solid var(--border);
 }
@@ -221,7 +252,7 @@ button.primary:not(:disabled):hover {
   color: var(--muted);
   border: 1px solid transparent;
   padding: 6px 12px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: 12px;
   cursor: pointer;
 }
@@ -234,9 +265,119 @@ button.primary:not(:disabled):hover {
 
 .CodeMirror {
   height: 100%;
-  font-family: "Fira Code", "Courier New", monospace;
+  font-family: "JetBrains Mono", monospace !important;
   font-size: 13px;
-  background: var(--bg-2);
+  background: var(--bg-1) !important;
+  color: var(--fg-0);
+}
+
+.CodeMirror-lines {
+  padding: 16px 0;
+}
+
+/* Force specific colors for syntax highlighting in case Molokai is inconsistent */
+.cm-s-molokai span.cm-keyword {
+  color: #f92672 !important;
+}
+
+.cm-s-molokai span.cm-atom {
+  color: #ae81ff !important;
+}
+
+.cm-s-molokai span.cm-number {
+  color: #ae81ff !important;
+}
+
+.cm-s-molokai span.cm-def {
+  color: #a6e22e !important;
+}
+
+.cm-s-molokai span.cm-variable {
+  color: #f8f8f2 !important;
+}
+
+.cm-s-molokai span.cm-variable-2 {
+  color: #fd971f !important;
+}
+
+.cm-s-molokai span.cm-variable-3 {
+  color: #66d9ef !important;
+}
+
+.cm-s-molokai span.cm-property {
+  color: #66d9ef !important;
+}
+
+.cm-s-molokai span.cm-operator {
+  color: #f92672 !important;
+}
+
+.cm-s-molokai span.cm-comment {
+  color: #75715e !important;
+}
+
+.cm-s-molokai span.cm-string {
+  color: #e6db74 !important;
+}
+
+.cm-s-molokai span.cm-string-2 {
+  color: #e6db74 !important;
+}
+
+.cm-s-molokai span.cm-meta {
+  color: #75715e !important;
+}
+
+.cm-s-molokai span.cm-qualifier {
+  color: #66d9ef !important;
+}
+
+.cm-s-molokai span.cm-builtin {
+  color: #ae81ff !important;
+}
+
+.cm-s-molokai span.cm-bracket {
+  color: #f8f8f2 !important;
+}
+
+.cm-s-molokai span.cm-tag {
+  color: #f92672 !important;
+}
+
+.cm-s-molokai span.cm-attribute {
+  color: #a6e22e !important;
+}
+
+.cm-s-molokai span.cm-header {
+  color: #ae81ff !important;
+}
+
+.cm-s-molokai span.cm-quote {
+  color: #ae81ff !important;
+}
+
+.cm-s-molokai span.cm-link {
+  color: #ae81ff !important;
+}
+
+.cm-s-molokai span.cm-error {
+  background: #f92672 !important;
+  color: #f8f8f0 !important;
+}
+
+.cm-s-molokai.CodeMirror,
+.cm-s-molokai .CodeMirror-gutters {
+  background-color: var(--bg-1) !important;
+  color: var(--fg-0);
+  border: none;
+}
+
+.cm-s-molokai div.CodeMirror-selected {
+  background: #3e3d32 !important;
+}
+
+.CodeMirror-cursor {
+  border-left: 2px solid #f8f8f0 !important;
 }
 
 .CodeMirror-gutters {
@@ -247,8 +388,11 @@ button.primary:not(:disabled):hover {
 .log-output {
   flex: 1;
   padding: 16px;
-  background: var(--bg-2);
+  flex: 1;
+  padding: 16px;
+  background: var(--bg-1);
   color: var(--fg-1);
+  font-family: "JetBrains Mono", monospace;
   font-size: 12px;
   white-space: pre-wrap;
   overflow: auto;
