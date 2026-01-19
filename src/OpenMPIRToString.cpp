@@ -9,6 +9,47 @@
 #include "OpenMPIR.h"
 #include <stdarg.h>
 
+namespace {
+std::string formatDirectiveName(const char *name) {
+  std::string result;
+  for (const char *ptr = name; *ptr != '\0'; ++ptr) {
+    result += (*ptr == '_') ? ' ' : *ptr;
+  }
+  result += ' ';
+  return result;
+}
+
+std::string getDirectiveSpelling(OpenMPDirectiveKind kind) {
+  switch (kind) {
+#define OPENMP_DIRECTIVE(Name)                                                 \
+  case OMPD_##Name:                                                            \
+    return formatDirectiveName(#Name);
+#define OPENMP_DIRECTIVE_EXT(Name, Str)                                        \
+  case OMPD_##Name:                                                            \
+    return std::string(Str);
+#include "OpenMPKinds.def"
+#undef OPENMP_DIRECTIVE
+#undef OPENMP_DIRECTIVE_EXT
+  }
+  return std::string();
+}
+
+std::string getClauseSpelling(OpenMPClauseKind kind) {
+  switch (kind) {
+#define OPENMP_CLAUSE(Name, Class)                                             \
+  case OMPC_##Name:                                                            \
+    return std::string(#Name " ");
+#define OPENMP_CLAUSE_EXT(Name, Class, Str)                                    \
+  case OMPC_##Name:                                                            \
+    return std::string(Str);
+#include "OpenMPKinds.def"
+#undef OPENMP_CLAUSE_EXT
+#undef OPENMP_CLAUSE
+  }
+  return std::string();
+}
+} // namespace
+
 std::string OpenMPDirective::generatePragmaString(std::string prefix,
                                                   std::string beginning_symbol,
                                                   std::string ending_symbol) {
@@ -295,410 +336,35 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
 };
 
 std::string OpenMPDirective::toString() {
-
-  std::string result;
-
   switch (this->getKind()) {
-  case OMPD_parallel:
-    result += "parallel ";
-    break;
-  case OMPD_requires: {
-    result += "requires ";
-    break;
-  }
-  case OMPD_teams:
-    result += "teams ";
-    break;
-  case OMPD_for:
-    result += "for ";
-    break;
-  case OMPD_do:
-    result += "do ";
-    break;
-  case OMPD_simd:
-    result += "simd ";
-    break;
-  case OMPD_for_simd:
-    result += "for simd ";
-    break;
-  case OMPD_do_simd:
-    result += "do simd ";
-    break;
-  case OMPD_parallel_for_simd:
-    result += "parallel for simd ";
-    break;
-  case OMPD_parallel_do_simd:
-    result += "parallel do simd ";
-    break;
-  case OMPD_declare_simd:
-    result += "declare simd ";
-    break;
-  case OMPD_distribute:
-    result += "distribute ";
-    break;
-  case OMPD_distribute_simd:
-    result += "distribute simd ";
-    break;
-  case OMPD_distribute_parallel_for:
-    result += "distribute parallel for ";
-    break;
-  case OMPD_distribute_parallel_do:
-    result += "distribute parallel do ";
-    break;
-  case OMPD_distribute_parallel_loop:
-    result += "distribute parallel loop ";
-    break;
-  case OMPD_distribute_parallel_for_simd:
-    result += "distribute parallel for simd ";
-    break;
-  case OMPD_distribute_parallel_do_simd:
-    result += "distribute parallel do simd ";
-    break;
-  case OMPD_distribute_parallel_loop_simd:
-    result += "distribute parallel loop simd ";
-    break;
-  case OMPD_parallel_for:
-    result += "parallel for ";
-    break;
   case OMPD_parallel_do:
-    result += this->getCompactParallelDo() ? "paralleldo " : "parallel do ";
-    break;
-  case OMPD_parallel_loop:
-    result += "parallel loop ";
-    break;
-  case OMPD_parallel_loop_simd:
-    result += "parallel loop simd ";
-    break;
-  case OMPD_parallel_sections:
-    result += "parallel sections ";
-    break;
-  case OMPD_parallel_single:
-    result += "parallel single ";
-    break;
-  case OMPD_parallel_workshare:
-    result += "parallel workshare ";
-    break;
-  case OMPD_parallel_master:
-    result += "parallel master ";
-    break;
-  case OMPD_master_taskloop:
-    result += "master taskloop ";
-    break;
-  case OMPD_master_taskloop_simd:
-    result += "master taskloop simd ";
-    break;
-  case OMPD_parallel_master_taskloop:
-    result += "parallel master taskloop ";
-    break;
-  case OMPD_parallel_master_taskloop_simd:
-    result += "parallel master taskloop simd ";
-    break;
-  case OMPD_loop:
-    result += "loop ";
-    break;
-  case OMPD_scan:
-    result += "scan ";
-    break;
-  case OMPD_sections:
-    result += "sections ";
-    break;
-  case OMPD_section:
-    result += "section ";
-    break;
-  case OMPD_single:
-    result += "single ";
-    break;
-  case OMPD_workshare:
-    result += "workshare ";
-    break;
-  case OMPD_cancel:
-    result += "cancel ";
-    break;
-  case OMPD_cancellation_point:
-    result += "cancellation point ";
-    break;
-  case OMPD_metadirective:
-    result += "metadirective ";
-    break;
-  case OMPD_declare_variant:
-    result += "declare variant ";
-    break;
-  case OMPD_begin_declare_variant:
-    result += "begin declare variant ";
-    break;
-  case OMPD_end_declare_variant:
-    result += "end declare variant ";
-    break;
-  case OMPD_allocate:
-    result += "allocate ";
-    break;
-  case OMPD_task:
-    result += "task ";
-    break;
-  case OMPD_taskloop:
-    result += "taskloop ";
-    break;
-  case OMPD_taskloop_simd:
-    result += "taskloop simd ";
-    break;
-  case OMPD_target_data:
-    result += "target data ";
-    break;
-  case OMPD_target_data_composite:
-    result += "target_data ";
-    break;
-  case OMPD_taskyield:
-    result += "taskyield ";
-    break;
-  case OMPD_target_enter_data:
-    result += "target enter data ";
-    break;
-  case OMPD_target_exit_data:
-    result += "target exit data ";
-    break;
-  case OMPD_target:
-    result += "target ";
-    break;
-  case OMPD_target_loop:
-    result += "target loop ";
-    break;
-  case OMPD_target_loop_simd:
-    result += "target loop simd ";
-    break;
-  case OMPD_target_update:
-    result += "target update ";
+    if (this->getCompactParallelDo()) {
+      return "paralleldo ";
+    }
     break;
   case OMPD_declare_target:
-    result += this->getDeclareTargetUnderscore() ? "declare_target "
-                                                 : "declare target ";
+    if (this->getDeclareTargetUnderscore()) {
+      return "declare_target ";
+    }
     break;
   case OMPD_begin_declare_target:
-    result += this->getDeclareTargetUnderscore() ? "begin declare_target "
-                                                 : "begin declare target ";
+    if (this->getDeclareTargetUnderscore()) {
+      return "begin declare_target ";
+    }
     break;
   case OMPD_end_declare_target:
-    result += this->getDeclareTargetUnderscore() ? "end declare_target "
-                                                 : "end declare target ";
-    break;
-  case OMPD_master:
-    result += "master ";
-    break;
-  case OMPD_threadprivate:
-    result += "threadprivate ";
-    break;
-  case OMPD_declare_reduction:
-    result += "declare reduction ";
-    break;
-  case OMPD_declare_mapper:
-    result += "declare mapper ";
-    break;
-  case OMPD_end:
-    result += "end ";
-    break;
-  case OMPD_barrier:
-    result += "barrier ";
-    break;
-  case OMPD_taskwait:
-    result += "taskwait ";
-    break;
-  case OMPD_unroll:
-    result += "unroll ";
-    break;
-  case OMPD_tile:
-    result += "tile ";
-    break;
-  case OMPD_error:
-    result += "error ";
-    break;
-  case OMPD_nothing:
-    result += "nothing ";
-    break;
-  case OMPD_masked:
-    result += "masked ";
-    break;
-  case OMPD_masked_taskloop:
-    result += "masked taskloop ";
-    break;
-  case OMPD_masked_taskloop_simd:
-    result += "masked taskloop simd ";
-    break;
-  case OMPD_parallel_masked:
-    result += "parallel masked ";
-    break;
-  case OMPD_parallel_masked_taskloop:
-    result += "parallel masked taskloop ";
-    break;
-  case OMPD_parallel_masked_taskloop_simd:
-    result += "parallel masked taskloop simd ";
-    break;
-  case OMPD_scope:
-    result += "scope ";
-    break;
-  case OMPD_interop:
-    result += "interop ";
-    break;
-  case OMPD_assume:
-    result += "assume ";
-    break;
-  case OMPD_end_assume:
-    result += "end assume ";
-    break;
-  case OMPD_assumes:
-    result += "assumes ";
-    break;
-  case OMPD_begin_assumes:
-    result += "begin assumes ";
-    break;
-  case OMPD_end_assumes:
-    result += "end assumes ";
-    break;
-  case OMPD_begin_metadirective:
-    result += "begin metadirective ";
-    break;
-  case OMPD_allocators:
-    result += "allocators ";
-    break;
-  case OMPD_taskgraph:
-    result += "taskgraph ";
-    break;
-  case OMPD_task_iteration:
-    result += "task_iteration ";
-    break;
-  case OMPD_dispatch:
-    result += "dispatch ";
-    break;
-  case OMPD_groupprivate:
-    result += "groupprivate ";
-    break;
-  case OMPD_workdistribute:
-    result += "workdistribute ";
-    break;
-  case OMPD_fuse:
-    result += "fuse ";
-    break;
-  case OMPD_interchange:
-    result += "interchange ";
-    break;
-  case OMPD_reverse:
-    result += "reverse ";
-    break;
-  case OMPD_split:
-    result += "split ";
-    break;
-  case OMPD_stripe:
-    result += "stripe ";
-    break;
-  case OMPD_declare_induction:
-    result += "declare induction ";
-    break;
-  case OMPD_taskgroup:
-    result += "taskgroup ";
-    break;
-  case OMPD_flush:
-    result += "flush ";
-    break;
-  case OMPD_atomic:
-    result += "atomic ";
-    break;
-  case OMPD_critical:
-    result += "critical ";
-    break;
-  case OMPD_ordered:
-    result += "ordered ";
-    break;
-  case OMPD_depobj:
-    result += "depobj ";
-    break;
-  case OMPD_teams_distribute:
-    result += "teams distribute ";
-    break;
-  case OMPD_teams_distribute_simd:
-    result += "teams distribute simd ";
-    break;
-  case OMPD_teams_distribute_parallel_for:
-    result += "teams distribute parallel for ";
-    break;
-  case OMPD_teams_distribute_parallel_for_simd:
-    result += "teams distribute parallel for simd ";
-    break;
-  case OMPD_teams_distribute_parallel_loop:
-    result += "teams distribute parallel loop ";
-    break;
-  case OMPD_teams_distribute_parallel_loop_simd:
-    result += "teams distribute parallel loop simd ";
-    break;
-  case OMPD_teams_loop:
-    result += "teams loop ";
-    break;
-  case OMPD_teams_loop_simd:
-    result += "teams loop simd ";
-    break;
-  case OMPD_target_parallel:
-    result += "target parallel ";
-    break;
-  case OMPD_target_parallel_for:
-    result += "target parallel for ";
-    break;
-  case OMPD_target_parallel_for_simd:
-    result += "target parallel for simd ";
-    break;
-  case OMPD_target_parallel_loop:
-    result += "target parallel loop ";
-    break;
-  case OMPD_target_parallel_loop_simd:
-    result += "target parallel loop simd ";
-    break;
-  case OMPD_target_simd:
-    result += "target simd ";
-    break;
-  case OMPD_target_teams:
-    result += "target teams ";
-    break;
-  case OMPD_target_teams_distribute:
-    result += "target teams distribute ";
-    break;
-  case OMPD_target_teams_distribute_simd:
-    result += "target teams distribute simd ";
-    break;
-  case OMPD_target_teams_loop:
-    result += "target teams loop ";
-    break;
-  case OMPD_target_teams_loop_simd:
-    result += "target teams loop simd ";
-    break;
-  case OMPD_target_teams_distribute_parallel_for:
-    result += "target teams distribute parallel for ";
-    break;
-  case OMPD_target_teams_distribute_parallel_for_simd:
-    result += "target teams distribute parallel for simd ";
-    break;
-  case OMPD_target_teams_distribute_parallel_loop:
-    result += "target teams distribute parallel loop ";
-    break;
-  case OMPD_target_teams_distribute_parallel_loop_simd:
-    result += "target teams distribute parallel loop simd ";
-    break;
-  case OMPD_teams_distribute_parallel_do:
-    result += "teams distribute parallel do ";
-    break;
-  case OMPD_teams_distribute_parallel_do_simd:
-    result += "teams distribute parallel do simd ";
-    break;
-  case OMPD_target_parallel_do:
-    result += "target parallel do ";
-    break;
-  case OMPD_target_parallel_do_simd:
-    result += "target parallel do simd ";
-    break;
-  case OMPD_target_teams_distribute_parallel_do:
-    result += "target teams distribute parallel do ";
-    break;
-  case OMPD_target_teams_distribute_parallel_do_simd:
-    result += "target teams distribute parallel do simd ";
+    if (this->getDeclareTargetUnderscore()) {
+      return "end declare_target ";
+    }
     break;
   default:
+    break;
+  }
+
+  std::string result = getDirectiveSpelling(this->getKind());
+  if (result.empty()) {
     printf("The directive enum is not supported yet.\n");
-  };
+  }
 
   return result;
 };
@@ -732,329 +398,8 @@ std::string OpenMPClause::expressionToString() {
 
 std::string OpenMPClause::toString() {
 
-  std::string result;
-
-  switch (this->getKind()) {
-  case OMPC_allocate:
-    result += "allocate ";
-    break;
-  case OMPC_allocator:
-    result += "allocator ";
-    break;
-  case OMPC_private:
-    result += "private ";
-    break;
-  case OMPC_firstprivate:
-    result += "firstprivate ";
-    break;
-  case OMPC_shared:
-    result += "shared ";
-    break;
-  case OMPC_num_teams:
-    result += "num_teams ";
-    break;
-  case OMPC_num_threads:
-    result += "num_threads ";
-    break;
-  case OMPC_thread_limit:
-    result += "thread_limit ";
-    ;
-    break;
-  case OMPC_copyin:
-    result += "copyin ";
-    break;
-  case OMPC_align:
-    result += "align ";
-    break;
-  case OMPC_collapse:
-    result += "collapse ";
-    break;
-  case OMPC_ordered:
-    result += "ordered ";
-    break;
-  case OMPC_nowait:
-    result += "nowait ";
-    break;
-  case OMPC_full:
-    result += "full ";
-    break;
-  case OMPC_partial:
-    result += "partial ";
-    break;
-  case OMPC_order:
-    result += "order ";
-    break;
-  case OMPC_safelen:
-    result += "safelen ";
-    break;
-  case OMPC_simdlen:
-    result += "simdlen ";
-    break;
-  case OMPC_nontemporal:
-    result += "nontemporal ";
-    break;
-  case OMPC_uniform:
-    result += "uniform ";
-    break;
-  case OMPC_inbranch:
-    result += "inbranch ";
-    break;
-  case OMPC_notinbranch:
-    result += "notinbranch ";
-    break;
-  case OMPC_bind:
-    result += "bind ";
-    break;
-  case OMPC_inclusive:
-    result += "inclusive ";
-    break;
-  case OMPC_exclusive:
-    result += "exclusive ";
-    break;
-  case OMPC_copyprivate:
-    result += "copyprivate ";
-    break;
-  case OMPC_parallel:
-    result += "parallel ";
-    break;
-  case OMPC_sections:
-    result += "sections ";
-    break;
-  case OMPC_initializer:
-    result += "initializer ";
-    break;
-  case OMPC_for:
-    result += "for ";
-    break;
-  case OMPC_do:
-    result += "do ";
-    break;
-  case OMPC_taskgroup:
-    result += "taskgroup ";
-    break;
-  case OMPC_if:
-    result += "if ";
-    break;
-  case OMPC_final:
-    result += "final ";
-    break;
-  case OMPC_untied:
-    result += "untied ";
-    break;
-  case OMPC_mergeable:
-    result += "mergeable ";
-    break;
-  case OMPC_priority:
-    result += "priority ";
-    break;
-  case OMPC_detach:
-    result += "detach ";
-    break;
-  case OMPC_reverse_offload:
-    result += "reverse_offload ";
-    break;
-  case OMPC_unified_address:
-    result += "unified_address ";
-    break;
-  case OMPC_unified_shared_memory:
-    result += "unified_shared_memory ";
-    break;
-  case OMPC_dynamic_allocators:
-    result += "dynamic_allocators ";
-    break;
-  case OMPC_self_maps:
-    result += "self_maps ";
-    break;
-  case OMPC_use_device_ptr:
-    result += "use_device_ptr ";
-    break;
-  case OMPC_sizes:
-    result += "sizes ";
-    break;
-  case OMPC_use_device_addr:
-    result += "use_device_addr ";
-    break;
-  case OMPC_is_device_ptr:
-    result += "is_device_ptr ";
-    break;
-  case OMPC_has_device_addr:
-    result += "has_device_addr ";
-    break;
-  case OMPC_grainsize:
-    result += "grainsize ";
-    break;
-  case OMPC_num_tasks:
-    result += "num_tasks ";
-    break;
-  case OMPC_nogroup:
-    result += "nogroup ";
-    break;
-  case OMPC_link:
-    result += "link ";
-    break;
-  case OMPC_enter:
-    result += "enter ";
-    break;
-  case OMPC_acq_rel:
-    result += "acq_rel ";
-    break;
-  case OMPC_release:
-    result += "release ";
-    break;
-  case OMPC_acquire:
-    result += "acquire ";
-    break;
-  case OMPC_read:
-    result += "read ";
-    break;
-  case OMPC_write:
-    result += "write ";
-    break;
-  case OMPC_update:
-    result += "update ";
-    break;
-  case OMPC_capture:
-    result += "capture ";
-    break;
-  case OMPC_seq_cst:
-    result += "seq_cst ";
-    break;
-  case OMPC_relaxed:
-    result += "relaxed ";
-    break;
-  case OMPC_hint:
-    result += "hint ";
-    break;
-  case OMPC_threads:
-    result += "threads ";
-    break;
-  case OMPC_simd:
-    result += "simd ";
-    break;
-  case OMPC_destroy:
-    result += "destroy ";
-    break;
-  case OMPC_filter:
-    result += "filter ";
-    break;
-  case OMPC_message:
-    result += "message ";
-    break;
-  case OMPC_compare:
-    result += "compare ";
-    break;
-  case OMPC_fail:
-    result += "fail ";
-    break;
-  case OMPC_weak:
-    result += "weak ";
-    break;
-  case OMPC_doacross:
-    result += "doacross ";
-    break;
-  case OMPC_absent:
-    result += "absent ";
-    break;
-  case OMPC_contains:
-    result += "contains ";
-    break;
-  case OMPC_holds:
-    result += "holds ";
-    break;
-  case OMPC_otherwise:
-    result += "otherwise ";
-    break;
-  case OMPC_graph_id:
-    result += "graph_id ";
-    break;
-  case OMPC_graph_reset:
-    result += "graph_reset ";
-    break;
-  case OMPC_transparent:
-    result += "transparent ";
-    break;
-  case OMPC_replayable:
-    result += "replayable ";
-    break;
-  case OMPC_threadset:
-    result += "threadset ";
-    break;
-  case OMPC_safesync:
-    result += "safesync ";
-    break;
-  case OMPC_device_safesync:
-    result += "device_safesync ";
-    break;
-  case OMPC_memscope:
-    result += "memscope ";
-    break;
-  case OMPC_init_complete:
-    result += "init_complete ";
-    break;
-  case OMPC_local:
-    result += "local ";
-    break;
-  case OMPC_adjust_args:
-    result += "adjust_args ";
-    break;
-  case OMPC_append_args:
-    result += "append_args ";
-    break;
-  case OMPC_indirect:
-    result += "indirect ";
-    break;
-  case OMPC_init:
-    result += "init ";
-    break;
-  case OMPC_use:
-    result += "use ";
-    break;
-  case OMPC_interop:
-    result += "interop ";
-    break;
-  case OMPC_novariants:
-    result += "novariants ";
-    break;
-  case OMPC_nocontext:
-    result += "nocontext ";
-    break;
-  case OMPC_looprange:
-    result += "looprange ";
-    break;
-  case OMPC_permutation:
-    result += "permutation ";
-    break;
-  case OMPC_counts:
-    result += "counts ";
-    break;
-  case OMPC_apply:
-    result += "apply ";
-    break;
-  case OMPC_induction:
-    result += "induction ";
-    break;
-  case OMPC_inductor:
-    result += "inductor ";
-    break;
-  case OMPC_collector:
-    result += "collector ";
-    break;
-  case OMPC_combiner:
-    result += "combiner ";
-    break;
-  case OMPC_no_openmp:
-    result += "no_openmp ";
-    break;
-  case OMPC_no_openmp_routines:
-    result += "no_openmp_routines ";
-    break;
-  case OMPC_no_openmp_constructs:
-    result += "no_openmp_constructs ";
-    break;
-  case OMPC_no_parallelism:
-    result += "no_parallelism ";
-    break;
-  default:
+  std::string result = getClauseSpelling(this->getKind());
+  if (result.empty()) {
     printf("The clause enum is not supported yet.\n");
   }
 

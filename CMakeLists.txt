@@ -90,6 +90,7 @@ install(FILES
         ${CMAKE_CURRENT_BINARY_DIR}/ompparser_config.h
         src/OpenMPIR.h
         src/OpenMPKinds.h
+        src/OpenMPKinds.def
         DESTINATION include)
 install(TARGETS ${ompparser_targets}
         LIBRARY DESTINATION lib

@@ -27,142 +27,7 @@
 enum OpenMPDirectiveKind {
 #define OPENMP_DIRECTIVE(Name) OMPD_##Name,
 #define OPENMP_DIRECTIVE_EXT(Name, Str) OMPD_##Name,
-  OPENMP_DIRECTIVE(parallel)
-  OPENMP_DIRECTIVE(for)
-  OPENMP_DIRECTIVE(do)
-  OPENMP_DIRECTIVE(simd)
-  OPENMP_DIRECTIVE(for_simd)
-  OPENMP_DIRECTIVE(do_simd)
-  OPENMP_DIRECTIVE(parallel_for_simd)
-  OPENMP_DIRECTIVE(parallel_do_simd)
-  OPENMP_DIRECTIVE(declare_simd)
-  OPENMP_DIRECTIVE(distribute)
-  OPENMP_DIRECTIVE(distribute_simd)
-  OPENMP_DIRECTIVE(distribute_parallel_for)
-  OPENMP_DIRECTIVE(distribute_parallel_do)
-  OPENMP_DIRECTIVE(distribute_parallel_for_simd)
-  OPENMP_DIRECTIVE(distribute_parallel_do_simd)
-  OPENMP_DIRECTIVE(loop)
-  OPENMP_DIRECTIVE(scan)
-  OPENMP_DIRECTIVE(sections)
-  OPENMP_DIRECTIVE(section)
-  OPENMP_DIRECTIVE(single)
-  OPENMP_DIRECTIVE(workshare)
-  OPENMP_DIRECTIVE(cancel)
-  OPENMP_DIRECTIVE(cancellation_point)
-  OPENMP_DIRECTIVE(allocate)
-  OPENMP_DIRECTIVE(threadprivate)
-  OPENMP_DIRECTIVE(declare_reduction)
-  OPENMP_DIRECTIVE(declare_mapper)
-  OPENMP_DIRECTIVE(parallel_for)
-  OPENMP_DIRECTIVE(parallel_do)
-  OPENMP_DIRECTIVE(parallel_loop)
-  OPENMP_DIRECTIVE(parallel_sections)
-  OPENMP_DIRECTIVE(parallel_single)
-  OPENMP_DIRECTIVE(parallel_workshare)
-  OPENMP_DIRECTIVE(parallel_master)
-  OPENMP_DIRECTIVE(master_taskloop)
-  OPENMP_DIRECTIVE(master_taskloop_simd)
-  OPENMP_DIRECTIVE(parallel_master_taskloop)
-  OPENMP_DIRECTIVE(parallel_master_taskloop_simd)
-  OPENMP_DIRECTIVE(teams)
-  OPENMP_DIRECTIVE(metadirective)
-  OPENMP_DIRECTIVE(declare_variant)
-  OPENMP_DIRECTIVE(begin_declare_variant)
-  OPENMP_DIRECTIVE(end_declare_variant)
-  OPENMP_DIRECTIVE(task)
-  OPENMP_DIRECTIVE(taskloop)
-  OPENMP_DIRECTIVE(taskloop_simd)
-  OPENMP_DIRECTIVE(taskyield)
-  OPENMP_DIRECTIVE(requires)
-  OPENMP_DIRECTIVE(target_data)
-  OPENMP_DIRECTIVE(target_data_composite)
-  OPENMP_DIRECTIVE(target_enter_data)
-  OPENMP_DIRECTIVE(target_update)
-  OPENMP_DIRECTIVE(target_exit_data)
-  OPENMP_DIRECTIVE(target)
-  OPENMP_DIRECTIVE(declare_target)
-  OPENMP_DIRECTIVE(begin_declare_target)
-  OPENMP_DIRECTIVE(end_declare_target)
-  OPENMP_DIRECTIVE(master)
-  OPENMP_DIRECTIVE(end)
-  OPENMP_DIRECTIVE(barrier)
-  OPENMP_DIRECTIVE(taskwait)
-  OPENMP_DIRECTIVE(unroll)
-  OPENMP_DIRECTIVE(tile)
-  OPENMP_DIRECTIVE(taskgroup)
-  OPENMP_DIRECTIVE(flush)
-  OPENMP_DIRECTIVE(atomic)
-  OPENMP_DIRECTIVE(critical)
-  OPENMP_DIRECTIVE(depobj)
-  OPENMP_DIRECTIVE(ordered)
-  OPENMP_DIRECTIVE(teams_distribute)
-  OPENMP_DIRECTIVE(teams_distribute_simd)
-  OPENMP_DIRECTIVE(teams_distribute_parallel_for)
-  OPENMP_DIRECTIVE(teams_distribute_parallel_for_simd)
-  OPENMP_DIRECTIVE(teams_loop)
-  OPENMP_DIRECTIVE(target_parallel)
-  OPENMP_DIRECTIVE(target_parallel_for)
-  OPENMP_DIRECTIVE(target_parallel_for_simd)
-  OPENMP_DIRECTIVE(target_parallel_loop)
-  OPENMP_DIRECTIVE(target_simd)
-  OPENMP_DIRECTIVE(target_teams)
-  OPENMP_DIRECTIVE(target_teams_distribute)
-  OPENMP_DIRECTIVE(target_teams_distribute_simd)
-  OPENMP_DIRECTIVE(target_teams_loop)
-  OPENMP_DIRECTIVE(target_teams_distribute_parallel_for)
-  OPENMP_DIRECTIVE(target_teams_distribute_parallel_for_simd)
-  OPENMP_DIRECTIVE(teams_distribute_parallel_do)
-  OPENMP_DIRECTIVE(teams_distribute_parallel_do_simd)
-  OPENMP_DIRECTIVE(target_parallel_do)
-  OPENMP_DIRECTIVE(target_parallel_do_simd)
-  OPENMP_DIRECTIVE(target_teams_distribute_parallel_do)
-  OPENMP_DIRECTIVE(target_teams_distribute_parallel_do_simd)
-  // OpenMP 5.1 directives
-  OPENMP_DIRECTIVE(error)
-  OPENMP_DIRECTIVE(nothing)
-  OPENMP_DIRECTIVE(masked)
-  OPENMP_DIRECTIVE(scope)
-  OPENMP_DIRECTIVE(masked_taskloop)
-  OPENMP_DIRECTIVE(masked_taskloop_simd)
-  OPENMP_DIRECTIVE(parallel_masked)
-  OPENMP_DIRECTIVE(parallel_masked_taskloop)
-  OPENMP_DIRECTIVE(parallel_masked_taskloop_simd)
-  OPENMP_DIRECTIVE(interop)
-  // OpenMP 5.2 directives
-  OPENMP_DIRECTIVE(assume)
-  OPENMP_DIRECTIVE(end_assume)
-  OPENMP_DIRECTIVE(assumes)
-  OPENMP_DIRECTIVE(begin_assumes)
-  OPENMP_DIRECTIVE(end_assumes)
-  // OpenMP 6.0 directives
-  OPENMP_DIRECTIVE(allocators)
-  OPENMP_DIRECTIVE(taskgraph)
-  OPENMP_DIRECTIVE(task_iteration)
-  OPENMP_DIRECTIVE(dispatch)
-  OPENMP_DIRECTIVE(groupprivate)
-  OPENMP_DIRECTIVE(workdistribute)
-  OPENMP_DIRECTIVE(fuse)
-  OPENMP_DIRECTIVE(interchange)
-  OPENMP_DIRECTIVE(reverse)
-  OPENMP_DIRECTIVE(split)
-  OPENMP_DIRECTIVE(stripe)
-  OPENMP_DIRECTIVE(declare_induction)
-  OPENMP_DIRECTIVE(begin_metadirective)
-  // Missing *_loop and *_loop_simd combinations
-  OPENMP_DIRECTIVE(parallel_loop_simd)
-  OPENMP_DIRECTIVE(teams_loop_simd)
-  OPENMP_DIRECTIVE(target_loop)
-  OPENMP_DIRECTIVE(target_loop_simd)
-  OPENMP_DIRECTIVE(target_parallel_loop_simd)
-  OPENMP_DIRECTIVE(target_teams_loop_simd)
-  OPENMP_DIRECTIVE(distribute_parallel_loop)
-  OPENMP_DIRECTIVE(distribute_parallel_loop_simd)
-  OPENMP_DIRECTIVE(teams_distribute_parallel_loop)
-  OPENMP_DIRECTIVE(teams_distribute_parallel_loop_simd)
-  OPENMP_DIRECTIVE(target_teams_distribute_parallel_loop)
-  OPENMP_DIRECTIVE(target_teams_distribute_parallel_loop_simd)
-  OPENMP_DIRECTIVE(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_DIRECTIVE
 #undef OPENMP_DIRECTIVE_EXT
 };
@@ -170,144 +35,9 @@ enum OpenMPDirectiveKind {
 /// OpenMP clauses.
 enum OpenMPClauseKind {
 #define OPENMP_CLAUSE(Name, Class) OMPC_##Name,
-  OPENMP_CLAUSE(if, OMPIfClause)
-  OPENMP_CLAUSE(num_threads, OMPNumThreadsClause)
-  OPENMP_CLAUSE(default, OMPDefaultClause)
-  OPENMP_CLAUSE(private, OMPPrivateClause)
-  OPENMP_CLAUSE(firstprivate, OMPFirstprivateClause)
-  OPENMP_CLAUSE(shared, OMPSharedClause)
-  OPENMP_CLAUSE(copyin, OMPCopyinClause)
-  OPENMP_CLAUSE(align, OMPAlignClause)
-  OPENMP_CLAUSE(reduction, OMPReductionClause)
-  OPENMP_CLAUSE(proc_bind, OMPProcBindClause)
-  OPENMP_CLAUSE(allocate, OMPAllocateClause)
-  OPENMP_CLAUSE(num_teams, OMPNumTeamsClause)
-  OPENMP_CLAUSE(thread_limit, OMPThreadLimitClause)
-  OPENMP_CLAUSE(lastprivate, OMPLastprivateClause)
-  OPENMP_CLAUSE(collapse, OMPCollapseClause)
-  OPENMP_CLAUSE(ordered, OMPOrderedClause)
-  OPENMP_CLAUSE(partial, OMPPartialClause)
-  OPENMP_CLAUSE(nowait, OMPNowaitClause)
-  OPENMP_CLAUSE(full, OMPFullClause)
-  OPENMP_CLAUSE(order, OMPOrderClause)
-  OPENMP_CLAUSE(linear, OMPLinearClause)
-  OPENMP_CLAUSE(schedule, OMPScheduleClause)
-  OPENMP_CLAUSE(safelen, OMPSafelenClause)
-  OPENMP_CLAUSE(simdlen, OMPSimdlenClause)
-  OPENMP_CLAUSE(aligned, OMPAlignedClause)
-  OPENMP_CLAUSE(nontemporal, OMPNontemporalClause)
-  OPENMP_CLAUSE(uniform, OMPUniformClause)
-  OPENMP_CLAUSE(inbranch, OMPInbranchClause)
-  OPENMP_CLAUSE(notinbranch, OMPNotinbranchClause)
-  OPENMP_CLAUSE(dist_schedule, OMPDistScheduleClause)
-  OPENMP_CLAUSE(bind, OMPBindClause)
-  OPENMP_CLAUSE(inclusive, OMPInclusiveClause)
-  OPENMP_CLAUSE(exclusive, OMPExclusiveClause)
-  OPENMP_CLAUSE(copyprivate, OMPCopyprivateClause)
-  OPENMP_CLAUSE(parallel, OMPParallelClause)
-  OPENMP_CLAUSE(sections, OMPSectionsClause)
-  OPENMP_CLAUSE(for, OMPForClause)
-  OPENMP_CLAUSE(do, OMPDoClause)
-  OPENMP_CLAUSE(taskgroup, OMPTaskgroupClause)
-  OPENMP_CLAUSE(allocator, OMPAllocatorClause)
-  OPENMP_CLAUSE(initializer, OMPInitializerClause)
-  OPENMP_CLAUSE(final, OMPFinalClause)
-  OPENMP_CLAUSE(untied, OMPUntiedClause)
-  OPENMP_CLAUSE(requires, OMPRequiresClause)
-  OPENMP_CLAUSE(mergeable, OMPMergeableClause)
-  OPENMP_CLAUSE(in_reduction, OMPInReductionClause)
-  OPENMP_CLAUSE(depend, OMPDependClause)
-  OPENMP_CLAUSE(priority, OMPPriorityClause)
-  OPENMP_CLAUSE(affinity, OMPAffinityClause)
-  OPENMP_CLAUSE(detach, OMPDetachClause)
-  OPENMP_CLAUSE(grainsize, OMPGrainsizeClause)
-  OPENMP_CLAUSE(num_tasks, OMPNumTasksClause)
-  OPENMP_CLAUSE(nogroup, OMPNogroupClause)
-  OPENMP_CLAUSE(reverse_offload, OMPReverse_OffloadClause)
-  OPENMP_CLAUSE(unified_address, OMPUnifiedAddressClause)
-  OPENMP_CLAUSE(unified_shared_memory, OMPUnifiedShared_memoryClause)
-  OPENMP_CLAUSE(atomic_default_mem_order, OMPAtomicDefaultMemOrderClause)
-  OPENMP_CLAUSE(dynamic_allocators, OMPDynamicAllocatorsClause)
-  OPENMP_CLAUSE(self_maps, OMPSelfMapsClause)
-  OPENMP_CLAUSE(ext_implementation_defined_requirement, OMPExtImplementationDefinedRequirementClause)
-  OPENMP_CLAUSE(device, OMPDeviceClause)
-  OPENMP_CLAUSE(map, OMPMapClause)
-  OPENMP_CLAUSE(use_device_ptr, OMPUseDevicePtrClause)
-  OPENMP_CLAUSE(sizes, OMPSizesClause)
-  OPENMP_CLAUSE(use_device_addr, OMPUseDeviceAddrClause)
-  OPENMP_CLAUSE(is_device_ptr, OMPIsDevicePtrClause)
-  OPENMP_CLAUSE(has_device_addr, OMPHasDeviceAddrClause)
-  OPENMP_CLAUSE(defaultmap, OMPDefaultmapClause)
-  OPENMP_CLAUSE(to, OMPToClause)
-  OPENMP_CLAUSE(from, OMPFromClause)
-  OPENMP_CLAUSE(uses_allocators, OMPUsesAllocatorsClause)
-  // OpenMP clause for MetaDirective
-  OPENMP_CLAUSE(when, OMPWhenClause)
-  OPENMP_CLAUSE(match, OMPMatchClause)
-  OPENMP_CLAUSE(link, OMPLinkClause)
-  OPENMP_CLAUSE(device_type, OMPDeviceTypeClause)
-  OPENMP_CLAUSE(task_reduction, OMPTaskReductionClause)
-  OPENMP_CLAUSE(acq_rel, OMPAcqRelClause)
-  OPENMP_CLAUSE(release, OMPReleaseClause)
-  OPENMP_CLAUSE(acquire, OMPAcquireClause)
-  OPENMP_CLAUSE(read, OMPReadClause)
-  OPENMP_CLAUSE(write, OMPWriteClause)
-  OPENMP_CLAUSE(update, OMPUpdateClause)
-  OPENMP_CLAUSE(capture, OMPCaptureClause)
-  OPENMP_CLAUSE(seq_cst, OMPSeqCstClause)
-  OPENMP_CLAUSE(relaxed, OMPRelaxedClause)
-  OPENMP_CLAUSE(hint, OMPHintClause)
-  OPENMP_CLAUSE(destroy, OMPDestroyClause)
-  OPENMP_CLAUSE(depobj_update, OMPDepobjUpdateClause)
-  OPENMP_CLAUSE(threads, OMPThreadsClause)
-  OPENMP_CLAUSE(simd, OMPSimdClause)
-  // OpenMP 5.1 clauses
-  OPENMP_CLAUSE(filter, OMPFilterClause)
-  OPENMP_CLAUSE(compare, OMPCompareClause)
-  OPENMP_CLAUSE(fail, OMPFailClause)
-  OPENMP_CLAUSE(weak, OMPWeakClause)
-  OPENMP_CLAUSE(at, OMPAtClause)
-  OPENMP_CLAUSE(severity, OMPSeverityClause)
-  OPENMP_CLAUSE(message, OMPMessageClause)
-  // OpenMP 5.2 clauses
-  OPENMP_CLAUSE(doacross, OMPDoacrossClause)
-  OPENMP_CLAUSE(absent, OMPAbsentClause)
-  OPENMP_CLAUSE(contains, OMPContainsClause)
-  OPENMP_CLAUSE(holds, OMPHoldsClause)
-  OPENMP_CLAUSE(otherwise, OMPOtherwiseClause)
-  // OpenMP 6.0 clauses
-  OPENMP_CLAUSE(graph_id, OMPGraphIdClause)
-  OPENMP_CLAUSE(graph_reset, OMPGraphResetClause)
-  OPENMP_CLAUSE(transparent, OMPTransparentClause)
-  OPENMP_CLAUSE(replayable, OMPReplayableClause)
-  OPENMP_CLAUSE(threadset, OMPThreadsetClause)
-  OPENMP_CLAUSE(indirect, OMPIndirectClause)
-  OPENMP_CLAUSE(local, OMPLocalClause)
-  OPENMP_CLAUSE(init, OMPInitClause)
-  OPENMP_CLAUSE(init_complete, OMPInitCompleteClause)
-  OPENMP_CLAUSE(safesync, OMPSafesyncClause)
-  OPENMP_CLAUSE(device_safesync, OMPDeviceSafesyncClause)
-  OPENMP_CLAUSE(memscope, OMPMemscopeClause)
-  OPENMP_CLAUSE(looprange, OMPLooprangeClause)
-  OPENMP_CLAUSE(permutation, OMPPermutationClause)
-  OPENMP_CLAUSE(counts, OMPCountsClause)
-  OPENMP_CLAUSE(induction, OMPInductionClause)
-  OPENMP_CLAUSE(inductor, OMPInductorClause)
-  OPENMP_CLAUSE(collector, OMPCollectorClause)
-  OPENMP_CLAUSE(combiner, OMPCombinerClause)
-  OPENMP_CLAUSE(adjust_args, OMPAdjustArgsClause)
-  OPENMP_CLAUSE(append_args, OMPAppendArgsClause)
-  OPENMP_CLAUSE(apply, OMPApplyClause)
-  OPENMP_CLAUSE(no_openmp, OMPNoOpenmpClause)
-  OPENMP_CLAUSE(no_openmp_constructs, OMPNoOpenmpConstructsClause)
-  OPENMP_CLAUSE(no_openmp_routines, OMPNoOpenmpRoutinesClause)
-  OPENMP_CLAUSE(no_parallelism, OMPNoParallelismClause)
-  OPENMP_CLAUSE(nocontext, OMPNocontextClause)
-  OPENMP_CLAUSE(novariants, OMPNovariantsClause)
-  OPENMP_CLAUSE(interop, OMPInteropClause)
-  OPENMP_CLAUSE(enter, OMPEnterClause)
-  OPENMP_CLAUSE(use, OMPUseClause)
-  OPENMP_CLAUSE(unknown, OMPUnknownClause)
+#define OPENMP_CLAUSE_EXT(Name, Class, Str) OPENMP_CLAUSE(Name, Class)
+#include "OpenMPKinds.def"
+#undef OPENMP_CLAUSE_EXT
 #undef OPENMP_CLAUSE
 };
 
@@ -317,9 +47,7 @@ enum OpenMPClauseSeparator { OMPC_CLAUSE_SEP_space, OMPC_CLAUSE_SEP_comma };
 // context selector set for 'when' clause.
 enum OpenMPWhenClauseSelectorSet {
 #define OPENMP_WHEN_SELECTOR_SET(Name) OMPC_WHEN_SELECTOR_SET_##Name,
-  OPENMP_WHEN_SELECTOR_SET(user) OPENMP_WHEN_SELECTOR_SET(construct)
-      OPENMP_WHEN_SELECTOR_SET(device) OPENMP_WHEN_SELECTOR_SET(implementation)
-          OPENMP_WHEN_SELECTOR_SET(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_WHEN_SELECTOR_SET
 };
 
@@ -327,32 +55,21 @@ enum OpenMPWhenClauseSelectorSet {
 enum OpenMPWhenClauseSelectorParameter {
 #define OPENMP_WHEN_SELECTOR_PARAMETER(Name)                                   \
   OMPC_WHEN_SELECTOR_PARAMETER_##Name,
-  OPENMP_WHEN_SELECTOR_PARAMETER(condition)
-      OPENMP_WHEN_SELECTOR_PARAMETER(score)
-          OPENMP_WHEN_SELECTOR_PARAMETER(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_WHEN_SELECTOR_PARAMETER
 };
 
 // context selector for 'when' clause.
 enum OpenMPClauseContextKind {
 #define OPENMP_CONTEXT_KIND(Name) OMPC_CONTEXT_KIND_##Name,
-  OPENMP_CONTEXT_KIND(host) OPENMP_CONTEXT_KIND(nohost) OPENMP_CONTEXT_KIND(any)
-      OPENMP_CONTEXT_KIND(cpu) OPENMP_CONTEXT_KIND(gpu)
-          OPENMP_CONTEXT_KIND(fpga) OPENMP_CONTEXT_KIND(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_CONTEXT_KIND
 };
 
 // context selector for 'when' clause.
 enum OpenMPClauseContextVendor {
 #define OPENMP_CONTEXT_VENDOR(Name) OMPC_CONTEXT_VENDOR_##Name,
-  OPENMP_CONTEXT_VENDOR(amd) OPENMP_CONTEXT_VENDOR(arm) OPENMP_CONTEXT_VENDOR(
-      bsc) OPENMP_CONTEXT_VENDOR(cray) OPENMP_CONTEXT_VENDOR(fujitsu)
-      OPENMP_CONTEXT_VENDOR(gnu) OPENMP_CONTEXT_VENDOR(ibm)
-          OPENMP_CONTEXT_VENDOR(intel) OPENMP_CONTEXT_VENDOR(llvm)
-              OPENMP_CONTEXT_VENDOR(nvidia) OPENMP_CONTEXT_VENDOR(pgi)
-                  OPENMP_CONTEXT_VENDOR(ti) OPENMP_CONTEXT_VENDOR(user)
-                      OPENMP_CONTEXT_VENDOR(unknown) OPENMP_CONTEXT_VENDOR(
-                          unspecified) // default enum for vendor list
+#include "OpenMPKinds.def"
 #undef OPENMP_CONTEXT_VENDOR
 };
 
@@ -401,188 +118,133 @@ enum OpenMPApplyTransformKind {
 // OpenMP attributes for 'if' clause.
 enum OpenMPIfClauseModifier {
 #define OPENMP_IF_MODIFIER(Name) OMPC_IF_MODIFIER_##Name,
-  OPENMP_IF_MODIFIER(parallel) OPENMP_IF_MODIFIER(simd) OPENMP_IF_MODIFIER(
-      task) OPENMP_IF_MODIFIER(cancel) OPENMP_IF_MODIFIER(target_data)
-      OPENMP_IF_MODIFIER(target_enter_data) OPENMP_IF_MODIFIER(target_exit_data)
-          OPENMP_IF_MODIFIER(target) OPENMP_IF_MODIFIER(target_update)
-              OPENMP_IF_MODIFIER(taskloop) OPENMP_IF_MODIFIER(teams)
-                  OPENMP_IF_MODIFIER(task_iteration) OPENMP_IF_MODIFIER(
-                      taskgraph) OPENMP_IF_MODIFIER(unspecified)
-                      OPENMP_IF_MODIFIER(unknown) OPENMP_IF_MODIFIER(user)
+#include "OpenMPKinds.def"
 #undef OPENMP_IF_MODIFIER
 };
 
 /// OpenMP attributes for 'default' clause.
 enum OpenMPDefaultClauseKind {
 #define OPENMP_DEFAULT_KIND(Name) OMPC_DEFAULT_##Name,
-  /* private and firstprivate are only for fortran */
-  OPENMP_DEFAULT_KIND(private) OPENMP_DEFAULT_KIND(firstprivate)
-      OPENMP_DEFAULT_KIND(shared) OPENMP_DEFAULT_KIND(none)
-          OPENMP_DEFAULT_KIND(variant) OPENMP_DEFAULT_KIND(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_DEFAULT_KIND
 };
 
 /// modifiers for 'order' clause.
 enum OpenMPOrderClauseModifier {
 #define OPENMP_ORDER_MODIFIER(Name) OMPC_ORDER_MODIFIER_##Name,
-  OPENMP_ORDER_MODIFIER(reproducible) OPENMP_ORDER_MODIFIER(unconstrained)
-      OPENMP_ORDER_MODIFIER(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_ORDER_MODIFIER
 };
 
 /// OpenMP attributes for 'order' clause.
 enum OpenMPOrderClauseKind {
 #define OPENMP_ORDER_KIND(Name) OMPC_ORDER_##Name,
-  /* private and firstprivate are only for fortran */
-  OPENMP_ORDER_KIND(concurrent) OPENMP_ORDER_KIND(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_ORDER_KIND
 };
 
 /// OpenMP attributes for 'proc_bind' clause.
 enum OpenMPProcBindClauseKind {
 #define OPENMP_PROC_BIND_KIND(Name) OMPC_PROC_BIND_##Name,
-  OPENMP_PROC_BIND_KIND(master) OPENMP_PROC_BIND_KIND(primary)
-      OPENMP_PROC_BIND_KIND(close) OPENMP_PROC_BIND_KIND(spread)
-          OPENMP_PROC_BIND_KIND(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_PROC_BIND_KIND
 };
 
 /// OpenMP attributes for 'Allocate' clause.
 enum OpenMPAllocateClauseAllocator {
 #define OPENMP_ALLOCATE_ALLOCATOR_KIND(Name) OMPC_ALLOCATE_ALLOCATOR_##Name,
-  OPENMP_ALLOCATE_ALLOCATOR_KIND(default)   // omp_default_mem_alloc
-  OPENMP_ALLOCATE_ALLOCATOR_KIND(large_cap) // omp_large_cap_mem_alloc
-  OPENMP_ALLOCATE_ALLOCATOR_KIND(cons_mem)  // omp_const_mem_alloc
-  OPENMP_ALLOCATE_ALLOCATOR_KIND(high_bw)   // omp_high_bw_mem_alloc
-  OPENMP_ALLOCATE_ALLOCATOR_KIND(low_lat)   // omp_low_lat_mem_alloc
-  OPENMP_ALLOCATE_ALLOCATOR_KIND(cgroup)    // omp_cgroup_mem_alloc
-  OPENMP_ALLOCATE_ALLOCATOR_KIND(pteam)     // omp_pteam_mem_alloc
-  OPENMP_ALLOCATE_ALLOCATOR_KIND(thread)    // omp_thread_mem_alloc
-  OPENMP_ALLOCATE_ALLOCATOR_KIND(user)      // user-defined allocator
-  OPENMP_ALLOCATE_ALLOCATOR_KIND(unknown)
-      OPENMP_ALLOCATE_ALLOCATOR_KIND(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_ALLOCATE_ALLOCATOR_KIND
 };
 
 /// OpenMP attributes for 'Allocator' clause.
 enum OpenMPAllocatorClauseAllocator {
 #define OPENMP_ALLOCATOR_ALLOCATOR_KIND(Name) OMPC_ALLOCATOR_ALLOCATOR_##Name,
-  OPENMP_ALLOCATOR_ALLOCATOR_KIND(default)   // omp_default_mem_alloc
-  OPENMP_ALLOCATOR_ALLOCATOR_KIND(large_cap) // omp_large_cap_mem_alloc
-  OPENMP_ALLOCATOR_ALLOCATOR_KIND(cons_mem)  // omp_const_mem_alloc
-  OPENMP_ALLOCATOR_ALLOCATOR_KIND(high_bw)   // omp_high_bw_mem_alloc
-  OPENMP_ALLOCATOR_ALLOCATOR_KIND(low_lat)   // omp_low_lat_mem_alloc
-  OPENMP_ALLOCATOR_ALLOCATOR_KIND(cgroup)    // omp_cgroup_mem_alloc
-  OPENMP_ALLOCATOR_ALLOCATOR_KIND(pteam)     // omp_pteam_mem_alloc
-  OPENMP_ALLOCATOR_ALLOCATOR_KIND(thread)    // omp_thread_mem_alloc
-  OPENMP_ALLOCATOR_ALLOCATOR_KIND(user)      // user-defined allocator
-  OPENMP_ALLOCATOR_ALLOCATOR_KIND(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_ALLOCATOR_ALLOCATOR_KIND
 };
 
 /// modifiers for 'reduction' clause.
 enum OpenMPReductionClauseModifier {
 #define OPENMP_REDUCTION_MODIFIER(Name) OMPC_REDUCTION_MODIFIER_##Name,
-  OPENMP_REDUCTION_MODIFIER(inscan) OPENMP_REDUCTION_MODIFIER(task)
-      OPENMP_REDUCTION_MODIFIER(default) OPENMP_REDUCTION_MODIFIER(unknown)
-          OPENMP_REDUCTION_MODIFIER(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_REDUCTION_MODIFIER
 };
 
 /// identifiers for 'reduction' clause.
 enum OpenMPReductionClauseIdentifier {
 #define OPENMP_REDUCTION_IDENTIFIER(Name) OMPC_REDUCTION_IDENTIFIER_##Name,
-  OPENMP_REDUCTION_IDENTIFIER(plus) OPENMP_REDUCTION_IDENTIFIER(minus)
-      OPENMP_REDUCTION_IDENTIFIER(mul) OPENMP_REDUCTION_IDENTIFIER(bitand)
-          OPENMP_REDUCTION_IDENTIFIER(bitor) OPENMP_REDUCTION_IDENTIFIER(bitxor)
-              OPENMP_REDUCTION_IDENTIFIER(logand)
-                  OPENMP_REDUCTION_IDENTIFIER(logor)
-                      OPENMP_REDUCTION_IDENTIFIER(eqv) /* only for Fortran */
-  OPENMP_REDUCTION_IDENTIFIER(neqv)                    /* only for Fortran */
-  OPENMP_REDUCTION_IDENTIFIER(max) OPENMP_REDUCTION_IDENTIFIER(min)
-      OPENMP_REDUCTION_IDENTIFIER(user) OPENMP_REDUCTION_IDENTIFIER(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_REDUCTION_IDENTIFIER
 };
 
 /// modifiers for 'lastprivate' clause.
 enum OpenMPLastprivateClauseModifier {
 #define OPENMP_LASTPRIVATE_MODIFIER(Name) OMPC_LASTPRIVATE_MODIFIER_##Name,
-  OPENMP_LASTPRIVATE_MODIFIER(unspecified)
-      OPENMP_LASTPRIVATE_MODIFIER(conditional)
+#include "OpenMPKinds.def"
 #undef OPENMP_LASTPRIVATE_MODIFIER
 };
 
 /// step for 'linear' clause.
 enum OpenMPLinearClauseStep {
 #define OPENMP_LINEAR_STEP(Name) OMPC_LINEAR_Step_##Name,
-  OPENMP_LINEAR_STEP(unknown) OPENMP_LINEAR_STEP(user)
+#include "OpenMPKinds.def"
 #undef OPENMP_LINEAR_STEP
 };
 
 /// modifiers for 'linear' clause.
 enum OpenMPLinearClauseModifier {
 #define OPENMP_LINEAR_MODIFIER(Name) OMPC_LINEAR_MODIFIER_##Name,
-  OPENMP_LINEAR_MODIFIER(val) OPENMP_LINEAR_MODIFIER(ref)
-      OPENMP_LINEAR_MODIFIER(uval) OPENMP_LINEAR_MODIFIER(user)
-          OPENMP_LINEAR_MODIFIER(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_LINEAR_MODIFIER
 };
 
 /// modifiers for 'schedule' clause.
 enum OpenMPScheduleClauseModifier {
 #define OPENMP_SCHEDULE_MODIFIER(Name) OMPC_SCHEDULE_MODIFIER_##Name,
-  OPENMP_SCHEDULE_MODIFIER(monotonic) OPENMP_SCHEDULE_MODIFIER(nonmonotonic)
-      OPENMP_SCHEDULE_MODIFIER(simd) OPENMP_SCHEDULE_MODIFIER(user)
-          OPENMP_SCHEDULE_MODIFIER(unspecified)
-              OPENMP_SCHEDULE_MODIFIER(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_SCHEDULE_MODIFIER
 };
 
 /// OpenMP attributes for 'schedule' clause.
 enum OpenMPScheduleClauseKind {
 #define OPENMP_SCHEDULE_KIND(Name) OMPC_SCHEDULE_KIND_##Name,
-  OPENMP_SCHEDULE_KIND(static) OPENMP_SCHEDULE_KIND(dynamic)
-      OPENMP_SCHEDULE_KIND(guided) OPENMP_SCHEDULE_KIND(auto)
-          OPENMP_SCHEDULE_KIND(runtime) OPENMP_SCHEDULE_KIND(user)
-              OPENMP_SCHEDULE_KIND(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_SCHEDULE_KIND
 };
 
 /// OpenMP attributes for 'dist_schedule' clause.
 enum OpenMPDistScheduleClauseKind {
 #define OPENMP_DIST_SCHEDULE_KIND(Name) OMPC_DIST_SCHEDULE_KIND_##Name,
-  OPENMP_DIST_SCHEDULE_KIND(static) OPENMP_DIST_SCHEDULE_KIND(user)
-      OPENMP_DIST_SCHEDULE_KIND(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_DIST_SCHEDULE_KIND
 };
 
 /// OpenMP attributes for 'grainsize' clause modifier (OpenMP 5.1).
 enum OpenMPGrainsizeClauseModifier {
 #define OPENMP_GRAINSIZE_MODIFIER(Name) OMPC_GRAINSIZE_MODIFIER_##Name,
-  OPENMP_GRAINSIZE_MODIFIER(strict) OPENMP_GRAINSIZE_MODIFIER(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_GRAINSIZE_MODIFIER
 };
 
 /// OpenMP attributes for 'num_tasks' clause modifier (OpenMP 5.1).
 enum OpenMPNumTasksClauseModifier {
 #define OPENMP_NUM_TASKS_MODIFIER(Name) OMPC_NUM_TASKS_MODIFIER_##Name,
-  OPENMP_NUM_TASKS_MODIFIER(strict) OPENMP_NUM_TASKS_MODIFIER(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_NUM_TASKS_MODIFIER
 };
 
 /// OpenMP attributes for 'bind' clause.
 enum OpenMPBindClauseBinding {
 #define OPENMP_BIND_BINDING(Name) OMPC_BIND_##Name,
-  OPENMP_BIND_BINDING(teams) OPENMP_BIND_BINDING(parallel)
-      OPENMP_BIND_BINDING(thread) OPENMP_BIND_BINDING(user)
-          OPENMP_BIND_BINDING(unknown) OPENMP_BIND_BINDING(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_BIND_BINDING
 };
 
 /// omp_priv for 'initializer' clause.
 enum OpenMPInitializerClausePriv {
 #define OPENMP_INITIALIZER_PRIV(Name) OMPC_INITIALIZER_PRIV_##Name,
-  OPENMP_INITIALIZER_PRIV(unknown) OPENMP_INITIALIZER_PRIV(user)
+#include "OpenMPKinds.def"
 #undef OPENMP_INITIALIZER_PRIV
 };
 
@@ -590,128 +252,84 @@ enum OpenMPInitializerClausePriv {
 enum OpenMPAtomicDefaultMemOrderClauseKind {
 #define OPENMP_ATOMIC_DEFAULT_MEM_ORDER_KIND(Name)                             \
   OMPC_ATOMIC_DEFAULT_MEM_ORDER_##Name,
-  OPENMP_ATOMIC_DEFAULT_MEM_ORDER_KIND(seq_cst)
-      OPENMP_ATOMIC_DEFAULT_MEM_ORDER_KIND(acq_rel)
-          OPENMP_ATOMIC_DEFAULT_MEM_ORDER_KIND(relaxed)
-              OPENMP_ATOMIC_DEFAULT_MEM_ORDER_KIND(unknown)
-#undef OPENMP_DEFAULT_KIND
+#include "OpenMPKinds.def"
+#undef OPENMP_ATOMIC_DEFAULT_MEM_ORDER_KIND
 };
 
 /// OpenMP attributes for 'UsesAllocators' clause.
 enum OpenMPUsesAllocatorsClauseAllocator {
 #define OPENMP_USESALLOCATORS_ALLOCATOR_KIND(Name)                             \
   OMPC_USESALLOCATORS_ALLOCATOR_##Name,
-  OPENMP_USESALLOCATORS_ALLOCATOR_KIND(default)   // omp_default_mem_alloc
-  OPENMP_USESALLOCATORS_ALLOCATOR_KIND(large_cap) // omp_large_cap_mem_alloc
-  OPENMP_USESALLOCATORS_ALLOCATOR_KIND(cons_mem)  // omp_const_mem_alloc
-  OPENMP_USESALLOCATORS_ALLOCATOR_KIND(high_bw)   // omp_high_bw_mem_alloc
-  OPENMP_USESALLOCATORS_ALLOCATOR_KIND(low_lat)   // omp_low_lat_mem_alloc
-  OPENMP_USESALLOCATORS_ALLOCATOR_KIND(cgroup)    // omp_cgroup_mem_alloc
-  OPENMP_USESALLOCATORS_ALLOCATOR_KIND(pteam)     // omp_pteam_mem_alloc
-  OPENMP_USESALLOCATORS_ALLOCATOR_KIND(thread)    // omp_thread_mem_alloc
-  OPENMP_USESALLOCATORS_ALLOCATOR_KIND(user)      // user-defined allocator
-  OPENMP_USESALLOCATORS_ALLOCATOR_KIND(unknown)
-      OPENMP_USESALLOCATORS_ALLOCATOR_KIND(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_USESALLOCATORS_ALLOCATOR_KIND
 };
 
 /// modifiers for 'device' clause.
 enum OpenMPDeviceClauseModifier {
 #define OPENMP_DEVICE_MODIFIER(Name) OMPC_DEVICE_MODIFIER_##Name,
-  OPENMP_DEVICE_MODIFIER(ancestor) OPENMP_DEVICE_MODIFIER(device_num)
-      OPENMP_DEVICE_MODIFIER(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_DEVICE_MODIFIER
 };
 
 enum OpenMPInReductionClauseIdentifier {
 #define OPENMP_IN_REDUCTION_IDENTIFIER(Name)                                   \
   OMPC_IN_REDUCTION_IDENTIFIER_##Name,
-  OPENMP_IN_REDUCTION_IDENTIFIER(plus) OPENMP_IN_REDUCTION_IDENTIFIER(minus)
-      OPENMP_IN_REDUCTION_IDENTIFIER(mul) OPENMP_IN_REDUCTION_IDENTIFIER(bitand)
-          OPENMP_IN_REDUCTION_IDENTIFIER(bitor) OPENMP_IN_REDUCTION_IDENTIFIER(
-              bitxor) OPENMP_IN_REDUCTION_IDENTIFIER(logand)
-              OPENMP_IN_REDUCTION_IDENTIFIER(logor)
-                  OPENMP_IN_REDUCTION_IDENTIFIER(eqv) /* only for Fortran */
-  OPENMP_IN_REDUCTION_IDENTIFIER(neqv)                /* only for Fortran */
-  OPENMP_IN_REDUCTION_IDENTIFIER(max) OPENMP_IN_REDUCTION_IDENTIFIER(min)
-      OPENMP_IN_REDUCTION_IDENTIFIER(user)
-          OPENMP_IN_REDUCTION_IDENTIFIER(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_IN_REDUCTION_IDENTIFIER
 };
 
 enum OpenMPDependClauseModifier {
 #define OPENMP_DEPEND_MODIFIER(Name) OMPC_DEPEND_MODIFIER_##Name,
-  OPENMP_DEPEND_MODIFIER(iterator) OPENMP_DEPEND_MODIFIER(unknown)
-      OPENMP_DEPEND_MODIFIER(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_DEPEND_MODIFIER
 };
 
 enum OpenMPDeclareMapperDirectiveIdentifier {
 #define OPENMP_DECLARE_MAPPER_IDENTIFIER(Name)                                 \
   OMPD_DECLARE_MAPPER_IDENTIFIER_##Name,
-  OPENMP_DECLARE_MAPPER_IDENTIFIER(unspecified)
-      OPENMP_DECLARE_MAPPER_IDENTIFIER(default)
-          OPENMP_DECLARE_MAPPER_IDENTIFIER(user)
+#include "OpenMPKinds.def"
 #undef OPENMP_DECLARE_MAPPER_IDENTIFIER
 };
 
 enum OpenMPDependClauseType {
 #define OPENMP_DEPENDENCE_TYPE(Name) OMPC_DEPENDENCE_TYPE_##Name,
-  OPENMP_DEPENDENCE_TYPE(in) OPENMP_DEPENDENCE_TYPE(out)
-      OPENMP_DEPENDENCE_TYPE(inout) OPENMP_DEPENDENCE_TYPE(inoutset)
-          OPENMP_DEPENDENCE_TYPE(mutexinoutset) OPENMP_DEPENDENCE_TYPE(depobj)
-              OPENMP_DEPENDENCE_TYPE(source) OPENMP_DEPENDENCE_TYPE(sink)
-                  OPENMP_DEPENDENCE_TYPE(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_DEPENDENCE_TYPE
 };
 
 enum OpenMPAffinityClauseModifier {
 #define OPENMP_AFFINITY_MODIFIER(Name) OMPC_AFFINITY_MODIFIER_##Name,
-  OPENMP_AFFINITY_MODIFIER(iterator) OPENMP_AFFINITY_MODIFIER(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_AFFINITY_MODIFIER
 };
 
 enum OpenMPToClauseKind {
 #define OPENMP_TO_KIND(Name) OMPC_TO_##Name,
-  OPENMP_TO_KIND(mapper) OPENMP_TO_KIND(iterator) OPENMP_TO_KIND(present)
-      OPENMP_TO_KIND(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_TO_KIND
 };
 
 enum OpenMPFromClauseKind {
 #define OPENMP_FROM_KIND(Name) OMPC_FROM_##Name,
-  OPENMP_FROM_KIND(mapper) OPENMP_FROM_KIND(iterator) OPENMP_FROM_KIND(present)
-      OPENMP_FROM_KIND(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_FROM_KIND
 };
 
 enum OpenMPDefaultmapClauseBehavior {
 #define OPENMP_DEFAULTMAP_BEHAVIOR(Name) OMPC_DEFAULTMAP_BEHAVIOR_##Name,
-  OPENMP_DEFAULTMAP_BEHAVIOR(unspecified) OPENMP_DEFAULTMAP_BEHAVIOR(alloc)
-      OPENMP_DEFAULTMAP_BEHAVIOR(to) OPENMP_DEFAULTMAP_BEHAVIOR(from)
-          OPENMP_DEFAULTMAP_BEHAVIOR(tofrom)
-              OPENMP_DEFAULTMAP_BEHAVIOR(firstprivate)
-                  OPENMP_DEFAULTMAP_BEHAVIOR(none)
-                      OPENMP_DEFAULTMAP_BEHAVIOR(default)
-                          OPENMP_DEFAULTMAP_BEHAVIOR(present)
-                              OPENMP_DEFAULTMAP_BEHAVIOR(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_DEFAULTMAP_BEHAVIOR
 };
 
 enum OpenMPDefaultmapClauseCategory {
 #define OPENMP_DEFAULTMAP_CATEGORY(Name) OMPC_DEFAULTMAP_CATEGORY_##Name,
-  OPENMP_DEFAULTMAP_CATEGORY(unspecified) OPENMP_DEFAULTMAP_CATEGORY(scalar)
-      OPENMP_DEFAULTMAP_CATEGORY(aggregate) OPENMP_DEFAULTMAP_CATEGORY(pointer)
-          OPENMP_DEFAULTMAP_CATEGORY(all)
-              OPENMP_DEFAULTMAP_CATEGORY(allocatable)
-                  OPENMP_DEFAULTMAP_CATEGORY(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_DEFAULTMAP_CATEGORY
 };
 
 enum OpenMPDeviceTypeClauseKind {
 #define OPENMP_DEVICE_TYPE_KIND(Name) OMPC_DEVICE_TYPE_##Name,
-  OPENMP_DEVICE_TYPE_KIND(host) OPENMP_DEVICE_TYPE_KIND(nohost)
-      OPENMP_DEVICE_TYPE_KIND(any) OPENMP_DEVICE_TYPE_KIND(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_DEVICE_TYPE_KIND
 };
 
@@ -723,98 +341,68 @@ enum OpenMPMapIteratorKind {
 /// modifiers for 'map' clause.
 enum OpenMPMapClauseModifier {
 #define OPENMP_MAP_MODIFIER(Name) OMPC_MAP_MODIFIER_##Name,
-  OPENMP_MAP_MODIFIER(always) OPENMP_MAP_MODIFIER(close)
-      OPENMP_MAP_MODIFIER(present) OPENMP_MAP_MODIFIER(self)
-          OPENMP_MAP_MODIFIER(mapper) OPENMP_MAP_MODIFIER(iterator)
-              OPENMP_MAP_MODIFIER(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_MAP_MODIFIER
 };
 
 enum OpenMPMapClauseRefModifier {
 #define OPENMP_MAP_REF_MODIFIER(Name) OMPC_MAP_REF_MODIFIER_##Name,
-  OPENMP_MAP_REF_MODIFIER(ref_ptee) OPENMP_MAP_REF_MODIFIER(ref_ptr)
-      OPENMP_MAP_REF_MODIFIER(ref_ptr_ptee) OPENMP_MAP_REF_MODIFIER(unspecified)
-          OPENMP_MAP_REF_MODIFIER(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_MAP_REF_MODIFIER
 };
 
 enum OpenMPMapClauseType {
 #define OPENMP_MAP_TYPE(Name) OMPC_MAP_TYPE_##Name,
-  OPENMP_MAP_TYPE(to) OPENMP_MAP_TYPE(from) OPENMP_MAP_TYPE(tofrom)
-      OPENMP_MAP_TYPE(storage) OPENMP_MAP_TYPE(alloc) OPENMP_MAP_TYPE(release)
-          OPENMP_MAP_TYPE(delete) OPENMP_MAP_TYPE(present) OPENMP_MAP_TYPE(self)
-              OPENMP_MAP_TYPE(unknown) OPENMP_MAP_TYPE(unspecified)
+#include "OpenMPKinds.def"
 #undef OPENMP_MAP_TYPE
 };
 
 enum OpenMPTaskReductionClauseIdentifier {
 #define OPENMP_TASK_REDUCTION_IDENTIFIER(Name)                                 \
   OMPC_TASK_REDUCTION_IDENTIFIER_##Name,
-  OPENMP_TASK_REDUCTION_IDENTIFIER(plus) OPENMP_TASK_REDUCTION_IDENTIFIER(
-      minus) OPENMP_TASK_REDUCTION_IDENTIFIER(mul)
-      OPENMP_TASK_REDUCTION_IDENTIFIER(bitand) OPENMP_TASK_REDUCTION_IDENTIFIER(
-          bitor) OPENMP_TASK_REDUCTION_IDENTIFIER(bitxor)
-          OPENMP_TASK_REDUCTION_IDENTIFIER(logand)
-              OPENMP_TASK_REDUCTION_IDENTIFIER(logor)
-                  OPENMP_TASK_REDUCTION_IDENTIFIER(eqv) /* only for Fortran */
-  OPENMP_TASK_REDUCTION_IDENTIFIER(neqv)                /* only for Fortran */
-  OPENMP_TASK_REDUCTION_IDENTIFIER(max) OPENMP_TASK_REDUCTION_IDENTIFIER(min)
-      OPENMP_TASK_REDUCTION_IDENTIFIER(user)
-          OPENMP_TASK_REDUCTION_IDENTIFIER(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_TASK_REDUCTION_IDENTIFIER
 };
 
 enum OpenMPDepobjUpdateClauseDependeceType {
 #define OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(Name)                             \
   OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_##Name,
-  OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(in)
-      OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(out)
-          OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(inout)
-              OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(inoutset)
-                  OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(mutexinoutset)
-                      OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(depobj)
-                          OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(sink)
-                              OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(source)
-                                  OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_DEPOBJ_UPDATE_DEPENDENCE_TYPE
 };
 
 /// OpenMP attributes for 'doacross' clause (OpenMP 5.2)
 enum OpenMPDoacrossClauseType {
 #define OPENMP_DOACROSS_TYPE(Name) OMPC_DOACROSS_TYPE_##Name,
-  OPENMP_DOACROSS_TYPE(source) OPENMP_DOACROSS_TYPE(sink)
-      OPENMP_DOACROSS_TYPE(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_DOACROSS_TYPE
 };
 
 /// OpenMP attributes for 'at' clause (OpenMP 5.1 - error directive)
 enum OpenMPAtClauseKind {
 #define OPENMP_AT_KIND(Name) OMPC_AT_##Name,
-  OPENMP_AT_KIND(compilation) OPENMP_AT_KIND(execution) OPENMP_AT_KIND(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_AT_KIND
 };
 
 /// OpenMP attributes for 'severity' clause (OpenMP 5.1 - error directive)
 enum OpenMPSeverityClauseKind {
 #define OPENMP_SEVERITY_KIND(Name) OMPC_SEVERITY_##Name,
-  OPENMP_SEVERITY_KIND(fatal) OPENMP_SEVERITY_KIND(warning)
-      OPENMP_SEVERITY_KIND(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_SEVERITY_KIND
 };
 
 /// OpenMP attributes for 'fail' clause (OpenMP 5.1 - atomic)
 enum OpenMPFailClauseMemoryOrder {
 #define OPENMP_FAIL_MEMORY_ORDER(Name) OMPC_FAIL_##Name,
-  OPENMP_FAIL_MEMORY_ORDER(seq_cst) OPENMP_FAIL_MEMORY_ORDER(acquire)
-      OPENMP_FAIL_MEMORY_ORDER(relaxed) OPENMP_FAIL_MEMORY_ORDER(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_FAIL_MEMORY_ORDER
 };
 
 /// OpenMP attributes for 'memscope' clause (OpenMP 6.0)
 enum OpenMPMemscopeClauseKind {
 #define OPENMP_MEMSCOPE_KIND(Name) OMPC_MEMSCOPE_##Name,
-  OPENMP_MEMSCOPE_KIND(all) OPENMP_MEMSCOPE_KIND(cgroup)
-      OPENMP_MEMSCOPE_KIND(device) OPENMP_MEMSCOPE_KIND(unknown)
+#include "OpenMPKinds.def"
 #undef OPENMP_MEMSCOPE_KIND
 };
 
