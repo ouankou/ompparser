@@ -141,6 +141,7 @@ static std::vector<int> apply_paren_depth;
 static int induction_spec_paren_depth = 0;
 static bool induction_step_waiting = false;  // True when expecting expression after step(
 static int if_paren_depth = 0;
+static int uses_allocators_paren_depth = 0;
 static std::vector<std::unique_ptr<char[]>> lexeme_storage;
 
 static const char *store_lexeme(const std::string &text) {
@@ -163,6 +164,7 @@ extern "C" void openmp_reset_lexer_flags() {
   induction_spec_paren_depth = 0;
   induction_step_waiting = false;
   if_paren_depth = 0;
+  uses_allocators_paren_depth = 0;
 }
 
 extern "C" bool openmp_consume_compact_parallel_do() {
@@ -473,7 +475,7 @@ update                    { yy_push_state(UPDATE_STATE); return UPDATE; }
 
 to                        { yy_push_state(TO_STATE); return TO; }
 from                      { yy_push_state(FROM_STATE); return FROM; }
-uses_allocators           { yy_push_state(USES_ALLOCATORS_STATE); return USES_ALLOCATORS; }
+uses_allocators           { yy_push_state(USES_ALLOCATORS_STATE); uses_allocators_paren_depth = 0; return USES_ALLOCATORS; }
 link                      { return LINK; }
 device_type               { yy_push_state(DEVICE_TYPE_STATE); return DEVICE_TYPE; }
 map                       { yy_push_state(MAP_STATE); return MAP; }
@@ -1380,9 +1382,9 @@ cgroup                    { return CGROUP; }
 <THREAD_LIMIT_STATE>{blank}*                { ; }
 <THREAD_LIMIT_STATE>.                       { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
-<USES_ALLOCATORS_STATE>"("                                     { return '('; }
+<USES_ALLOCATORS_STATE>"("                                     { uses_allocators_paren_depth++; return '('; }
 <USES_ALLOCATORS_STATE>","                                     { return ','; }
-<USES_ALLOCATORS_STATE>")"                                     { yy_pop_state(); return ')'; }
+<USES_ALLOCATORS_STATE>")"                                     { if (uses_allocators_paren_depth > 0) { uses_allocators_paren_depth--; } if (uses_allocators_paren_depth == 0) { yy_pop_state(); } return ')'; }
 <USES_ALLOCATORS_STATE>omp_default_mem_alloc/{blank}*"("       { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return DEFAULT_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_large_cap_mem_alloc/{blank}*"("     { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return LARGE_CAP_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_const_mem_alloc/{blank}*"("         { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return CONST_MEM_ALLOC; }
@@ -1403,7 +1405,7 @@ cgroup                    { return CGROUP; }
 <USES_ALLOCATORS_STATE>{blank}*                                { ; }
 <USES_ALLOCATORS_STATE>.                                       { yy_push_state(EXPR_STATE); unput(yytext[0]); }
 
-<ALLOC_EXPR_STATE>"("                        { return '('; }
+<ALLOC_EXPR_STATE>"("                        { uses_allocators_paren_depth++; return '('; }
 <ALLOC_EXPR_STATE>")"                        { yy_pop_state(); return emit_expr_string_and_unput(')'); }
 <ALLOC_EXPR_STATE>.                          { current_string.push_back(yytext[0]); }
 
