@@ -1718,7 +1718,8 @@ void OpenMPLinearClause::mergeLinear(OpenMPDirective *directive,
           if (idx < current_separators.size()) {
             sep = current_separators[idx];
           }
-          (*it)->addLangExpr(*it_expr_current, sep);
+          (*it)->addLangExpr(*it_expr_current, sep, 0, 0,
+                             OMP_EXPR_PARSE_variable_list);
         }
       }
       current_clauses->pop_back();
@@ -1972,7 +1973,8 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
                                              OMPC_CLAUSE_SEP_space
                              ? OMPC_CLAUSE_SEP_comma
                              : current_separators[idx])
-                      : OMPC_CLAUSE_SEP_comma);
+                      : OMPC_CLAUSE_SEP_comma,
+                  0, 0, OMP_EXPR_PARSE_variable_list);
           }
           current_clauses->pop_back();
           directive->getClausesInOriginalOrder()->pop_back();
@@ -2017,7 +2019,8 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
                                                         OMPC_CLAUSE_SEP_space
                                         ? OMPC_CLAUSE_SEP_comma
                                         : current_separators[idx])
-                                 : OMPC_CLAUSE_SEP_comma);
+                                 : OMPC_CLAUSE_SEP_comma,
+                             0, 0, OMP_EXPR_PARSE_variable_list);
       }
       current_clauses->pop_back();
       directive->getClausesInOriginalOrder()->pop_back();
