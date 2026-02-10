@@ -216,6 +216,12 @@ int main() {
            "dist_data(") &&
        ok;
 
+  ok = checkMapClauseFirstExpressionContains(
+           "map_nested_dist_data_call_not_suffix",
+           "#pragma omp target map(to: foo(a, dist_data(b)))", Lang_C,
+           "dist_data(") &&
+       ok;
+
   setLang(Lang_unknown);
   return ok ? 0 : 1;
 }

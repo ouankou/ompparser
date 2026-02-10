@@ -238,6 +238,62 @@ std::vector<std::string> splitTopLevelCommaSeparated(const std::string &text) {
   return parts;
 }
 
+bool isValidDistDataBaseExpression(const std::string &expression) {
+  const std::string trimmed_expression = trimWhitespaceCopy(expression);
+  if (trimmed_expression.empty()) {
+    return false;
+  }
+
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  for (const char ch : trimmed_expression) {
+    switch (ch) {
+    case '(':
+      ++paren_depth;
+      break;
+    case ')':
+      --paren_depth;
+      if (paren_depth < 0) {
+        return false;
+      }
+      break;
+    case '[':
+      ++bracket_depth;
+      break;
+    case ']':
+      --bracket_depth;
+      if (bracket_depth < 0) {
+        return false;
+      }
+      break;
+    case '{':
+      ++brace_depth;
+      break;
+    case '}':
+      --brace_depth;
+      if (brace_depth < 0) {
+        return false;
+      }
+      break;
+    default:
+      break;
+    }
+  }
+
+  if (paren_depth != 0 || bracket_depth != 0 || brace_depth != 0) {
+    return false;
+  }
+
+  const char trailing = trimmed_expression.back();
+  if (trailing == ',' || trailing == '(' || trailing == '[' ||
+      trailing == '{') {
+    return false;
+  }
+
+  return true;
+}
+
 bool splitMapExpressionDistDataSuffix(const std::string &expression,
                                       std::string *array_section_expression,
                                       std::string *dist_data_arguments) {
@@ -339,7 +395,7 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
 
   const std::string base_expression =
       trimWhitespaceCopy(prefix.substr(0, token_begin));
-  if (base_expression.empty()) {
+  if (!isValidDistDataBaseExpression(base_expression)) {
     return false;
   }
 
