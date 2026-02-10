@@ -26,6 +26,31 @@ using namespace std;
 
 enum OpenMPBaseLang { Lang_C, Lang_Cplusplus, Lang_Fortran, Lang_unknown };
 
+enum OpenMPExprParseMode {
+  OMP_EXPR_PARSE_none,
+  OMP_EXPR_PARSE_expression,
+  OMP_EXPR_PARSE_variable_list,
+  OMP_EXPR_PARSE_array_section,
+  OMP_EXPR_PARSE_verbatim
+};
+
+typedef void *(*OpenMPExprParseCallback)(OpenMPDirectiveKind directive_kind,
+                                         OpenMPClauseKind clause_kind,
+                                         OpenMPExprParseMode parse_mode,
+                                         const char *expression,
+                                         void *user_data);
+
+void openmpSetExprParseCallback(OpenMPExprParseCallback callback,
+                                void *user_data);
+void openmpSetExprParseMode(OpenMPExprParseMode mode);
+const void *openmpParseExpressionNode(OpenMPDirectiveKind directive_kind,
+                                      OpenMPClauseKind clause_kind,
+                                      OpenMPExprParseMode parse_mode,
+                                      const char *expression);
+
+int openmpGetCurrentTokenLine();
+int openmpGetCurrentTokenColumn();
+
 // Global flag for clause normalization control
 extern bool normalize_clauses_global;
 
@@ -38,7 +63,18 @@ class SourceLocation {
 public:
   SourceLocation(int _line = 0, int _col = 0,
                  SourceLocation *_parent_construct = NULL)
-      : line(_line), column(_col), parent_construct(_parent_construct) {};
+      : line(_line), column(_col), parent_construct(_parent_construct) {
+    if (line <= 0 || column <= 0) {
+      int parsed_line = openmpGetCurrentTokenLine();
+      int parsed_column = openmpGetCurrentTokenColumn();
+      if (line <= 0) {
+        line = parsed_line;
+      }
+      if (column <= 0) {
+        column = parsed_column;
+      }
+    }
+  };
   void setParentConstruct(SourceLocation *_parent_construct) {
     parent_construct = _parent_construct;
   };
@@ -65,6 +101,7 @@ class OpenMPClause : public SourceLocation {
 public:
 protected:
   OpenMPClauseKind kind;
+  OpenMPDirectiveKind directive_kind = OMPD_unknown;
   // the clause position in the vector of clauses in original order
   int clause_position = -1;
   // flag to allow duplicate expressions (e.g., sizes(4, 4))
@@ -96,6 +133,8 @@ public:
   virtual ~OpenMPClause() = default;
 
   OpenMPClauseKind getKind() { return kind; };
+  OpenMPDirectiveKind getDirectiveKind() const { return directive_kind; }
+  void setDirectiveKind(OpenMPDirectiveKind value) { directive_kind = value; }
   int getClausePosition() { return clause_position; };
   void setClausePosition(int _clause_position) {
     clause_position = _clause_position;
@@ -108,9 +147,17 @@ public:
   // strings
   virtual void addLangExpr(const char *expression,
                            OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
-                           int line = 0, int col = 0);
+                           int line = 0, int col = 0,
+                           OpenMPExprParseMode parse_mode =
+                               OMP_EXPR_PARSE_none);
 
   std::vector<const char *> *getExpressions() { return &expressions; };
+  const std::vector<const void *> &getExpressionNodes() const {
+    return expressionNodes;
+  }
+  const void *getExpressionNode(size_t index) const {
+    return index < expressionNodes.size() ? expressionNodes[index] : nullptr;
+  }
   const std::vector<OpenMPClauseSeparator> &getExpressionSeparators() const {
     return expression_separators;
   }
@@ -134,6 +181,7 @@ protected:
   bool normalize_clauses = true; // Control clause normalization
   bool use_declare_target_underscore = false;
   bool compact_parallel_do = false;
+  bool requires_explicit_end = false;
 
   /* The vector is used to store the pointers of clauses in original order.
    * While unparsing, the generated pragma keeps the clauses in the same order
@@ -258,6 +306,8 @@ public:
   }
   void setCompactParallelDo(bool compact) { compact_parallel_do = compact; }
   bool getCompactParallelDo() const { return compact_parallel_do; }
+  void setRequiresExplicitEnd(bool value) { requires_explicit_end = value; }
+  bool getRequiresExplicitEnd() const { return requires_explicit_end; }
 
   // Registers a clause for automatic lifetime management
   // Takes ownership of the clause and returns a raw pointer for use
@@ -525,8 +575,7 @@ public:
   void addOperand(const std::string &operand,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
     operands.push_back(OpenMPExpressionItem{operand, sep});
-    // Keep legacy expressions list populated for DOT/debugger.
-    addLangExpr(operand.c_str(), sep);
+    addLangExpr(operand.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
   const std::vector<OpenMPExpressionItem> &getOperands() const {
     return operands;
@@ -750,6 +799,7 @@ class OpenMPAllocateClause : public OpenMPClause {
 protected:
   OpenMPAllocateClauseAllocator allocator; // Allocate allocator
   std::string user_defined_allocator; /* user defined value if it is used */
+  const void *user_defined_allocator_node = nullptr;
   std::vector<std::string> extra_allocator_parameters;
 
 public:
@@ -760,20 +810,34 @@ public:
   OpenMPAllocateClauseAllocator getAllocator() { return allocator; };
 
   void setUserDefinedAllocator(char *_allocator) {
+    if (_allocator == nullptr) {
+      return;
+    }
+    std::string value(_allocator);
     if (user_defined_allocator.empty()) {
-      user_defined_allocator = std::string(_allocator);
+      user_defined_allocator = value;
+      user_defined_allocator_node = openmpParseExpressionNode(
+          directive_kind, kind, OMP_EXPR_PARSE_expression,
+          user_defined_allocator.c_str());
     } else {
-      std::string value(_allocator);
       if (value != user_defined_allocator &&
           std::find(extra_allocator_parameters.begin(),
                     extra_allocator_parameters.end(),
                     value) == extra_allocator_parameters.end()) {
         extra_allocator_parameters.push_back(value);
       }
+      if (value == user_defined_allocator) {
+        user_defined_allocator_node = openmpParseExpressionNode(
+            directive_kind, kind, OMP_EXPR_PARSE_expression,
+            user_defined_allocator.c_str());
+      }
     }
   }
 
   std::string getUserDefinedAllocator() { return user_defined_allocator; };
+  const void *getUserDefinedAllocatorNode() const {
+    return user_defined_allocator_node;
+  }
   const std::vector<std::string> &getExtraAllocatorParameters() const {
     return extra_allocator_parameters;
   }
@@ -850,7 +914,9 @@ public:
     modifier = _modifier;
   };
 
-  void setUserDefinedStep(const char *_step) { user_defined_step = _step; };
+  void setUserDefinedStep(const char *_step) {
+    user_defined_step = _step;
+  };
 
   std::string getUserDefinedStep() { return user_defined_step; };
 
@@ -903,7 +969,9 @@ public:
 
   OpenMPDistScheduleClauseKind getKind() { return dist_schedule_kind; };
 
-  void setChunkSize(const char *_chunk_size) { chunk_size = _chunk_size; };
+  void setChunkSize(const char *_chunk_size) {
+    chunk_size = _chunk_size;
+  };
 
   std::string getChunkSize() { return chunk_size; };
 
@@ -950,7 +1018,9 @@ public:
                                          OpenMPScheduleClauseModifier,
                                          OpenMPScheduleClauseKind, char *);
 
-  void setChunkSize(const char *_step) { chunk_size = _step; };
+  void setChunkSize(const char *_step) {
+    chunk_size = _step;
+  };
 
   std::string getChunkSize() { return chunk_size; };
   std::string toString();
@@ -1242,7 +1312,7 @@ public:
   void addOperand(const std::string &expr,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
     operands.push_back(OpenMPExpressionItem{expr, sep});
-    addLangExpr(expr.c_str(), sep);
+    addLangExpr(expr.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
   const std::vector<OpenMPExpressionItem> &getOperands() const {
     return operands;
@@ -1268,7 +1338,7 @@ public:
   void addOperand(const std::string &expr,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
     operands.push_back(OpenMPExpressionItem{expr, sep});
-    addLangExpr(expr.c_str(), sep);
+    addLangExpr(expr.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
 
   const std::vector<OpenMPExpressionItem> &getOperands() const {
@@ -1302,7 +1372,9 @@ public:
 
   void addLangExpr(const char *expression,
                    OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
-                   int line = 0, int col = 0) override;
+                   int line = 0, int col = 0,
+                   OpenMPExprParseMode parse_mode =
+                       OMP_EXPR_PARSE_none) override;
 
   std::string toString() override;
 };
@@ -1360,7 +1432,7 @@ public:
   void addOperand(const std::string &operand,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
     operands.push_back(OpenMPExpressionItem{operand, sep});
-    addLangExpr(operand.c_str(), sep);
+    addLangExpr(operand.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
   const std::vector<OpenMPExpressionItem> &getOperands() const {
     return operands;
@@ -1561,6 +1633,7 @@ class OpenMPToClause : public OpenMPClause {
 protected:
   OpenMPToClauseKind to_kind;
   std::string mapper_identifier;
+  const void *mapper_identifier_node = nullptr;
   struct Iterator {
     std::string qualifier;
     std::string var;
@@ -1577,9 +1650,20 @@ public:
       : OpenMPClause(OMPC_to), to_kind(_to_kind) {};
   OpenMPToClauseKind getKind() { return to_kind; };
   void setMapperIdentifier(const char *_identifier) {
+    if (_identifier == nullptr) {
+      mapper_identifier.clear();
+      mapper_identifier_node = nullptr;
+      return;
+    }
     mapper_identifier = std::string(_identifier);
+    mapper_identifier_node = openmpParseExpressionNode(
+        directive_kind, kind, OMP_EXPR_PARSE_expression,
+        mapper_identifier.c_str());
   };
   std::string getMapperIdentifier() { return mapper_identifier; };
+  const void *getMapperIdentifierNode() const {
+    return mapper_identifier_node;
+  }
   void addIterator(const std::string &qualifier, const std::string &var,
                    const std::string &begin, const std::string &end,
                    const std::string &step = std::string()) {
@@ -1596,7 +1680,7 @@ public:
   void addItem(const std::string &expr,
                OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
     items.push_back(OpenMPExpressionItem{expr, sep});
-    addLangExpr(expr.c_str(), sep);
+    addLangExpr(expr.c_str(), sep, 0, 0, OMP_EXPR_PARSE_array_section);
   }
   const std::vector<OpenMPExpressionItem> &getItems() const { return items; }
   void clearItems() { items.clear(); }
@@ -1610,6 +1694,7 @@ class OpenMPFromClause : public OpenMPClause {
 protected:
   OpenMPFromClauseKind from_kind;
   std::string mapper_identifier;
+  const void *mapper_identifier_node = nullptr;
   struct Iterator {
     std::string qualifier;
     std::string var;
@@ -1627,9 +1712,20 @@ public:
   OpenMPFromClauseKind getKind() { return from_kind; };
 
   void setMapperIdentifier(const char *_identifier) {
+    if (_identifier == nullptr) {
+      mapper_identifier.clear();
+      mapper_identifier_node = nullptr;
+      return;
+    }
     mapper_identifier = std::string(_identifier);
+    mapper_identifier_node = openmpParseExpressionNode(
+        directive_kind, kind, OMP_EXPR_PARSE_expression,
+        mapper_identifier.c_str());
   };
   std::string getMapperIdentifier() { return mapper_identifier; };
+  const void *getMapperIdentifierNode() const {
+    return mapper_identifier_node;
+  }
   void addIterator(const std::string &qualifier, const std::string &var,
                    const std::string &begin, const std::string &end,
                    const std::string &step = std::string()) {
@@ -1646,7 +1742,7 @@ public:
   void addItem(const std::string &expr,
                OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
     items.push_back(OpenMPExpressionItem{expr, sep});
-    addLangExpr(expr.c_str(), sep);
+    addLangExpr(expr.c_str(), sep, 0, 0, OMP_EXPR_PARSE_array_section);
   }
   const std::vector<OpenMPExpressionItem> &getItems() const { return items; }
   void clearItems() { items.clear(); }
@@ -1719,7 +1815,7 @@ public:
   void addOperand(const std::string &operand,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
     operands.push_back(OpenMPExpressionItem{operand, sep});
-    addLangExpr(operand.c_str(), sep);
+    addLangExpr(operand.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
   const std::vector<OpenMPExpressionItem> &getOperands() const {
     return operands;
@@ -1735,6 +1831,18 @@ public:
 
 // map clause
 class OpenMPMapClause : public OpenMPClause {
+public:
+  enum DistDataPolicyKind {
+    DIST_DATA_duplicate,
+    DIST_DATA_block,
+    DIST_DATA_cyclic
+  };
+  struct DistDataPolicy {
+    DistDataPolicyKind kind = DIST_DATA_duplicate;
+    std::string argument;
+    const void *argument_node = nullptr;
+  };
+
 protected:
   OpenMPMapClauseModifier modifier1;
   OpenMPMapClauseModifier modifier2;
@@ -1751,6 +1859,7 @@ protected:
   };
   std::vector<Iterator> iterators;
   std::vector<OpenMPExpressionItem> items;
+  std::vector<std::vector<DistDataPolicy>> dist_data_policies;
 
 public:
   OpenMPMapClause() : OpenMPClause(OMPC_map) {}
@@ -1788,12 +1897,15 @@ public:
   const std::vector<Iterator> &getIterators() const { return iterators; }
   void clearIterators() { iterators.clear(); }
   void addItem(const std::string &expr,
-               OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
-    items.push_back(OpenMPExpressionItem{expr, sep});
-    addLangExpr(expr.c_str(), sep);
-  }
+               OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma);
   const std::vector<OpenMPExpressionItem> &getItems() const { return items; }
-  void clearItems() { items.clear(); }
+  const std::vector<std::vector<DistDataPolicy>> &getDistDataPolicies() const {
+    return dist_data_policies;
+  }
+  void clearItems() {
+    items.clear();
+    dist_data_policies.clear();
+  }
   static OpenMPClause *addMapClause(OpenMPDirective *, OpenMPMapClauseModifier,
                                     OpenMPMapClauseModifier,
                                     OpenMPMapClauseModifier,
@@ -2149,7 +2261,8 @@ public:
 extern "C" {
 #endif
 extern OpenMPDirective *parseOpenMP(const char *,
-                                    void *exprParse(const char *expr));
+                                    OpenMPExprParseCallback exprParse,
+                                    void *exprParseUserData);
 extern void setLang(OpenMPBaseLang lang);
 extern void setNormalizeClauses(bool normalize);
 #ifdef __cplusplus

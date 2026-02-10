@@ -128,7 +128,7 @@ int main(int argc, const char *argv[]) {
       setLang(default_lang);
     }
 
-    omp_ast = parseOpenMP(omp_pragmas->at(i).c_str(), NULL);
+    omp_ast = parseOpenMP(omp_pragmas->at(i).c_str(), nullptr, nullptr);
     omp_ast_list->push_back(omp_ast);
     if (omp_ast != NULL) {
       omp_directive_list->push_back(omp_ast->toString());

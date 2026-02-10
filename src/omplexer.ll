@@ -103,9 +103,9 @@
 extern "C" int openmp_wrap() { return 1; }
 
 extern int openmp_lex();
-extern void *(*exprParse)(const char *);
 
 #include "ompparser.hh"
+#include "OpenMPIR.h"
 #include <algorithm>
 #include <cstdio>
 #include <cctype>
@@ -143,6 +143,85 @@ static bool induction_step_waiting = false;  // True when expecting expression a
 static int if_paren_depth = 0;
 static int uses_allocators_paren_depth = 0;
 static std::vector<std::unique_ptr<char[]>> lexeme_storage;
+
+struct LexerLocationState {
+  int line = 1;
+  int column = 1;
+  int last_token_line = 0;
+  int last_token_column = 0;
+  bool tracking_enabled = false;
+};
+
+static LexerLocationState lexer_location_state;
+
+static inline void reset_lexer_location_state() {
+  lexer_location_state.line = 1;
+  lexer_location_state.column = 1;
+  lexer_location_state.last_token_line = 0;
+  lexer_location_state.last_token_column = 0;
+  openmp_lloc.first_line = 1;
+  openmp_lloc.first_column = 1;
+  openmp_lloc.last_line = 1;
+  openmp_lloc.last_column = 1;
+}
+
+static inline void advance_lexer_position(char ch) {
+  if (ch == '\n') {
+    lexer_location_state.line++;
+    lexer_location_state.column = 1;
+    return;
+  }
+  lexer_location_state.column++;
+}
+
+static inline void rewind_lexer_position_for_unput(char ch) {
+  if (ch == '\n') {
+    return;
+  }
+  if (lexer_location_state.column > 1) {
+    lexer_location_state.column--;
+  }
+}
+
+static inline void update_token_location(const char *text, size_t length) {
+  if (!lexer_location_state.tracking_enabled || text == nullptr || length == 0) {
+    return;
+  }
+
+  const int first_line = lexer_location_state.line;
+  const int first_column = lexer_location_state.column;
+
+  int last_line = first_line;
+  int last_column = first_column;
+  for (size_t index = 0; index < length; ++index) {
+    last_line = lexer_location_state.line;
+    last_column = lexer_location_state.column;
+    advance_lexer_position(text[index]);
+  }
+
+  openmp_lloc.first_line = first_line;
+  openmp_lloc.first_column = first_column;
+  openmp_lloc.last_line = last_line;
+  openmp_lloc.last_column = last_column;
+  lexer_location_state.last_token_line = first_line;
+  lexer_location_state.last_token_column = first_column;
+}
+
+int openmpGetCurrentTokenLine() {
+  if (!lexer_location_state.tracking_enabled) {
+    return 0;
+  }
+  return lexer_location_state.last_token_line;
+}
+
+int openmpGetCurrentTokenColumn() {
+  if (!lexer_location_state.tracking_enabled) {
+    return 0;
+  }
+  return lexer_location_state.last_token_column;
+}
+
+#define YY_USER_ACTION update_token_location(yytext, static_cast<size_t>(yyleng));
 
 static const char *store_lexeme(const std::string &text) {
   auto buffer = std::make_unique<char[]>(text.size() + 1);
@@ -1753,13 +1832,16 @@ static inline int &current_apply_paren_depth() {
 
 /* Implementation of inline functions that use parser tokens */
 static inline int emit_expr_string_and_unput(char ch) {
+  openmpSetExprParseMode(OMP_EXPR_PARSE_expression);
   openmp_lval.stype = store_lexeme(current_string);
   clear_expression_buffer();
   unput(ch);
+  rewind_lexer_position_for_unput(ch);
   return EXPR_STRING;
 }
 
 static inline int emit_expr_string_no_unput() {
+  openmpSetExprParseMode(OMP_EXPR_PARSE_expression);
   openmp_lval.stype = store_lexeme(current_string);
   clear_expression_buffer();
   return EXPR_STRING;
@@ -1771,6 +1853,8 @@ extern void openmp_parse_expr() { yy_push_state(EXPR_STATE); }
 /* entry point invoked by callers to start scanning for a string */
 extern void openmp_lexer_init(const char *str) {
   ompparserinput = str;
+  lexer_location_state.tracking_enabled = true;
+  reset_lexer_location_state();
   /* We have openmp_ suffix for all flex functions */
   openmp_restart(openmp_in);
 }
@@ -1786,7 +1870,11 @@ extern void openmp_begin_raw_expression() {
 }
 
 /* Standalone ompparser */
-void start_lexer(const char *input) { yy_scan_string(input); }
+void start_lexer(const char *input) {
+  lexer_location_state.tracking_enabled = true;
+  reset_lexer_location_state();
+  yy_scan_string(input);
+}
 
 void end_lexer(void) {
   // If the lexer exited due to some error, the condition stack could be nonempty.
@@ -1796,6 +1884,7 @@ void end_lexer(void) {
     yy_pop_state();
   };
   openmp_reset_lexer_flags();
+  lexer_location_state.tracking_enabled = false;
   yy_delete_buffer(YY_CURRENT_BUFFER);
   lexeme_storage.clear();
 }
