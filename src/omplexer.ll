@@ -107,6 +107,7 @@ extern int openmp_lex();
 #include "ompparser.hh"
 #include "OpenMPIR.h"
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cctype>
 #include <cstring>
@@ -154,14 +155,19 @@ struct LexerLocationState {
 };
 
 static LexerLocationState lexer_location_state;
-static std::vector<std::pair<int, int>> lexer_position_history;
+static constexpr std::size_t kMaxLexerPositionHistory = 64;
+static std::array<std::pair<int, int>, kMaxLexerPositionHistory>
+    lexer_position_history;
+static std::size_t lexer_position_history_begin = 0;
+static std::size_t lexer_position_history_size = 0;
 
 static inline void reset_lexer_location_state() {
   lexer_location_state.line = 1;
   lexer_location_state.column = 1;
   lexer_location_state.last_token_line = 0;
   lexer_location_state.last_token_column = 0;
-  lexer_position_history.clear();
+  lexer_position_history_begin = 0;
+  lexer_position_history_size = 0;
   openmp_lloc.first_line = 1;
   openmp_lloc.first_column = 1;
   openmp_lloc.last_line = 1;
@@ -172,8 +178,37 @@ static inline void record_lexer_position_before_advance() {
   if (!lexer_location_state.tracking_enabled) {
     return;
   }
-  lexer_position_history.emplace_back(lexer_location_state.line,
-                                      lexer_location_state.column);
+
+  const std::pair<int, int> position(lexer_location_state.line,
+                                     lexer_location_state.column);
+  if (lexer_position_history_size < kMaxLexerPositionHistory) {
+    const std::size_t index =
+        (lexer_position_history_begin + lexer_position_history_size) %
+        kMaxLexerPositionHistory;
+    lexer_position_history[index] = position;
+    ++lexer_position_history_size;
+    return;
+  }
+
+  lexer_position_history[lexer_position_history_begin] = position;
+  lexer_position_history_begin =
+      (lexer_position_history_begin + 1) % kMaxLexerPositionHistory;
+}
+
+static inline bool pop_lexer_position_history(std::pair<int, int> *position) {
+  if (position == nullptr || lexer_position_history_size == 0) {
+    return false;
+  }
+
+  const std::size_t index =
+      (lexer_position_history_begin + lexer_position_history_size - 1) %
+      kMaxLexerPositionHistory;
+  *position = lexer_position_history[index];
+  --lexer_position_history_size;
+  if (lexer_position_history_size == 0) {
+    lexer_position_history_begin = 0;
+  }
+  return true;
 }
 
 static inline void advance_lexer_position(char ch) {
@@ -190,9 +225,8 @@ static inline void rewind_lexer_position_for_unput(char ch) {
     return;
   }
 
-  if (!lexer_position_history.empty()) {
-    const auto previous_position = lexer_position_history.back();
-    lexer_position_history.pop_back();
+  std::pair<int, int> previous_position;
+  if (pop_lexer_position_history(&previous_position)) {
     lexer_location_state.line = previous_position.first;
     lexer_location_state.column = previous_position.second;
     return;
