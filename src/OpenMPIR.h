@@ -79,9 +79,9 @@ public:
     parent_construct = _parent_construct;
   };
   SourceLocation *getParentConstruct() { return parent_construct; };
-  int getLine() { return line; };
+  int getLine() const { return line; };
   void setLine(int _line) { line = _line; };
-  int getColumn() { return column; };
+  int getColumn() const { return column; };
   void setColumn(int _column) { column = _column; };
 };
 
@@ -160,6 +160,9 @@ public:
   }
   const std::vector<OpenMPClauseSeparator> &getExpressionSeparators() const {
     return expression_separators;
+  }
+  const std::vector<SourceLocation> &getExpressionLocations() const {
+    return locations;
   }
 
   virtual std::string toString();

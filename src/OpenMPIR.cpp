@@ -1705,6 +1705,9 @@ void OpenMPLinearClause::mergeLinear(OpenMPDirective *directive,
       const auto &current_separators =
           static_cast<OpenMPLinearClause *>(current_clause)
               ->getExpressionSeparators();
+      const auto &current_locations =
+          static_cast<OpenMPLinearClause *>(current_clause)
+              ->getExpressionLocations();
 
       size_t idx = 0;
       for (std::vector<const char *>::iterator it_expr_current =
@@ -1726,7 +1729,15 @@ void OpenMPLinearClause::mergeLinear(OpenMPDirective *directive,
           if (idx < current_separators.size()) {
             sep = current_separators[idx];
           }
-          (*it)->addLangExpr(*it_expr_current, sep, 0, 0,
+
+          int line = 0;
+          int col = 0;
+          if (idx < current_locations.size()) {
+            line = current_locations[idx].getLine();
+            col = current_locations[idx].getColumn();
+          }
+
+          (*it)->addLangExpr(*it_expr_current, sep, line, col,
                              OMP_EXPR_PARSE_variable_list);
         }
       }
@@ -1958,6 +1969,9 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
           const auto &current_separators =
               static_cast<OpenMPDependClause *>(current_clause)
                   ->getExpressionSeparators();
+          const auto &current_locations =
+              static_cast<OpenMPDependClause *>(current_clause)
+                  ->getExpressionLocations();
           bool has_existing = !expressions_previous->empty();
           size_t idx = 0;
           for (std::vector<const char *>::iterator it_expr_current =
@@ -1973,16 +1987,25 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
                 para_merge = false;
               }
             }
-            if (para_merge == true)
-              (*it)->addLangExpr(
-                  *it_expr_current,
+            if (para_merge == true) {
+              const OpenMPClauseSeparator sep =
                   (idx < current_separators.size())
                       ? (has_existing && current_separators[idx] ==
                                              OMPC_CLAUSE_SEP_space
                              ? OMPC_CLAUSE_SEP_comma
                              : current_separators[idx])
-                      : OMPC_CLAUSE_SEP_comma,
-                  0, 0, OMP_EXPR_PARSE_variable_list);
+                      : OMPC_CLAUSE_SEP_comma;
+
+              int line = 0;
+              int col = 0;
+              if (idx < current_locations.size()) {
+                line = current_locations[idx].getLine();
+                col = current_locations[idx].getColumn();
+              }
+
+              (*it)->addLangExpr(*it_expr_current, sep, line, col,
+                                 OMP_EXPR_PARSE_variable_list);
+            }
           }
           current_clauses->pop_back();
           directive->getClausesInOriginalOrder()->pop_back();
@@ -2005,6 +2028,9 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
       const auto &current_separators =
           static_cast<OpenMPDependClause *>(current_clause)
               ->getExpressionSeparators();
+      const auto &current_locations =
+          static_cast<OpenMPDependClause *>(current_clause)
+              ->getExpressionLocations();
       bool has_existing = !expressions_previous->empty();
       size_t idx = 0;
       for (std::vector<const char *>::iterator it_expr_current =
@@ -2020,15 +2046,25 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
             para_merge = false;
           }
         }
-        if (para_merge == true)
-          (*it)->addLangExpr(*it_expr_current,
-                             (idx < current_separators.size())
-                                 ? (has_existing && current_separators[idx] ==
-                                                        OMPC_CLAUSE_SEP_space
-                                        ? OMPC_CLAUSE_SEP_comma
-                                        : current_separators[idx])
-                                 : OMPC_CLAUSE_SEP_comma,
-                             0, 0, OMP_EXPR_PARSE_variable_list);
+        if (para_merge == true) {
+          const OpenMPClauseSeparator sep =
+              (idx < current_separators.size())
+                  ? (has_existing && current_separators[idx] ==
+                                         OMPC_CLAUSE_SEP_space
+                         ? OMPC_CLAUSE_SEP_comma
+                         : current_separators[idx])
+                  : OMPC_CLAUSE_SEP_comma;
+
+          int line = 0;
+          int col = 0;
+          if (idx < current_locations.size()) {
+            line = current_locations[idx].getLine();
+            col = current_locations[idx].getColumn();
+          }
+
+          (*it)->addLangExpr(*it_expr_current, sep, line, col,
+                             OMP_EXPR_PARSE_variable_list);
+        }
       }
       current_clauses->pop_back();
       directive->getClausesInOriginalOrder()->pop_back();
