@@ -321,6 +321,12 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
   if (token_begin == token_end) {
     return false;
   }
+  if (token_begin > 0) {
+    const char boundary = prefix[token_begin - 1];
+    if (boundary == '.' || boundary == '>' || boundary == ':') {
+      return false;
+    }
+  }
 
   std::string token = prefix.substr(token_begin, token_end - token_begin);
   std::transform(token.begin(), token.end(), token.begin(),

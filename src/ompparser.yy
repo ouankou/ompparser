@@ -70,6 +70,11 @@ static inline bool hasMapIteratorModifier() {
          thirdParameter == OMPC_MAP_MODIFIER_iterator;
 }
 
+static inline void resetScheduleClauseLocationState() {
+  schedule_clause_line = 0;
+  schedule_clause_column = 0;
+}
+
 static inline int getScheduleClauseLine(int fallback_line) {
   return schedule_clause_line > 0 ? schedule_clause_line : fallback_line;
 }
@@ -5871,8 +5876,7 @@ schedule_clause : SCHEDULE {
                   schedule_clause_line = @1.first_line;
                   schedule_clause_column = @1.first_column;
                 }'(' schedule_parameter ')' {
-                  schedule_clause_line = 0;
-                  schedule_clause_column = 0;
+                  resetScheduleClauseLocationState();
                 }
                 ;
 
@@ -6091,6 +6095,7 @@ reduction_default_only_modifier : MODIFIER_DEFAULT { firstParameter = OMPC_REDUC
 int yyerror(const char *s) {
     // printf(" %s!\n", s);
     fprintf(stderr,"error: %s\n",s);
+    resetScheduleClauseLocationState();
     current_directive = nullptr;
     return 0;
 }
@@ -6106,6 +6111,7 @@ OpenMPDirective* parseOpenMP(const char* _input,
                              void *_exprParseUserData) {
     OpenMPBaseLang base_lang = Lang_C;
     current_directive = nullptr;
+    resetScheduleClauseLocationState();
     std::string input_string;  // Must persist until after start_lexer()
     const char *input = _input;
     current_pragma_raw = (_input != nullptr) ? std::string(_input) : "";
