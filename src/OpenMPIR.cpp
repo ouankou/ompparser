@@ -505,10 +505,18 @@ void OpenMPMapClause::addItem(const std::string &expr,
   bool has_dist_data = splitMapExpressionDistDataSuffix(
       expr, &array_section_expression, &dist_data_arguments);
 
-  const std::string stored_expression =
-      has_dist_data ? array_section_expression : expr;
-  items.push_back(OpenMPExpressionItem{stored_expression, sep});
-  addLangExpr(stored_expression.c_str(), sep, 0, 0, OMP_EXPR_PARSE_array_section);
+  const std::string trimmed_expression = trimWhitespaceCopy(expr);
+  std::string item_expression = trimmed_expression;
+  if (has_dist_data) {
+    item_expression = array_section_expression + " dist_data(" +
+                      dist_data_arguments + ")";
+  }
+  items.push_back(OpenMPExpressionItem{item_expression, sep});
+
+  const std::string parsed_expression =
+      has_dist_data ? array_section_expression : trimmed_expression;
+  addLangExpr(parsed_expression.c_str(), sep, 0, 0,
+              OMP_EXPR_PARSE_array_section);
 
   std::vector<DistDataPolicy> parsed_policies;
   if (has_dist_data) {
