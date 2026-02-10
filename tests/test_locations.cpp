@@ -158,6 +158,42 @@ bool checkMapClauseFirstExpressionContains(
   return true;
 }
 
+bool checkMapClauseFirstPolicyCount(const std::string &label, const char *input,
+                                    OpenMPBaseLang lang,
+                                    std::size_t expected_count) {
+  setLang(lang);
+
+  std::unique_ptr<OpenMPDirective> directive(
+      parseOpenMP(input, nullptr, nullptr));
+  if (!directive) {
+    std::cerr << "[" << label << "] parse failed for input: " << input << "\n";
+    return false;
+  }
+
+  OpenMPClause *clause = findClause(directive.get(), OMPC_map);
+  if (clause == nullptr) {
+    std::cerr << "[" << label << "] missing map clause\n";
+    return false;
+  }
+
+  auto *map_clause = dynamic_cast<OpenMPMapClause *>(clause);
+  if (map_clause == nullptr) {
+    std::cerr << "[" << label << "] map clause has unexpected type\n";
+    return false;
+  }
+
+  const auto &all_policies = map_clause->getDistDataPolicies();
+  const std::size_t actual_count =
+      all_policies.empty() ? 0 : all_policies.front().size();
+  if (actual_count != expected_count) {
+    std::cerr << "[" << label << "] dist_data policy count mismatch: expected "
+              << expected_count << ", got " << actual_count << "\n";
+    return false;
+  }
+
+  return true;
+}
+
 } // namespace
 
 int main() {
@@ -220,6 +256,12 @@ int main() {
            "map_nested_dist_data_call_not_suffix",
            "#pragma omp target map(to: foo(a, dist_data(b)))", Lang_C,
            "dist_data(") &&
+       ok;
+
+  ok = checkMapClauseFirstPolicyCount(
+           "map_trailing_plus_dist_data_not_suffix",
+           "#pragma omp target map(to: foo + dist_data(duplicate))", Lang_C,
+           0) &&
        ok;
 
   setLang(Lang_unknown);

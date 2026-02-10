@@ -235,7 +235,7 @@ static inline void rewind_lexer_position_for_unput(char ch) {
   if (ch == '\n') {
     if (lexer_location_state.line > 1) {
       lexer_location_state.line--;
-      lexer_location_state.column = 0;
+      lexer_location_state.column = 1;
     }
     return;
   }

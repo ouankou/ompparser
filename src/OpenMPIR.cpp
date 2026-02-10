@@ -251,6 +251,38 @@ std::vector<std::string> splitTopLevelCommaSeparated(const std::string &text) {
   return parts;
 }
 
+bool hasIncompleteTrailingOperator(const std::string &expression) {
+  if (expression.empty()) {
+    return false;
+  }
+
+  const std::string::size_type end = expression.size() - 1;
+  const char trailing = expression[end];
+  switch (trailing) {
+  case '+':
+    return !(end > 0 && expression[end - 1] == '+');
+  case '-':
+    return !(end > 0 && expression[end - 1] == '-');
+  case '.':
+  case '*':
+  case '/':
+  case '%':
+  case '&':
+  case '|':
+  case '^':
+  case '!':
+  case '~':
+  case '=':
+  case '<':
+  case '>':
+  case '?':
+  case ':':
+    return true;
+  default:
+    return false;
+  }
+}
+
 bool isValidDistDataBaseExpression(const std::string &expression) {
   const std::string trimmed_expression = trimWhitespaceCopy(expression);
   if (trimmed_expression.empty()) {
@@ -301,6 +333,9 @@ bool isValidDistDataBaseExpression(const std::string &expression) {
   const char trailing = trimmed_expression.back();
   if (trailing == ',' || trailing == '(' || trailing == '[' ||
       trailing == '{') {
+    return false;
+  }
+  if (hasIncompleteTrailingOperator(trimmed_expression)) {
     return false;
   }
 
