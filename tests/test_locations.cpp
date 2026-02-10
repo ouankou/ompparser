@@ -155,6 +155,11 @@ int main() {
                  OMPD_parallel_for, 1, 13, {{OMPC_private, 1, 26}}) &&
        ok;
 
+  ok = checkCase("schedule_clause_location",
+                 "#pragma omp for schedule(static)", Lang_C,
+                 OMPD_for, 1, 13, {{OMPC_schedule, 1, 17}}) &&
+       ok;
+
   setLang(Lang_unknown);
   return ok ? 0 : 1;
 }

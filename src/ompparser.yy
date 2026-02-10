@@ -50,6 +50,8 @@ static std::vector<OpenMPClauseSeparator> apply_clause_separator_stack;
 static int firstParameter = 0;
 static int secondParameter = 0;
 static int thirdParameter = 0;
+static int schedule_clause_line = 0;
+static int schedule_clause_column = 0;
 static OpenMPUsesAllocatorsClauseAllocator usesAllocator;
 static const char *firstStringParameter = "";
 static const char *secondStringParameter = "";
@@ -66,6 +68,14 @@ static inline bool hasMapIteratorModifier() {
   return firstParameter == OMPC_MAP_MODIFIER_iterator ||
          secondParameter == OMPC_MAP_MODIFIER_iterator ||
          thirdParameter == OMPC_MAP_MODIFIER_iterator;
+}
+
+static inline int getScheduleClauseLine(int fallback_line) {
+  return schedule_clause_line > 0 ? schedule_clause_line : fallback_line;
+}
+
+static inline int getScheduleClauseColumn(int fallback_column) {
+  return schedule_clause_column > 0 ? schedule_clause_column : fallback_column;
 }
 
 static void addMapIteratorDefinition(OpenMPClause *clause,
@@ -5855,7 +5865,14 @@ dist_schedule_parameter : STATIC { current_clause = addClauseAt(current_directiv
                                                         OMP_EXPR_PARSE_expression);
                           }
                         ;
-schedule_clause : SCHEDULE { firstParameter = OMPC_SCHEDULE_MODIFIER_unspecified; secondParameter = OMPC_SCHEDULE_MODIFIER_unspecified; }'(' schedule_parameter ')' {
+schedule_clause : SCHEDULE {
+                  firstParameter = OMPC_SCHEDULE_MODIFIER_unspecified;
+                  secondParameter = OMPC_SCHEDULE_MODIFIER_unspecified;
+                  schedule_clause_line = @1.first_line;
+                  schedule_clause_column = @1.first_column;
+                }'(' schedule_parameter ')' {
+                  schedule_clause_line = 0;
+                  schedule_clause_column = 0;
                 }
                 ;
 
@@ -5886,11 +5903,51 @@ schedule_enum_modifier : MODIFIER_MONOTONIC { firstParameter = OMPC_SCHEDULE_MOD
                        | MODIFIER_SIMD { firstParameter = OMPC_SCHEDULE_MODIFIER_simd; }
                        ;
 
-schedule_enum_kind : STATIC { if (current_directive != nullptr) current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_static); }
-                   | DYNAMIC { if (current_directive != nullptr) current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_dynamic); }
-                   | GUIDED { if (current_directive != nullptr) current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_guided); }
-                   | AUTO { if (current_directive != nullptr) current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_auto); }
-                   | RUNTIME { if (current_directive != nullptr) current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_schedule, firstParameter, secondParameter, OMPC_SCHEDULE_KIND_runtime); }
+schedule_enum_kind : STATIC {
+                      if (current_directive != nullptr)
+                        current_clause = addClauseAt(
+                            current_directive,
+                            getScheduleClauseLine(@1.first_line),
+                            getScheduleClauseColumn(@1.first_column),
+                            OMPC_schedule, firstParameter, secondParameter,
+                            OMPC_SCHEDULE_KIND_static);
+                    }
+                   | DYNAMIC {
+                      if (current_directive != nullptr)
+                        current_clause = addClauseAt(
+                            current_directive,
+                            getScheduleClauseLine(@1.first_line),
+                            getScheduleClauseColumn(@1.first_column),
+                            OMPC_schedule, firstParameter, secondParameter,
+                            OMPC_SCHEDULE_KIND_dynamic);
+                    }
+                   | GUIDED {
+                      if (current_directive != nullptr)
+                        current_clause = addClauseAt(
+                            current_directive,
+                            getScheduleClauseLine(@1.first_line),
+                            getScheduleClauseColumn(@1.first_column),
+                            OMPC_schedule, firstParameter, secondParameter,
+                            OMPC_SCHEDULE_KIND_guided);
+                    }
+                   | AUTO {
+                      if (current_directive != nullptr)
+                        current_clause = addClauseAt(
+                            current_directive,
+                            getScheduleClauseLine(@1.first_line),
+                            getScheduleClauseColumn(@1.first_column),
+                            OMPC_schedule, firstParameter, secondParameter,
+                            OMPC_SCHEDULE_KIND_auto);
+                    }
+                   | RUNTIME {
+                      if (current_directive != nullptr)
+                        current_clause = addClauseAt(
+                            current_directive,
+                            getScheduleClauseLine(@1.first_line),
+                            getScheduleClauseColumn(@1.first_column),
+                            OMPC_schedule, firstParameter, secondParameter,
+                            OMPC_SCHEDULE_KIND_runtime);
+                    }
                    ;  
 shared_clause : SHARED {
                 current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_shared);
