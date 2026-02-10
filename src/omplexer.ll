@@ -103,15 +103,17 @@
 extern "C" int openmp_wrap() { return 1; }
 
 extern int openmp_lex();
-extern void *(*exprParse)(const char *);
 
 #include "ompparser.hh"
+#include "OpenMPIR.h"
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cctype>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 /* Moved from Makefile.am to the source file to work with --with-pch Liao
@@ -143,6 +145,149 @@ static bool induction_step_waiting = false;  // True when expecting expression a
 static int if_paren_depth = 0;
 static int uses_allocators_paren_depth = 0;
 static std::vector<std::unique_ptr<char[]>> lexeme_storage;
+
+struct LexerLocationState {
+  int line = 1;
+  int column = 1;
+  int last_token_line = 0;
+  int last_token_column = 0;
+  bool tracking_enabled = false;
+};
+
+static LexerLocationState lexer_location_state;
+static constexpr std::size_t kMaxLexerPositionHistory = 64;
+static std::array<std::pair<int, int>, kMaxLexerPositionHistory>
+    lexer_position_history;
+static std::size_t lexer_position_history_begin = 0;
+static std::size_t lexer_position_history_size = 0;
+
+static inline void reset_lexer_location_state() {
+  lexer_location_state.line = 1;
+  lexer_location_state.column = 1;
+  lexer_location_state.last_token_line = 0;
+  lexer_location_state.last_token_column = 0;
+  lexer_position_history_begin = 0;
+  lexer_position_history_size = 0;
+  openmp_lloc.first_line = 1;
+  openmp_lloc.first_column = 1;
+  openmp_lloc.last_line = 1;
+  openmp_lloc.last_column = 1;
+}
+
+static inline void record_lexer_position_before_advance() {
+  if (!lexer_location_state.tracking_enabled) {
+    return;
+  }
+
+  const std::pair<int, int> position(lexer_location_state.line,
+                                     lexer_location_state.column);
+  if (lexer_position_history_size < kMaxLexerPositionHistory) {
+    const std::size_t index =
+        (lexer_position_history_begin + lexer_position_history_size) %
+        kMaxLexerPositionHistory;
+    lexer_position_history[index] = position;
+    ++lexer_position_history_size;
+    return;
+  }
+
+  lexer_position_history[lexer_position_history_begin] = position;
+  lexer_position_history_begin =
+      (lexer_position_history_begin + 1) % kMaxLexerPositionHistory;
+}
+
+static inline bool pop_lexer_position_history(std::pair<int, int> *position) {
+  if (position == nullptr || lexer_position_history_size == 0) {
+    return false;
+  }
+
+  const std::size_t index =
+      (lexer_position_history_begin + lexer_position_history_size - 1) %
+      kMaxLexerPositionHistory;
+  *position = lexer_position_history[index];
+  --lexer_position_history_size;
+  if (lexer_position_history_size == 0) {
+    lexer_position_history_begin = 0;
+  }
+  return true;
+}
+
+static inline void advance_lexer_position(char ch) {
+  if (ch == '\n') {
+    lexer_location_state.line++;
+    lexer_location_state.column = 1;
+    return;
+  }
+  lexer_location_state.column++;
+}
+
+static inline void rewind_lexer_position_for_unput(char ch) {
+  if (!lexer_location_state.tracking_enabled) {
+    return;
+  }
+
+  std::pair<int, int> previous_position;
+  if (pop_lexer_position_history(&previous_position)) {
+    lexer_location_state.line = previous_position.first;
+    lexer_location_state.column = previous_position.second;
+    return;
+  }
+
+  if (ch == '\n') {
+    if (lexer_location_state.line > 1) {
+      lexer_location_state.line--;
+      lexer_location_state.column = 1;
+    }
+    return;
+  }
+
+  if (lexer_location_state.column > 1) {
+    lexer_location_state.column--;
+  }
+}
+
+static inline void update_token_location(const char *text, size_t length) {
+  if (!lexer_location_state.tracking_enabled || text == nullptr || length == 0) {
+    return;
+  }
+
+  const int first_line = lexer_location_state.line;
+  const int first_column = lexer_location_state.column;
+
+  int last_line = first_line;
+  int last_column = first_column;
+  for (size_t index = 0; index < length; ++index) {
+    last_line = lexer_location_state.line;
+    last_column = lexer_location_state.column;
+    record_lexer_position_before_advance();
+    advance_lexer_position(text[index]);
+  }
+
+  openmp_lloc.first_line = first_line;
+  openmp_lloc.first_column = first_column;
+  openmp_lloc.last_line = last_line;
+  openmp_lloc.last_column = last_column;
+  lexer_location_state.last_token_line = first_line;
+  lexer_location_state.last_token_column = first_column;
+}
+
+int openmpGetCurrentTokenLine() {
+  if (!lexer_location_state.tracking_enabled) {
+    return 0;
+  }
+  return lexer_location_state.last_token_line;
+}
+
+int openmpGetCurrentTokenColumn() {
+  if (!lexer_location_state.tracking_enabled) {
+    return 0;
+  }
+  return lexer_location_state.last_token_column;
+}
+
+static inline int tracked_yyinput();
+static inline void tracked_unput(int ch);
+
+#define YY_USER_ACTION update_token_location(yytext, static_cast<size_t>(yyleng));
 
 static const char *store_lexeme(const std::string &text) {
   auto buffer = std::make_unique<char[]>(text.size() + 1);
@@ -351,7 +496,7 @@ cancellation    { yy_push_state(CANCEL_STATE); return CANCELLATION; }
 <CANCEL_STATE>{blank}+                 { ; }
 <CANCEL_STATE>{newline}+               { ; }
 <CANCEL_STATE>point                    { yy_pop_state(); return POINT; }
-<CANCEL_STATE>.                        { yy_pop_state(); unput(yytext[0]); }
+<CANCEL_STATE>.                        { yy_pop_state(); tracked_unput(yytext[0]); }
 variant         { return VARIANT; }
 when            { yy_push_state(WHEN_STATE); return WHEN; }
 match           { yy_push_state(MATCH_STATE); return MATCH; }
@@ -732,7 +877,7 @@ cgroup                    { return CGROUP; }
 <DEFAULT_STATE>"("                          { return '('; }
 <DEFAULT_STATE>")"                          { yy_pop_state(); return ')'; }
 <DEFAULT_STATE>{blank}*                     { ; }
-<DEFAULT_STATE>.                            { yy_push_state(INITIAL); unput(yytext[0]); } /* So far, only for default in metadirective meaning that a new directive is coming up. */
+<DEFAULT_STATE>.                            { yy_push_state(INITIAL); tracked_unput(yytext[0]); } /* So far, only for default in metadirective meaning that a new directive is coming up. */
 
 <ORDER_STATE>reproducible                   { return REPRODUCIBLE; }
 <ORDER_STATE>unconstrained                  { return UNCONSTRAINED; }
@@ -1202,7 +1347,7 @@ cgroup                    { return CGROUP; }
 <DEPEND_STATE>source                        { return SOURCE; }
 <DEPEND_STATE>sink                          { return SINK; }
 <DEPEND_STATE>{blank}*                      { ; }
-<DEPEND_STATE>.                             { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+<DEPEND_STATE>.                             { yy_push_state(EXPR_STATE); tracked_unput(yytext[0]); }
 
 <DOACROSS_STATE>"("                         { return '('; }
 <DOACROSS_STATE>")"                         { yy_pop_state(); return ')'; }
@@ -1210,7 +1355,7 @@ cgroup                    { return CGROUP; }
 <DOACROSS_STATE>source                      { return SOURCE; }
 <DOACROSS_STATE>sink                        { return SINK; }
 <DOACROSS_STATE>{blank}*                    { ; }
-<DOACROSS_STATE>.                           { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+<DOACROSS_STATE>.                           { yy_push_state(EXPR_STATE); tracked_unput(yytext[0]); }
 
 <DEPEND_ITERATOR_STATE>"("                  { return '('; }
 <DEPEND_ITERATOR_STATE>"="                  { return '='; }
@@ -1218,7 +1363,7 @@ cgroup                    { return CGROUP; }
 <DEPEND_ITERATOR_STATE>":"                  { return ':'; }
 <DEPEND_ITERATOR_STATE>")"                  { yy_pop_state(); return ')'; }
 <DEPEND_ITERATOR_STATE>{blank}*             { ; }
-<DEPEND_ITERATOR_STATE>.                    { yy_push_state(DEPEND_EXPR_STATE); unput(yytext[0]); }
+<DEPEND_ITERATOR_STATE>.                    { yy_push_state(DEPEND_EXPR_STATE); tracked_unput(yytext[0]); }
 
 <DEPEND_EXPR_STATE>"("{blank}*              { return '('; }
 <DEPEND_EXPR_STATE>{blank}*")"              { yy_pop_state(); return emit_expr_string_and_unput(')'); }
@@ -1234,7 +1379,7 @@ cgroup                    { return CGROUP; }
 <AFFINITY_STATE>":"                         { return ':'; }
 <AFFINITY_STATE>iterator/{blank}*"("        { prepare_expression_capture(); yy_push_state(AFFINITY_ITERATOR_STATE);return MODIFIER_ITERATOR; }
 <AFFINITY_STATE>{blank}*                    { ; }
-<AFFINITY_STATE>.                           { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+<AFFINITY_STATE>.                           { yy_push_state(EXPR_STATE); tracked_unput(yytext[0]); }
 
 <AFFINITY_EXPR_STATE>"("{blank}*            { return '('; }
 <AFFINITY_EXPR_STATE>{blank}*")"            { yy_pop_state(); return emit_expr_string_and_unput(')'); }
@@ -1250,7 +1395,7 @@ cgroup                    { return CGROUP; }
 <AFFINITY_ITERATOR_STATE>","                { return ','; }
 <AFFINITY_ITERATOR_STATE>")"                { yy_pop_state(); return ')'; }
 <AFFINITY_ITERATOR_STATE>{blank}*           { ; }
-<AFFINITY_ITERATOR_STATE>.                  { yy_push_state(AFFINITY_EXPR_STATE); unput(yytext[0]); }
+<AFFINITY_ITERATOR_STATE>.                  { yy_push_state(AFFINITY_EXPR_STATE); tracked_unput(yytext[0]); }
 
 <FINAL_STATE>"("                            { return '('; }
 <FINAL_STATE>")"                            { yy_pop_state(); return ')'; }
@@ -1297,7 +1442,7 @@ cgroup                    { return CGROUP; }
                                               }
                                               yy_push_state(EXPR_STATE);
                                               prepare_expression_capture();
-                                              unput('(');
+                                              tracked_unput('(');
                                             }
 <TO_STATE>")"                               { b_within_variable_list = false; yy_pop_state(); return ')'; }
 <TO_STATE>","                               { return ','; }
@@ -1311,7 +1456,7 @@ cgroup                    { return CGROUP; }
 
 <TO_MAPPER_STATE>"("                        { return '('; }
 <TO_MAPPER_STATE>")"                        { yy_pop_state(); return ')'; }
-<TO_MAPPER_STATE>.                          { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+<TO_MAPPER_STATE>.                          { yy_push_state(EXPR_STATE); tracked_unput(yytext[0]); }
 
 <TO_ITERATOR_STATE>"("                      { return '('; }
 <TO_ITERATOR_STATE>"="                      { return '='; }
@@ -1319,7 +1464,7 @@ cgroup                    { return CGROUP; }
 <TO_ITERATOR_STATE>":"                      { return ':'; }
 <TO_ITERATOR_STATE>")"                      { yy_pop_state(); return ')'; }
 <TO_ITERATOR_STATE>{blank}*                 { ; }
-<TO_ITERATOR_STATE>.                        { yy_push_state(TO_ITER_EXPR_STATE); unput(yytext[0]); }
+<TO_ITERATOR_STATE>.                        { yy_push_state(TO_ITER_EXPR_STATE); tracked_unput(yytext[0]); }
 
 <TO_ITER_EXPR_STATE>"("{blank}*             { return '('; }
 <TO_ITER_EXPR_STATE>{blank}*")"             { yy_pop_state(); return emit_expr_string_and_unput(')'); }
@@ -1336,7 +1481,7 @@ cgroup                    { return CGROUP; }
                                               }
                                               yy_push_state(EXPR_STATE);
                                               prepare_expression_capture();
-                                              unput('(');
+                                              tracked_unput('(');
                                             }
 <FROM_STATE>")"                             { b_within_variable_list = false; yy_pop_state(); return ')'; }
 <FROM_STATE>","                             { return ','; }
@@ -1348,7 +1493,7 @@ cgroup                    { return CGROUP; }
 
 <FROM_MAPPER_STATE>"("                      { return '('; }
 <FROM_MAPPER_STATE>")"                      { yy_pop_state(); return ')'; }
-<FROM_MAPPER_STATE>.                        { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+<FROM_MAPPER_STATE>.                        { yy_push_state(EXPR_STATE); tracked_unput(yytext[0]); }
 
 <ENTER_STATE>"("                            {
                                                if (!b_within_variable_list) {
@@ -1357,7 +1502,7 @@ cgroup                    { return CGROUP; }
                                                }
                                                yy_push_state(EXPR_STATE);
                                                prepare_expression_capture();
-                                               unput('(');
+                                               tracked_unput('(');
                                              }
 <ENTER_STATE>")"                            { b_within_variable_list = false; yy_pop_state(); return ')'; }
 <ENTER_STATE>","                            { return ','; }
@@ -1403,7 +1548,7 @@ cgroup                    { return CGROUP; }
 <USES_ALLOCATORS_STATE>omp_thread_mem_alloc        { return THREAD_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>traits                      { return TRAITS; }
 <USES_ALLOCATORS_STATE>{blank}*                                { ; }
-<USES_ALLOCATORS_STATE>.                                       { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+<USES_ALLOCATORS_STATE>.                                       { yy_push_state(EXPR_STATE); tracked_unput(yytext[0]); }
 
 <ALLOC_EXPR_STATE>"("                        { uses_allocators_paren_depth++; return '('; }
 <ALLOC_EXPR_STATE>")"                        { yy_pop_state(); return emit_expr_string_and_unput(')'); }
@@ -1416,7 +1561,7 @@ cgroup                    { return CGROUP; }
 <DEVICE_TYPE_STATE>"("                       { return '('; }
 <DEVICE_TYPE_STATE>")"                       { yy_pop_state(); return ')'; }
 <DEVICE_TYPE_STATE>{blank}*                  { ; }
-<DEVICE_TYPE_STATE>.                         { yy_push_state(INITIAL); unput(yytext[0]); } 
+<DEVICE_TYPE_STATE>.                         { yy_push_state(INITIAL); tracked_unput(yytext[0]); } 
 
 <MAP_STATE>always/{blank}*,                  { return MAP_MODIFIER_ALWAYS; }
 <MAP_STATE>close/{blank}*,                   { return MAP_MODIFIER_CLOSE; }
@@ -1434,7 +1579,7 @@ cgroup                    { return CGROUP; }
                                                }
                                                yy_push_state(EXPR_STATE);
                                                prepare_expression_capture();
-                                               unput('(');
+                                               tracked_unput('(');
                                              }
 <MAP_STATE>")"                               { b_within_variable_list = false; yy_pop_state(); return ')'; }
 <MAP_STATE>","                               { return ','; }
@@ -1454,7 +1599,7 @@ cgroup                    { return CGROUP; }
 <MAP_VAR_STATE>"("                           {
                                                yy_push_state(EXPR_STATE);
                                                prepare_expression_capture();
-                                               unput('(');
+                                               tracked_unput('(');
                                              }
 <MAP_VAR_STATE>")"                           {
                                                b_within_variable_list = false;
@@ -1468,7 +1613,7 @@ cgroup                    { return CGROUP; }
 
 <MAP_MAPPER_STATE>"("                        { return '('; }
 <MAP_MAPPER_STATE>")"                        { yy_pop_state(); return ')'; }
-<MAP_MAPPER_STATE>.                          { yy_push_state(EXPR_STATE); unput(yytext[0]); }
+<MAP_MAPPER_STATE>.                          { yy_push_state(EXPR_STATE); tracked_unput(yytext[0]); }
 
 <MAP_ITERATOR_STATE>"("                      { return '('; }
 <MAP_ITERATOR_STATE>"="                      { return '='; }
@@ -1476,7 +1621,7 @@ cgroup                    { return CGROUP; }
 <MAP_ITERATOR_STATE>":"                      { return ':'; }
 <MAP_ITERATOR_STATE>")"                      { yy_pop_state(); return ')'; }
 <MAP_ITERATOR_STATE>{blank}*                 { ; }
-<MAP_ITERATOR_STATE>.                        { yy_push_state(MAP_ITER_EXPR_STATE); unput(yytext[0]); }
+<MAP_ITERATOR_STATE>.                        { yy_push_state(MAP_ITER_EXPR_STATE); tracked_unput(yytext[0]); }
 
 <MAP_ITER_EXPR_STATE>"("{blank}*             { return '('; }
 <MAP_ITER_EXPR_STATE>{blank}*")"             { yy_pop_state(); return emit_expr_string_and_unput(')'); }
@@ -1513,7 +1658,7 @@ cgroup                    { return CGROUP; }
 <UPDATE_STATE>depobj                          { return DEPOBJ; }
 <UPDATE_STATE>sink                            { return SINK; }
 <UPDATE_STATE>{blank}*                        { ; }
-<UPDATE_STATE>.                               { yy_pop_state(); unput(yytext[0]); }
+<UPDATE_STATE>.                               { yy_pop_state(); tracked_unput(yytext[0]); }
 
 <EXPR_STATE>.                           { current_char = yytext[0];
                                             switch (current_char) {
@@ -1587,7 +1732,7 @@ cgroup                    { return CGROUP; }
                                                         if (!current_string.empty()) {
                                                             return emit_expr_string_and_unput('}');
                                                         } else {
-                                                            unput('}');
+                                                            tracked_unput('}');
                                                         }
                                                     } else {
                                                         current_string.push_back(current_char);
@@ -1674,9 +1819,9 @@ cgroup                    { return CGROUP; }
                                                         ternary_count--;
                                                         current_string.push_back(current_char);
                                                     } else {
-                                                        int next_char = yyinput();
+                                                        int next_char = tracked_yyinput();
                                                         if (next_char != EOF) {
-                                                            unput(next_char);
+                                                            tracked_unput(next_char);
                                                         }
                                                         bool next_is_paren = (next_char == '(');
                                                         if (bracket_count == 0 && parenthesis_global_count == 0 && !next_is_paren) {
@@ -1751,15 +1896,33 @@ static inline int &current_apply_paren_depth() {
   return apply_paren_depth.back();
 }
 
+static inline int tracked_yyinput() {
+  int next_char = yyinput();
+  if (next_char == EOF || !lexer_location_state.tracking_enabled) {
+    return next_char;
+  }
+
+  record_lexer_position_before_advance();
+  advance_lexer_position(static_cast<char>(next_char));
+  return next_char;
+}
+
+static inline void tracked_unput(int ch) {
+  unput(ch);
+  rewind_lexer_position_for_unput(static_cast<char>(ch));
+}
+
 /* Implementation of inline functions that use parser tokens */
 static inline int emit_expr_string_and_unput(char ch) {
+  openmpSetExprParseMode(OMP_EXPR_PARSE_expression);
   openmp_lval.stype = store_lexeme(current_string);
   clear_expression_buffer();
-  unput(ch);
+  tracked_unput(ch);
   return EXPR_STRING;
 }
 
 static inline int emit_expr_string_no_unput() {
+  openmpSetExprParseMode(OMP_EXPR_PARSE_expression);
   openmp_lval.stype = store_lexeme(current_string);
   clear_expression_buffer();
   return EXPR_STRING;
@@ -1771,6 +1934,8 @@ extern void openmp_parse_expr() { yy_push_state(EXPR_STATE); }
 /* entry point invoked by callers to start scanning for a string */
 extern void openmp_lexer_init(const char *str) {
   ompparserinput = str;
+  lexer_location_state.tracking_enabled = true;
+  reset_lexer_location_state();
   /* We have openmp_ suffix for all flex functions */
   openmp_restart(openmp_in);
 }
@@ -1786,7 +1951,11 @@ extern void openmp_begin_raw_expression() {
 }
 
 /* Standalone ompparser */
-void start_lexer(const char *input) { yy_scan_string(input); }
+void start_lexer(const char *input) {
+  lexer_location_state.tracking_enabled = true;
+  reset_lexer_location_state();
+  yy_scan_string(input);
+}
 
 void end_lexer(void) {
   // If the lexer exited due to some error, the condition stack could be nonempty.
@@ -1796,6 +1965,7 @@ void end_lexer(void) {
     yy_pop_state();
   };
   openmp_reset_lexer_flags();
+  lexer_location_state.tracking_enabled = false;
   yy_delete_buffer(YY_CURRENT_BUFFER);
   lexeme_storage.clear();
 }

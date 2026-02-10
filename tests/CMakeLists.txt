@@ -17,6 +17,15 @@ add_executable(omp_roundtrip
 add_dependencies(omp_roundtrip ompparser)
 target_link_libraries(omp_roundtrip ompparser)
 
+add_executable(test_locations
+    test_locations.cpp)
+add_dependencies(test_locations ompparser)
+target_link_libraries(test_locations ompparser)
+
+add_test(NAME builtin_location_fields
+         COMMAND $<TARGET_FILE:test_locations>
+         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
 # Register built-in .txt test files as CTest tests
 file(GLOB TEST_SUITE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/builtin/*.txt")
 list(SORT TEST_SUITE_FILES)
@@ -67,7 +76,7 @@ foreach(TEST_FILE IN LISTS OPENMP_EXAMPLES_FILES)
            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endforeach()
 
-set(executable_targets tester omp_roundtrip)
+set(executable_targets tester omp_roundtrip test_locations)
 
 install(TARGETS ${executable_targets} OPTIONAL
         RUNTIME DESTINATION bin

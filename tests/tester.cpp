@@ -175,7 +175,8 @@ int main(int argc, const char *argv[]) {
           else
             pass = generated_output ? "true" : "false";
         } else {
-          OpenMPDirective *openMPAST = parseOpenMP(input_pragma.c_str(), NULL);
+          OpenMPDirective *openMPAST =
+              parseOpenMP(input_pragma.c_str(), nullptr, nullptr);
           output_pragma = test(openMPAST);
           delete openMPAST;
           generated_output = output_pragma.size() != 0;

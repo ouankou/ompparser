@@ -269,7 +269,8 @@ std::string ParseAndUnparse(const std::string &input, int lang_mode,
     std::string parse_input = pragma;
     if (lang == Lang_Fortran)
       parse_input = TrimLeadingWhitespace(pragma);
-    OpenMPDirective *openmp_ast = parseOpenMP(parse_input.c_str(), nullptr);
+    OpenMPDirective *openmp_ast =
+        parseOpenMP(parse_input.c_str(), nullptr, nullptr);
     if (!openmp_ast)
       continue;
 

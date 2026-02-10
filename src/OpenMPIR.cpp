@@ -18,6 +18,38 @@ extern bool clause_separator_comma;
 
 namespace {
 
+OpenMPExprParseCallback gOpenMPExprParseCallback = nullptr;
+void *gOpenMPExprParseUserData = nullptr;
+OpenMPExprParseMode gOpenMPExprParseMode = OMP_EXPR_PARSE_none;
+
+} // namespace
+
+void openmpSetExprParseCallback(OpenMPExprParseCallback callback,
+                                void *user_data) {
+  gOpenMPExprParseCallback = callback;
+  gOpenMPExprParseUserData = user_data;
+}
+
+void openmpSetExprParseMode(OpenMPExprParseMode mode) {
+  gOpenMPExprParseMode = mode;
+}
+
+const void *openmpParseExpressionNode(OpenMPDirectiveKind directive_kind,
+                                      OpenMPClauseKind clause_kind,
+                                      OpenMPExprParseMode parse_mode,
+                                      const char *expression) {
+  if (gOpenMPExprParseCallback == nullptr || expression == nullptr) {
+    return nullptr;
+  }
+  OpenMPExprParseMode mode =
+      parse_mode != OMP_EXPR_PARSE_none ? parse_mode : gOpenMPExprParseMode;
+  return gOpenMPExprParseCallback(directive_kind, clause_kind, mode,
+                                  expression,
+                                  gOpenMPExprParseUserData);
+}
+
+namespace {
+
 void tightenScopeOps(std::string &text);
 
 std::string trimWhitespace(const std::string &text) {
@@ -147,6 +179,282 @@ std::string normalizeClauseExpression(OpenMPClauseKind kind,
 
 } // namespace
 
+namespace {
+
+std::string trimWhitespaceCopy(const std::string &value) {
+  const std::string::size_type begin = value.find_first_not_of(" \t\r\n");
+  if (begin == std::string::npos) {
+    return std::string();
+  }
+  const std::string::size_type end = value.find_last_not_of(" \t\r\n");
+  return value.substr(begin, end - begin + 1);
+}
+
+bool isIdentifierChar(char ch) {
+  const unsigned char uch = static_cast<unsigned char>(ch);
+  return std::isalnum(uch) != 0 || ch == '_';
+}
+
+std::vector<std::string> splitTopLevelCommaSeparated(const std::string &text) {
+  std::vector<std::string> parts;
+  std::string::size_type part_begin = 0;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+
+  for (std::string::size_type index = 0; index < text.size(); ++index) {
+    const char ch = text[index];
+    switch (ch) {
+    case '(':
+      ++paren_depth;
+      break;
+    case ')':
+      --paren_depth;
+      if (paren_depth < 0) {
+        return {};
+      }
+      break;
+    case '[':
+      ++bracket_depth;
+      break;
+    case ']':
+      --bracket_depth;
+      if (bracket_depth < 0) {
+        return {};
+      }
+      break;
+    case '{':
+      ++brace_depth;
+      break;
+    case '}':
+      --brace_depth;
+      if (brace_depth < 0) {
+        return {};
+      }
+      break;
+    case ',':
+      if (paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
+        parts.push_back(text.substr(part_begin, index - part_begin));
+        part_begin = index + 1;
+      }
+      break;
+    default:
+      break;
+    }
+  }
+
+  if (paren_depth != 0 || bracket_depth != 0 || brace_depth != 0) {
+    return {};
+  }
+
+  parts.push_back(text.substr(part_begin));
+  return parts;
+}
+
+bool hasIncompleteTrailingOperator(const std::string &expression) {
+  if (expression.empty()) {
+    return false;
+  }
+
+  const std::string::size_type end = expression.size() - 1;
+  const char trailing = expression[end];
+  switch (trailing) {
+  case '+':
+    return !(end > 0 && expression[end - 1] == '+');
+  case '-':
+    return !(end > 0 && expression[end - 1] == '-');
+  case '.':
+  case '*':
+  case '/':
+  case '%':
+  case '&':
+  case '|':
+  case '^':
+  case '!':
+  case '~':
+  case '=':
+  case '<':
+  case '>':
+  case '?':
+  case ':':
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool isValidDistDataBaseExpression(const std::string &expression) {
+  const std::string trimmed_expression = trimWhitespaceCopy(expression);
+  if (trimmed_expression.empty()) {
+    return false;
+  }
+
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  for (const char ch : trimmed_expression) {
+    switch (ch) {
+    case '(':
+      ++paren_depth;
+      break;
+    case ')':
+      --paren_depth;
+      if (paren_depth < 0) {
+        return false;
+      }
+      break;
+    case '[':
+      ++bracket_depth;
+      break;
+    case ']':
+      --bracket_depth;
+      if (bracket_depth < 0) {
+        return false;
+      }
+      break;
+    case '{':
+      ++brace_depth;
+      break;
+    case '}':
+      --brace_depth;
+      if (brace_depth < 0) {
+        return false;
+      }
+      break;
+    default:
+      break;
+    }
+  }
+
+  if (paren_depth != 0 || bracket_depth != 0 || brace_depth != 0) {
+    return false;
+  }
+
+  const char trailing = trimmed_expression.back();
+  if (trailing == ',' || trailing == '(' || trailing == '[' ||
+      trailing == '{') {
+    return false;
+  }
+  if (hasIncompleteTrailingOperator(trimmed_expression)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool splitMapExpressionDistDataSuffix(const std::string &expression,
+                                      std::string *array_section_expression,
+                                      std::string *dist_data_arguments) {
+  if (array_section_expression == nullptr || dist_data_arguments == nullptr) {
+    return false;
+  }
+
+  const std::string trimmed_expression = trimWhitespaceCopy(expression);
+  *array_section_expression = trimmed_expression;
+  dist_data_arguments->clear();
+  if (trimmed_expression.empty() || trimmed_expression.back() != ')') {
+    return false;
+  }
+
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  std::string::size_type open_paren_pos = std::string::npos;
+  for (std::string::size_type i = trimmed_expression.size(); i-- > 0;) {
+    const char ch = trimmed_expression[i];
+    switch (ch) {
+    case ')':
+      ++paren_depth;
+      break;
+    case '(':
+      --paren_depth;
+      if (paren_depth < 0) {
+        return false;
+      }
+      if (paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
+        open_paren_pos = i;
+      }
+      break;
+    case ']':
+      ++bracket_depth;
+      break;
+    case '[':
+      --bracket_depth;
+      if (bracket_depth < 0) {
+        return false;
+      }
+      break;
+    case '}':
+      ++brace_depth;
+      break;
+    case '{':
+      --brace_depth;
+      if (brace_depth < 0) {
+        return false;
+      }
+      break;
+    default:
+      break;
+    }
+
+    if (open_paren_pos != std::string::npos) {
+      break;
+    }
+  }
+
+  if (open_paren_pos == std::string::npos || paren_depth != 0 ||
+      bracket_depth != 0 || brace_depth != 0) {
+    return false;
+  }
+
+  const std::string prefix =
+      trimWhitespaceCopy(trimmed_expression.substr(0, open_paren_pos));
+  if (prefix.empty()) {
+    return false;
+  }
+
+  std::string::size_type token_end = prefix.size();
+  while (token_end > 0 &&
+         std::isspace(static_cast<unsigned char>(prefix[token_end - 1]))) {
+    --token_end;
+  }
+  std::string::size_type token_begin = token_end;
+  while (token_begin > 0 && isIdentifierChar(prefix[token_begin - 1])) {
+    --token_begin;
+  }
+  if (token_begin == token_end) {
+    return false;
+  }
+  if (token_begin > 0) {
+    const char boundary = prefix[token_begin - 1];
+    if (boundary == '.' || boundary == '>' || boundary == ':') {
+      return false;
+    }
+  }
+
+  std::string token = prefix.substr(token_begin, token_end - token_begin);
+  std::transform(token.begin(), token.end(), token.begin(),
+                 [](unsigned char ch) {
+                   return static_cast<char>(std::tolower(ch));
+                 });
+  if (token != "dist_data") {
+    return false;
+  }
+
+  const std::string base_expression =
+      trimWhitespaceCopy(prefix.substr(0, token_begin));
+  if (!isValidDistDataBaseExpression(base_expression)) {
+    return false;
+  }
+
+  *array_section_expression = base_expression;
+  *dist_data_arguments = trimWhitespaceCopy(trimmed_expression.substr(
+      open_paren_pos + 1, trimmed_expression.size() - open_paren_pos - 2));
+  return true;
+}
+
+} // namespace
+
 void OpenMPApplyClause::addTransformation(OpenMPApplyTransformKind kind,
                                           const std::string &argument,
                                           OpenMPClauseSeparator sep) {
@@ -171,6 +479,9 @@ void OpenMPApplyClause::addNestedApply(OpenMPApplyClause *nested,
 
 OpenMPClause *
 OpenMPDirective::registerClause(std::unique_ptr<OpenMPClause> clause) {
+  if (clause != nullptr) {
+    clause->setDirectiveKind(this->kind);
+  }
   OpenMPClause *raw_ptr = clause.get();
   clause_storage.push_back(std::move(clause));
   return raw_ptr;
@@ -213,7 +524,8 @@ void OpenMPDeclareMapperDirective::setDeclareMapperVar(
 }
 
 void OpenMPClause::addLangExpr(const char *expression,
-                               OpenMPClauseSeparator sep, int line, int col) {
+                               OpenMPClauseSeparator sep, int line, int col,
+                               OpenMPExprParseMode parse_mode) {
   if (expression == nullptr) {
     return;
   }
@@ -228,11 +540,14 @@ void OpenMPClause::addLangExpr(const char *expression,
       };
     };
   }
+  const void *expression_node = openmpParseExpressionNode(
+      this->directive_kind, this->kind, parse_mode, normalized.c_str());
   size_t length = normalized.size();
   auto owned_value = std::make_unique<char[]>(length + 1);
   std::memcpy(owned_value.get(), normalized.c_str(), length + 1);
   const char *stored_expression = owned_value.get();
   expressions.push_back(stored_expression);
+  expressionNodes.push_back(expression_node);
   expression_separators.push_back(sep);
   owned_expressions.push_back(std::move(owned_value));
   locations.push_back(SourceLocation(line, col));
@@ -240,9 +555,10 @@ void OpenMPClause::addLangExpr(const char *expression,
 
 void OpenMPFirstprivateClause::addLangExpr(const char *expression,
                                            OpenMPClauseSeparator sep, int line,
-                                           int col) {
+                                           int col,
+                                           OpenMPExprParseMode parse_mode) {
   size_t old_size = expressions.size();
-  OpenMPClause::addLangExpr(expression, sep, line, col);
+  OpenMPClause::addLangExpr(expression, sep, line, col, parse_mode);
   if (expressions.size() > old_size) {
     saved_statuses.push_back(current_saved_state);
   }
@@ -290,6 +606,95 @@ void OpenMPInductionClause::addPassthroughItem(const char *expression) {
   passthrough_items.push_back(
       normalizeClauseExpression(OMPC_induction, cleaned.c_str()));
   sequence.push_back({ItemPassthrough, passthrough_items.size() - 1});
+}
+
+void OpenMPMapClause::addItem(const std::string &expr,
+                              OpenMPClauseSeparator sep) {
+  std::string array_section_expression;
+  std::string dist_data_arguments;
+  bool has_dist_data = splitMapExpressionDistDataSuffix(
+      expr, &array_section_expression, &dist_data_arguments);
+
+  const std::string trimmed_expression = trimWhitespaceCopy(expr);
+  std::string item_expression = trimmed_expression;
+  if (has_dist_data) {
+    item_expression = array_section_expression + " dist_data(" +
+                      dist_data_arguments + ")";
+  }
+  items.push_back(OpenMPExpressionItem{item_expression, sep});
+
+  const std::string parsed_expression =
+      has_dist_data ? array_section_expression : trimmed_expression;
+  addLangExpr(parsed_expression.c_str(), sep, 0, 0,
+              OMP_EXPR_PARSE_array_section);
+
+  std::vector<DistDataPolicy> parsed_policies;
+  if (has_dist_data) {
+    const std::vector<std::string> policy_texts =
+        splitTopLevelCommaSeparated(dist_data_arguments);
+    for (const std::string &raw_policy : policy_texts) {
+      const std::string policy_text = trimWhitespaceCopy(raw_policy);
+      if (policy_text.empty()) {
+        continue;
+      }
+
+      DistDataPolicy policy;
+      std::string policy_name = policy_text;
+      std::string policy_argument;
+      const std::string::size_type open_pos = policy_text.find('(');
+      if (open_pos != std::string::npos) {
+        int depth = 0;
+        std::string::size_type close_pos = std::string::npos;
+        for (std::string::size_type index = open_pos; index < policy_text.size();
+             ++index) {
+          const char ch = policy_text[index];
+          if (ch == '(') {
+            ++depth;
+          } else if (ch == ')') {
+            --depth;
+            if (depth == 0) {
+              close_pos = index;
+              break;
+            }
+          }
+        }
+        if (close_pos == std::string::npos ||
+            trimWhitespaceCopy(policy_text.substr(close_pos + 1)).size() != 0) {
+          continue;
+        }
+        policy_name = trimWhitespaceCopy(policy_text.substr(0, open_pos));
+        policy_argument = trimWhitespaceCopy(
+            policy_text.substr(open_pos + 1, close_pos - open_pos - 1));
+      }
+
+      std::string normalized_name = policy_name;
+      std::transform(normalized_name.begin(), normalized_name.end(),
+                     normalized_name.begin(), [](unsigned char ch) {
+                       return static_cast<char>(std::tolower(ch));
+                     });
+
+      if (normalized_name == "duplicate") {
+        policy.kind = DIST_DATA_duplicate;
+      } else if (normalized_name == "block") {
+        policy.kind = DIST_DATA_block;
+      } else if (normalized_name == "cyclic") {
+        policy.kind = DIST_DATA_cyclic;
+      } else {
+        continue;
+      }
+
+      policy.argument = policy_argument;
+      if (!policy_argument.empty()) {
+        policy.argument_node = openmpParseExpressionNode(
+            this->directive_kind, this->kind, OMP_EXPR_PARSE_expression,
+            policy_argument.c_str());
+      }
+
+      parsed_policies.push_back(std::move(policy));
+    }
+  }
+
+  dist_data_policies.push_back(std::move(parsed_policies));
 }
 
 void OpenMPAdjustArgsClause::addArgument(const std::string &arg) {
@@ -1410,6 +1815,9 @@ void OpenMPLinearClause::mergeLinear(OpenMPDirective *directive,
       const auto &current_separators =
           static_cast<OpenMPLinearClause *>(current_clause)
               ->getExpressionSeparators();
+      const auto &current_locations =
+          static_cast<OpenMPLinearClause *>(current_clause)
+              ->getExpressionLocations();
 
       size_t idx = 0;
       for (std::vector<const char *>::iterator it_expr_current =
@@ -1431,7 +1839,16 @@ void OpenMPLinearClause::mergeLinear(OpenMPDirective *directive,
           if (idx < current_separators.size()) {
             sep = current_separators[idx];
           }
-          (*it)->addLangExpr(*it_expr_current, sep);
+
+          int line = 0;
+          int col = 0;
+          if (idx < current_locations.size()) {
+            line = current_locations[idx].getLine();
+            col = current_locations[idx].getColumn();
+          }
+
+          (*it)->addLangExpr(*it_expr_current, sep, line, col,
+                             OMP_EXPR_PARSE_variable_list);
         }
       }
       current_clauses->pop_back();
@@ -1662,6 +2079,9 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
           const auto &current_separators =
               static_cast<OpenMPDependClause *>(current_clause)
                   ->getExpressionSeparators();
+          const auto &current_locations =
+              static_cast<OpenMPDependClause *>(current_clause)
+                  ->getExpressionLocations();
           bool has_existing = !expressions_previous->empty();
           size_t idx = 0;
           for (std::vector<const char *>::iterator it_expr_current =
@@ -1677,15 +2097,25 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
                 para_merge = false;
               }
             }
-            if (para_merge == true)
-              (*it)->addLangExpr(
-                  *it_expr_current,
+            if (para_merge == true) {
+              const OpenMPClauseSeparator sep =
                   (idx < current_separators.size())
                       ? (has_existing && current_separators[idx] ==
                                              OMPC_CLAUSE_SEP_space
                              ? OMPC_CLAUSE_SEP_comma
                              : current_separators[idx])
-                      : OMPC_CLAUSE_SEP_comma);
+                      : OMPC_CLAUSE_SEP_comma;
+
+              int line = 0;
+              int col = 0;
+              if (idx < current_locations.size()) {
+                line = current_locations[idx].getLine();
+                col = current_locations[idx].getColumn();
+              }
+
+              (*it)->addLangExpr(*it_expr_current, sep, line, col,
+                                 OMP_EXPR_PARSE_variable_list);
+            }
           }
           current_clauses->pop_back();
           directive->getClausesInOriginalOrder()->pop_back();
@@ -1708,6 +2138,9 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
       const auto &current_separators =
           static_cast<OpenMPDependClause *>(current_clause)
               ->getExpressionSeparators();
+      const auto &current_locations =
+          static_cast<OpenMPDependClause *>(current_clause)
+              ->getExpressionLocations();
       bool has_existing = !expressions_previous->empty();
       size_t idx = 0;
       for (std::vector<const char *>::iterator it_expr_current =
@@ -1723,14 +2156,25 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
             para_merge = false;
           }
         }
-        if (para_merge == true)
-          (*it)->addLangExpr(*it_expr_current,
-                             (idx < current_separators.size())
-                                 ? (has_existing && current_separators[idx] ==
-                                                        OMPC_CLAUSE_SEP_space
-                                        ? OMPC_CLAUSE_SEP_comma
-                                        : current_separators[idx])
-                                 : OMPC_CLAUSE_SEP_comma);
+        if (para_merge == true) {
+          const OpenMPClauseSeparator sep =
+              (idx < current_separators.size())
+                  ? (has_existing && current_separators[idx] ==
+                                         OMPC_CLAUSE_SEP_space
+                         ? OMPC_CLAUSE_SEP_comma
+                         : current_separators[idx])
+                  : OMPC_CLAUSE_SEP_comma;
+
+          int line = 0;
+          int col = 0;
+          if (idx < current_locations.size()) {
+            line = current_locations[idx].getLine();
+            col = current_locations[idx].getColumn();
+          }
+
+          (*it)->addLangExpr(*it_expr_current, sep, line, col,
+                             OMP_EXPR_PARSE_variable_list);
+        }
       }
       current_clauses->pop_back();
       directive->getClausesInOriginalOrder()->pop_back();

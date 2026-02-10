@@ -36,7 +36,9 @@ class OpenMPDirective : public SourceLocation  {
  ...
 }
 
-extern  OpenMPDirective * parseOpenMP(const char *, void * exprParse(const char * expr));
+extern OpenMPDirective *parseOpenMP(const char *,
+                                    OpenMPExprParseCallback,
+                                    void *);
 
 ```
 
