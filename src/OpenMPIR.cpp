@@ -210,18 +210,27 @@ std::vector<std::string> splitTopLevelCommaSeparated(const std::string &text) {
       break;
     case ')':
       --paren_depth;
+      if (paren_depth < 0) {
+        return {};
+      }
       break;
     case '[':
       ++bracket_depth;
       break;
     case ']':
       --bracket_depth;
+      if (bracket_depth < 0) {
+        return {};
+      }
       break;
     case '{':
       ++brace_depth;
       break;
     case '}':
       --brace_depth;
+      if (brace_depth < 0) {
+        return {};
+      }
       break;
     case ',':
       if (paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
@@ -232,6 +241,10 @@ std::vector<std::string> splitTopLevelCommaSeparated(const std::string &text) {
     default:
       break;
     }
+  }
+
+  if (paren_depth != 0 || bracket_depth != 0 || brace_depth != 0) {
+    return {};
   }
 
   parts.push_back(text.substr(part_begin));
