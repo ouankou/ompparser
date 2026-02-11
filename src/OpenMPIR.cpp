@@ -455,9 +455,11 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
 
 bool isArraySectionDesignator(const std::string &expression_text) {
   int bracket_depth = 0;
+  int question_mark_depth = 0;
   for (char ch : expression_text) {
     if (ch == '[') {
       ++bracket_depth;
+      question_mark_depth = 0;
       continue;
     }
     if (ch == ']') {
@@ -466,8 +468,20 @@ bool isArraySectionDesignator(const std::string &expression_text) {
       }
       continue;
     }
-    if (ch == ':' && bracket_depth > 0) {
-      return true;
+    if (ch == '?') {
+      if (bracket_depth > 0) {
+        ++question_mark_depth;
+      }
+      continue;
+    }
+    if (ch == ':') {
+      if (bracket_depth > 0) {
+        if (question_mark_depth > 0) {
+          --question_mark_depth;
+        } else {
+          return true;
+        }
+      }
     }
   }
   return false;
