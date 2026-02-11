@@ -496,8 +496,7 @@ bool skipRawStringLiteral(const std::string &text,
   }
 
   if (open_paren >= text.size()) {
-    index = text.size();
-    return true;
+    return false;
   }
 
   const std::string delimiter =
