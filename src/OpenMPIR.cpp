@@ -453,6 +453,61 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
   return true;
 }
 
+bool skipQuotedLiteral(const std::string &text, std::string::size_type &index) {
+  if (index >= text.size()) {
+    return false;
+  }
+
+  const char quote = text[index];
+  if (quote != '\'' && quote != '"') {
+    return false;
+  }
+
+  ++index;
+  while (index < text.size()) {
+    if (text[index] == '\\') {
+      index += (index + 1 < text.size()) ? 2 : 1;
+      continue;
+    }
+    if (text[index] == quote) {
+      ++index;
+      break;
+    }
+    ++index;
+  }
+
+  return true;
+}
+
+bool skipComment(const std::string &text, std::string::size_type &index) {
+  if (index + 1 >= text.size() || text[index] != '/') {
+    return false;
+  }
+
+  const char next = text[index + 1];
+  if (next == '/') {
+    index += 2;
+    while (index < text.size() && text[index] != '\n') {
+      ++index;
+    }
+    return true;
+  }
+
+  if (next == '*') {
+    index += 2;
+    while (index + 1 < text.size() &&
+           !(text[index] == '*' && text[index + 1] == '/')) {
+      ++index;
+    }
+    if (index + 1 < text.size()) {
+      index += 2;
+    }
+    return true;
+  }
+
+  return false;
+}
+
 bool isArraySectionDesignator(const std::string &expression_text) {
   int bracket_depth = 0;
   int paren_depth = 0;
@@ -460,46 +515,14 @@ bool isArraySectionDesignator(const std::string &expression_text) {
 
   std::string::size_type i = 0;
   while (i < expression_text.size()) {
-    const char ch = expression_text[i];
-
-    if (ch == '\'' || ch == '"') {
-      const char quote = ch;
-      ++i;
-      while (i < expression_text.size()) {
-        if (expression_text[i] == '\\') {
-          i += (i + 1 < expression_text.size()) ? 2 : 1;
-          continue;
-        }
-        if (expression_text[i] == quote) {
-          ++i;
-          break;
-        }
-        ++i;
-      }
+    if (skipQuotedLiteral(expression_text, i)) {
+      continue;
+    }
+    if (skipComment(expression_text, i)) {
       continue;
     }
 
-    if (ch == '/' && i + 1 < expression_text.size()) {
-      const char next = expression_text[i + 1];
-      if (next == '/') {
-        i += 2;
-        while (i < expression_text.size() && expression_text[i] != '\n') {
-          ++i;
-        }
-        continue;
-      }
-      if (next == '*') {
-        i += 2;
-        while (i + 1 < expression_text.size() &&
-               !(expression_text[i] == '*' && expression_text[i + 1] == '/')) {
-          ++i;
-        }
-        if (i + 1 < expression_text.size()) {
-          i += 2;
-        }
-        continue;
-      }
-    }
+    const char ch = expression_text[i];
 
     if (ch == '[') {
       ++bracket_depth;
@@ -554,9 +577,10 @@ bool isArraySectionDesignator(const std::string &expression_text) {
   return false;
 }
 
-OpenMPExprParseMode resolveClauseExpressionParseMode(
-    OpenMPClauseKind clause_kind, OpenMPExprParseMode parse_mode,
-    const std::string &normalized_expression) {
+OpenMPExprParseMode
+resolveClauseExpressionParseMode(OpenMPClauseKind clause_kind,
+                                 OpenMPExprParseMode parse_mode,
+                                 const std::string &normalized_expression) {
   if (parse_mode != OMP_EXPR_PARSE_variable_list) {
     return parse_mode;
   }
