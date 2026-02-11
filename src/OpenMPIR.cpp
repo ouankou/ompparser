@@ -453,6 +453,251 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
   return true;
 }
 
+bool hasRawStringPrefixAt(const std::string &text, std::string::size_type index,
+                          std::string::size_type *delimiter_begin) {
+  if (index >= text.size()) {
+    return false;
+  }
+
+  if (index > 0 && isIdentifierChar(text[index - 1])) {
+    return false;
+  }
+
+  if (text[index] == 'R' && index + 1 < text.size() && text[index + 1] == '"') {
+    *delimiter_begin = index + 2;
+    return true;
+  }
+
+  if (index + 2 < text.size() && text[index + 2] == '"' &&
+      (text[index] == 'u' || text[index] == 'U' || text[index] == 'L') &&
+      text[index + 1] == 'R') {
+    *delimiter_begin = index + 3;
+    return true;
+  }
+
+  if (index + 3 < text.size() && text.compare(index, 4, "u8R\"") == 0) {
+    *delimiter_begin = index + 4;
+    return true;
+  }
+
+  return false;
+}
+
+bool skipRawStringLiteral(const std::string &text,
+                          std::string::size_type &index) {
+  std::string::size_type delimiter_begin = 0;
+  if (!hasRawStringPrefixAt(text, index, &delimiter_begin)) {
+    return false;
+  }
+
+  std::string::size_type open_paren = delimiter_begin;
+  while (open_paren < text.size() && text[open_paren] != '(') {
+    ++open_paren;
+  }
+
+  if (open_paren >= text.size()) {
+    return false;
+  }
+
+  const std::string delimiter =
+      text.substr(delimiter_begin, open_paren - delimiter_begin);
+  if (delimiter.size() > 16) {
+    return false;
+  }
+  for (char delimiter_char : delimiter) {
+    if (delimiter_char == '(' || delimiter_char == ')' ||
+        delimiter_char == '\\' ||
+        std::isspace(static_cast<unsigned char>(delimiter_char)) != 0) {
+      return false;
+    }
+  }
+
+  const std::string end_marker = ")" + delimiter + "\"";
+  const std::string::size_type end_pos = text.find(end_marker, open_paren + 1);
+  if (end_pos == std::string::npos) {
+    index = text.size();
+    return true;
+  }
+
+  index = end_pos + end_marker.size();
+  return true;
+}
+
+bool skipQuotedLiteral(const std::string &text, std::string::size_type &index) {
+  if (index >= text.size()) {
+    return false;
+  }
+
+  if (skipRawStringLiteral(text, index)) {
+    return true;
+  }
+
+  const char quote = text[index];
+  if (quote != '\'' && quote != '"') {
+    return false;
+  }
+
+  ++index;
+  while (index < text.size()) {
+    if (text[index] == '\\') {
+      index += (index + 1 < text.size()) ? 2 : 1;
+      continue;
+    }
+    if (text[index] == quote) {
+      ++index;
+      break;
+    }
+    ++index;
+  }
+
+  return true;
+}
+
+bool skipComment(const std::string &text, std::string::size_type &index) {
+  if (index + 1 >= text.size() || text[index] != '/') {
+    return false;
+  }
+
+  const char next = text[index + 1];
+  if (next == '/') {
+    const std::string::size_type end_pos = text.find('\n', index + 2);
+    index = end_pos == std::string::npos ? text.size() : end_pos;
+    return true;
+  }
+
+  if (next == '*') {
+    const std::string::size_type end_pos = text.find("*/", index + 2);
+    index = end_pos == std::string::npos ? text.size() : end_pos + 2;
+    return true;
+  }
+
+  return false;
+}
+
+bool isArraySectionDesignator(const std::string &expression_text) {
+  int bracket_depth = 0;
+  int paren_depth = 0;
+  int question_mark_depth = 0;
+  bool saw_array_section_colon = false;
+  bool saw_square_bracket = false;
+
+  std::string::size_type i = 0;
+  while (i < expression_text.size()) {
+    if (skipQuotedLiteral(expression_text, i)) {
+      continue;
+    }
+    if (skipComment(expression_text, i)) {
+      continue;
+    }
+
+    const char ch = expression_text[i];
+
+    if (ch == '[') {
+      saw_square_bracket = true;
+      ++bracket_depth;
+      ++i;
+      continue;
+    }
+    if (ch == ']') {
+      if (bracket_depth <= 0) {
+        return false;
+      }
+      --bracket_depth;
+      ++i;
+      continue;
+    }
+    if (ch == '(') {
+      ++paren_depth;
+      ++i;
+      continue;
+    }
+    if (ch == ')') {
+      if (paren_depth <= 0) {
+        return false;
+      }
+      --paren_depth;
+      ++i;
+      continue;
+    }
+
+    const bool in_bracket_scope = bracket_depth > 0;
+    const bool in_fortran_paren_scope =
+        !saw_square_bracket && bracket_depth == 0 && paren_depth > 0;
+    if (!in_bracket_scope && !in_fortran_paren_scope) {
+      if (std::isspace(static_cast<unsigned char>(ch)) != 0 ||
+          isIdentifierChar(ch) || ch == '.') {
+        ++i;
+        continue;
+      }
+
+      if (ch == ':' && i + 1 < expression_text.size() &&
+          expression_text[i + 1] == ':') {
+        i += 2;
+        continue;
+      }
+
+      if (ch == '-' && i + 1 < expression_text.size() &&
+          expression_text[i + 1] == '>') {
+        i += 2;
+        continue;
+      }
+
+      if (!saw_square_bracket && ch == '%') {
+        ++i;
+        continue;
+      }
+
+      return false;
+    }
+
+    if (ch == '?') {
+      ++question_mark_depth;
+      ++i;
+      continue;
+    }
+
+    if (ch == ':') {
+      if (i + 1 < expression_text.size() && expression_text[i + 1] == ':') {
+        i += 2;
+        continue;
+      }
+
+      if (question_mark_depth > 0) {
+        --question_mark_depth;
+      } else {
+        saw_array_section_colon = true;
+      }
+      ++i;
+      continue;
+    }
+
+    ++i;
+  }
+
+  if (bracket_depth != 0 || paren_depth != 0 || question_mark_depth != 0) {
+    return false;
+  }
+
+  return saw_array_section_colon;
+}
+
+OpenMPExprParseMode
+resolveClauseExpressionParseMode(OpenMPClauseKind clause_kind,
+                                 OpenMPExprParseMode parse_mode,
+                                 const std::string &normalized_expression) {
+  if (parse_mode != OMP_EXPR_PARSE_variable_list) {
+    return parse_mode;
+  }
+
+  if (clause_kind == OMPC_depend || clause_kind == OMPC_affinity) {
+    return isArraySectionDesignator(normalized_expression)
+               ? OMP_EXPR_PARSE_array_section
+               : OMP_EXPR_PARSE_expression;
+  }
+
+  return parse_mode;
+}
+
 } // namespace
 
 void OpenMPApplyClause::addTransformation(OpenMPApplyTransformKind kind,
@@ -540,8 +785,11 @@ void OpenMPClause::addLangExpr(const char *expression,
       };
     };
   }
-  const void *expression_node = openmpParseExpressionNode(
-      this->directive_kind, this->kind, parse_mode, normalized.c_str());
+  const OpenMPExprParseMode effective_parse_mode =
+      resolveClauseExpressionParseMode(this->kind, parse_mode, normalized);
+  const void *expression_node =
+      openmpParseExpressionNode(this->directive_kind, this->kind,
+                                effective_parse_mode, normalized.c_str());
   size_t length = normalized.size();
   auto owned_value = std::make_unique<char[]>(length + 1);
   std::memcpy(owned_value.get(), normalized.c_str(), length + 1);

@@ -1525,7 +1525,7 @@ public:
                            OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space) {
     has_source_expr = true;
     source_expr = OpenMPExpressionItem{expr, sep};
-    addLangExpr(expr.c_str(), sep);
+    addLangExpr(expr.c_str(), sep, 0, 0, OMP_EXPR_PARSE_expression);
   }
   bool hasSourceExpression() const { return has_source_expr; }
   const OpenMPExpressionItem &getSourceExpression() const {
@@ -1534,7 +1534,7 @@ public:
   void addSinkArg(const std::string &expr,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
     sink_args.push_back(OpenMPExpressionItem{expr, sep});
-    addLangExpr(expr.c_str(), sep);
+    addLangExpr(expr.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
   const std::vector<OpenMPExpressionItem> &getSinkArgs() const {
     return sink_args;
