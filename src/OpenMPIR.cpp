@@ -587,6 +587,8 @@ bool isArraySectionDesignator(const std::string &expression_text) {
   int bracket_depth = 0;
   int paren_depth = 0;
   int question_mark_depth = 0;
+  bool saw_array_section_colon = false;
+  bool saw_square_bracket = false;
 
   std::string::size_type i = 0;
   while (i < expression_text.size()) {
@@ -600,6 +602,7 @@ bool isArraySectionDesignator(const std::string &expression_text) {
     const char ch = expression_text[i];
 
     if (ch == '[') {
+      saw_square_bracket = true;
       ++bracket_depth;
       ++i;
       continue;
@@ -627,10 +630,33 @@ bool isArraySectionDesignator(const std::string &expression_text) {
     }
 
     const bool in_bracket_scope = bracket_depth > 0;
-    const bool in_fortran_paren_scope = bracket_depth == 0 && paren_depth > 0;
+    const bool in_fortran_paren_scope =
+        !saw_square_bracket && bracket_depth == 0 && paren_depth > 0;
     if (!in_bracket_scope && !in_fortran_paren_scope) {
-      ++i;
-      continue;
+      if (std::isspace(static_cast<unsigned char>(ch)) != 0 ||
+          isIdentifierChar(ch) || ch == '.') {
+        ++i;
+        continue;
+      }
+
+      if (ch == ':' && i + 1 < expression_text.size() &&
+          expression_text[i + 1] == ':') {
+        i += 2;
+        continue;
+      }
+
+      if (ch == '-' && i + 1 < expression_text.size() &&
+          expression_text[i + 1] == '>') {
+        i += 2;
+        continue;
+      }
+
+      if (!saw_square_bracket && ch == '%') {
+        ++i;
+        continue;
+      }
+
+      return false;
     }
 
     if (ch == '?') {
@@ -648,14 +674,20 @@ bool isArraySectionDesignator(const std::string &expression_text) {
       if (question_mark_depth > 0) {
         --question_mark_depth;
       } else {
-        return true;
+        saw_array_section_colon = true;
       }
+      ++i;
+      continue;
     }
 
     ++i;
   }
 
-  return false;
+  if (bracket_depth != 0 || paren_depth != 0 || question_mark_depth != 0) {
+    return false;
+  }
+
+  return saw_array_section_colon;
 }
 
 OpenMPExprParseMode
