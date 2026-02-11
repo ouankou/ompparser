@@ -453,9 +453,84 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
   return true;
 }
 
+bool hasRawStringPrefixAt(const std::string &text, std::string::size_type index,
+                          std::string::size_type *delimiter_begin) {
+  if (index >= text.size()) {
+    return false;
+  }
+
+  if (index > 0 && isIdentifierChar(text[index - 1])) {
+    return false;
+  }
+
+  if (text[index] == 'R' && index + 1 < text.size() && text[index + 1] == '"') {
+    *delimiter_begin = index + 2;
+    return true;
+  }
+
+  if (index + 2 < text.size() && text[index + 2] == '"' &&
+      (text[index] == 'u' || text[index] == 'U' || text[index] == 'L') &&
+      text[index + 1] == 'R') {
+    *delimiter_begin = index + 3;
+    return true;
+  }
+
+  if (index + 3 < text.size() && text.compare(index, 4, "u8R\"") == 0) {
+    *delimiter_begin = index + 4;
+    return true;
+  }
+
+  return false;
+}
+
+bool skipRawStringLiteral(const std::string &text,
+                          std::string::size_type &index) {
+  std::string::size_type delimiter_begin = 0;
+  if (!hasRawStringPrefixAt(text, index, &delimiter_begin)) {
+    return false;
+  }
+
+  std::string::size_type open_paren = delimiter_begin;
+  while (open_paren < text.size() && text[open_paren] != '(') {
+    ++open_paren;
+  }
+
+  if (open_paren >= text.size()) {
+    index = text.size();
+    return true;
+  }
+
+  const std::string delimiter =
+      text.substr(delimiter_begin, open_paren - delimiter_begin);
+  if (delimiter.size() > 16) {
+    return false;
+  }
+  for (char delimiter_char : delimiter) {
+    if (delimiter_char == '(' || delimiter_char == ')' ||
+        delimiter_char == '\\' ||
+        std::isspace(static_cast<unsigned char>(delimiter_char)) != 0) {
+      return false;
+    }
+  }
+
+  const std::string end_marker = ")" + delimiter + "\"";
+  const std::string::size_type end_pos = text.find(end_marker, open_paren + 1);
+  if (end_pos == std::string::npos) {
+    index = text.size();
+    return true;
+  }
+
+  index = end_pos + end_marker.size();
+  return true;
+}
+
 bool skipQuotedLiteral(const std::string &text, std::string::size_type &index) {
   if (index >= text.size()) {
     return false;
+  }
+
+  if (skipRawStringLiteral(text, index)) {
+    return true;
   }
 
   const char quote = text[index];
