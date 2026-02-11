@@ -518,13 +518,7 @@ OpenMPExprParseMode resolveClauseExpressionParseMode(
     return parse_mode;
   }
 
-  if (clause_kind == OMPC_depend) {
-    return isArraySectionDesignator(normalized_expression)
-               ? OMP_EXPR_PARSE_array_section
-               : OMP_EXPR_PARSE_expression;
-  }
-
-  if (clause_kind == OMPC_affinity) {
+  if (clause_kind == OMPC_depend || clause_kind == OMPC_affinity) {
     return isArraySectionDesignator(normalized_expression)
                ? OMP_EXPR_PARSE_array_section
                : OMP_EXPR_PARSE_expression;
