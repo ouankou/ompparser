@@ -453,6 +453,46 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
   return true;
 }
 
+bool isArraySectionDesignator(const std::string &expression_text) {
+  int bracket_depth = 0;
+  for (char ch : expression_text) {
+    if (ch == '[') {
+      ++bracket_depth;
+      continue;
+    }
+    if (ch == ']') {
+      if (bracket_depth > 0) {
+        --bracket_depth;
+      }
+      continue;
+    }
+    if (ch == ':' && bracket_depth > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+OpenMPExprParseMode resolveClauseExpressionParseMode(
+    OpenMPClauseKind clause_kind, OpenMPExprParseMode parse_mode,
+    const std::string &normalized_expression) {
+  if (parse_mode != OMP_EXPR_PARSE_variable_list) {
+    return parse_mode;
+  }
+
+  if (clause_kind == OMPC_depend) {
+    return isArraySectionDesignator(normalized_expression)
+               ? OMP_EXPR_PARSE_array_section
+               : OMP_EXPR_PARSE_expression;
+  }
+
+  if (clause_kind == OMPC_affinity) {
+    return OMP_EXPR_PARSE_array_section;
+  }
+
+  return parse_mode;
+}
+
 } // namespace
 
 void OpenMPApplyClause::addTransformation(OpenMPApplyTransformKind kind,
@@ -540,8 +580,11 @@ void OpenMPClause::addLangExpr(const char *expression,
       };
     };
   }
-  const void *expression_node = openmpParseExpressionNode(
-      this->directive_kind, this->kind, parse_mode, normalized.c_str());
+  const OpenMPExprParseMode effective_parse_mode =
+      resolveClauseExpressionParseMode(this->kind, parse_mode, normalized);
+  const void *expression_node =
+      openmpParseExpressionNode(this->directive_kind, this->kind,
+                                effective_parse_mode, normalized.c_str());
   size_t length = normalized.size();
   auto owned_value = std::make_unique<char[]>(length + 1);
   std::memcpy(owned_value.get(), normalized.c_str(), length + 1);
