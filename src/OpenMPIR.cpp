@@ -560,22 +560,14 @@ bool skipComment(const std::string &text, std::string::size_type &index) {
 
   const char next = text[index + 1];
   if (next == '/') {
-    index += 2;
-    while (index < text.size() && text[index] != '\n') {
-      ++index;
-    }
+    const std::string::size_type end_pos = text.find('\n', index + 2);
+    index = end_pos == std::string::npos ? text.size() : end_pos;
     return true;
   }
 
   if (next == '*') {
-    index += 2;
-    while (index + 1 < text.size() &&
-           !(text[index] == '*' && text[index + 1] == '/')) {
-      ++index;
-    }
-    if (index + 1 < text.size()) {
-      index += 2;
-    }
+    const std::string::size_type end_pos = text.find("*/", index + 2);
+    index = end_pos == std::string::npos ? text.size() : end_pos + 2;
     return true;
   }
 
