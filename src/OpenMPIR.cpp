@@ -457,11 +457,11 @@ bool isArraySectionDesignator(const std::string &expression_text) {
   int bracket_depth = 0;
   int paren_depth = 0;
   int question_mark_depth = 0;
-  for (char ch : expression_text) {
+  for (std::string::size_type i = 0; i < expression_text.size(); ++i) {
+    const char ch = expression_text[i];
+
     if (ch == '[') {
       ++bracket_depth;
-      paren_depth = 0;
-      question_mark_depth = 0;
       continue;
     }
     if (ch == ']') {
@@ -471,30 +471,40 @@ bool isArraySectionDesignator(const std::string &expression_text) {
       continue;
     }
     if (ch == '(') {
-      if (bracket_depth > 0) {
-        ++paren_depth;
-      }
+      ++paren_depth;
       continue;
     }
     if (ch == ')') {
-      if (bracket_depth > 0 && paren_depth > 0) {
+      if (paren_depth > 0) {
         --paren_depth;
       }
       continue;
     }
-    if (ch == '?') {
-      if (bracket_depth > 0 && paren_depth == 0) {
-        ++question_mark_depth;
-      }
+
+    const bool in_bracket_scope = bracket_depth > 0;
+    const bool in_fortran_paren_scope =
+        bracket_depth == 0 && paren_depth > 0;
+    if (!in_bracket_scope && !in_fortran_paren_scope) {
       continue;
     }
+
+    if (ch == '?') {
+      ++question_mark_depth;
+      continue;
+    }
+
     if (ch == ':') {
-      if (bracket_depth > 0 && paren_depth == 0) {
-        if (question_mark_depth > 0) {
-          --question_mark_depth;
-        } else {
-          return true;
-        }
+      const bool is_scope_operator =
+          (i > 0 && expression_text[i - 1] == ':') ||
+          (i + 1 < expression_text.size() && expression_text[i + 1] == ':');
+      if (is_scope_operator) {
+        continue;
+      }
+
+      if (question_mark_depth > 0) {
+        --question_mark_depth;
+      } else {
+        return true;
       }
     }
   }
@@ -515,7 +525,9 @@ OpenMPExprParseMode resolveClauseExpressionParseMode(
   }
 
   if (clause_kind == OMPC_affinity) {
-    return OMP_EXPR_PARSE_array_section;
+    return isArraySectionDesignator(normalized_expression)
+               ? OMP_EXPR_PARSE_array_section
+               : OMP_EXPR_PARSE_expression;
   }
 
   return parse_mode;
