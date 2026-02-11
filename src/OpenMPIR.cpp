@@ -507,9 +507,7 @@ bool isArraySectionDesignator(const std::string &expression_text) {
       continue;
     }
     if (ch == ']') {
-      if (bracket_depth > 0) {
-        --bracket_depth;
-      }
+      --bracket_depth;
       ++i;
       continue;
     }
@@ -519,9 +517,7 @@ bool isArraySectionDesignator(const std::string &expression_text) {
       continue;
     }
     if (ch == ')') {
-      if (paren_depth > 0) {
-        --paren_depth;
-      }
+      --paren_depth;
       ++i;
       continue;
     }
