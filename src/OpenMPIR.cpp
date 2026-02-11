@@ -559,15 +559,15 @@ bool isArraySectionDesignator(const std::string &expression_text) {
     }
 
     if (ch == ':') {
-      const bool is_scope_operator =
-          (i > 0 && expression_text[i - 1] == ':') ||
-          (i + 1 < expression_text.size() && expression_text[i + 1] == ':');
-      if (!is_scope_operator) {
-        if (question_mark_depth > 0) {
-          --question_mark_depth;
-        } else {
-          return true;
-        }
+      if (i + 1 < expression_text.size() && expression_text[i + 1] == ':') {
+        i += 2;
+        continue;
+      }
+
+      if (question_mark_depth > 0) {
+        --question_mark_depth;
+      } else {
+        return true;
       }
     }
 
