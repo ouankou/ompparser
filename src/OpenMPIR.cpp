@@ -457,39 +457,85 @@ bool isArraySectionDesignator(const std::string &expression_text) {
   int bracket_depth = 0;
   int paren_depth = 0;
   int question_mark_depth = 0;
-  for (std::string::size_type i = 0; i < expression_text.size(); ++i) {
+
+  std::string::size_type i = 0;
+  while (i < expression_text.size()) {
     const char ch = expression_text[i];
+
+    if (ch == '\'' || ch == '"') {
+      const char quote = ch;
+      ++i;
+      while (i < expression_text.size()) {
+        if (expression_text[i] == '\\') {
+          i += (i + 1 < expression_text.size()) ? 2 : 1;
+          continue;
+        }
+        if (expression_text[i] == quote) {
+          ++i;
+          break;
+        }
+        ++i;
+      }
+      continue;
+    }
+
+    if (ch == '/' && i + 1 < expression_text.size()) {
+      const char next = expression_text[i + 1];
+      if (next == '/') {
+        i += 2;
+        while (i < expression_text.size() && expression_text[i] != '\n') {
+          ++i;
+        }
+        continue;
+      }
+      if (next == '*') {
+        i += 2;
+        while (i + 1 < expression_text.size() &&
+               !(expression_text[i] == '*' && expression_text[i + 1] == '/')) {
+          ++i;
+        }
+        if (i + 1 < expression_text.size()) {
+          i += 2;
+        }
+        continue;
+      }
+    }
 
     if (ch == '[') {
       ++bracket_depth;
+      ++i;
       continue;
     }
     if (ch == ']') {
       if (bracket_depth > 0) {
         --bracket_depth;
       }
+      ++i;
       continue;
     }
     if (ch == '(') {
       ++paren_depth;
+      ++i;
       continue;
     }
     if (ch == ')') {
       if (paren_depth > 0) {
         --paren_depth;
       }
+      ++i;
       continue;
     }
 
     const bool in_bracket_scope = bracket_depth > 0;
-    const bool in_fortran_paren_scope =
-        bracket_depth == 0 && paren_depth > 0;
+    const bool in_fortran_paren_scope = bracket_depth == 0 && paren_depth > 0;
     if (!in_bracket_scope && !in_fortran_paren_scope) {
+      ++i;
       continue;
     }
 
     if (ch == '?') {
       ++question_mark_depth;
+      ++i;
       continue;
     }
 
@@ -497,17 +543,18 @@ bool isArraySectionDesignator(const std::string &expression_text) {
       const bool is_scope_operator =
           (i > 0 && expression_text[i - 1] == ':') ||
           (i + 1 < expression_text.size() && expression_text[i + 1] == ':');
-      if (is_scope_operator) {
-        continue;
-      }
-
-      if (question_mark_depth > 0) {
-        --question_mark_depth;
-      } else {
-        return true;
+      if (!is_scope_operator) {
+        if (question_mark_depth > 0) {
+          --question_mark_depth;
+        } else {
+          return true;
+        }
       }
     }
+
+    ++i;
   }
+
   return false;
 }
 
