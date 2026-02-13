@@ -63,9 +63,12 @@ std::string trimWhitespace(const std::string &text) {
 }
 
 std::string trimWhitespace(const std::string &text, size_t pos, size_t count) {
+  if (pos >= text.size()) {
+    return std::string();
+  }
   const char *whitespace = " \t\n\r\f\v";
   size_t end_pos = pos + count;
-  if (end_pos > text.size()) {
+  if (end_pos > text.size() || end_pos < pos) {
     end_pos = text.size();
   }
   size_t begin = text.find_first_not_of(whitespace, pos);
