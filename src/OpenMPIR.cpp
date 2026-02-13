@@ -62,6 +62,20 @@ std::string trimWhitespace(const std::string &text) {
   return text.substr(begin, end - begin + 1);
 }
 
+std::string trimWhitespace(const std::string &text, size_t pos, size_t count) {
+  const char *whitespace = " \t\n\r\f\v";
+  size_t end_pos = pos + count;
+  if (end_pos > text.size()) {
+    end_pos = text.size();
+  }
+  size_t begin = text.find_first_not_of(whitespace, pos);
+  if (begin == std::string::npos || begin >= end_pos) {
+    return std::string();
+  }
+  size_t end = text.find_last_not_of(whitespace, end_pos - 1);
+  return text.substr(begin, end - begin + 1);
+}
+
 std::string normalizeRawExpression(const char *expr,
                                    bool strip_trailing_colon = false) {
   if (!expr) {
@@ -181,15 +195,6 @@ std::string normalizeClauseExpression(OpenMPClauseKind kind,
 
 namespace {
 
-std::string trimWhitespaceCopy(const std::string &value) {
-  const std::string::size_type begin = value.find_first_not_of(" \t\r\n");
-  if (begin == std::string::npos) {
-    return std::string();
-  }
-  const std::string::size_type end = value.find_last_not_of(" \t\r\n");
-  return value.substr(begin, end - begin + 1);
-}
-
 bool isIdentifierChar(char ch) {
   const unsigned char uch = static_cast<unsigned char>(ch);
   return std::isalnum(uch) != 0 || ch == '_';
@@ -284,7 +289,7 @@ bool hasIncompleteTrailingOperator(const std::string &expression) {
 }
 
 bool isValidDistDataBaseExpression(const std::string &expression) {
-  const std::string trimmed_expression = trimWhitespaceCopy(expression);
+  const std::string trimmed_expression = trimWhitespace(expression);
   if (trimmed_expression.empty()) {
     return false;
   }
@@ -349,7 +354,7 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
     return false;
   }
 
-  const std::string trimmed_expression = trimWhitespaceCopy(expression);
+  const std::string trimmed_expression = trimWhitespace(expression);
   *array_section_expression = trimmed_expression;
   dist_data_arguments->clear();
   if (trimmed_expression.empty() || trimmed_expression.back() != ')') {
@@ -408,7 +413,7 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
   }
 
   const std::string prefix =
-      trimWhitespaceCopy(trimmed_expression.substr(0, open_paren_pos));
+      trimWhitespace(trimmed_expression, 0, open_paren_pos);
   if (prefix.empty()) {
     return false;
   }
@@ -442,14 +447,14 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
   }
 
   const std::string base_expression =
-      trimWhitespaceCopy(prefix.substr(0, token_begin));
+      trimWhitespace(prefix, 0, token_begin);
   if (!isValidDistDataBaseExpression(base_expression)) {
     return false;
   }
 
   *array_section_expression = base_expression;
-  *dist_data_arguments = trimWhitespaceCopy(trimmed_expression.substr(
-      open_paren_pos + 1, trimmed_expression.size() - open_paren_pos - 2));
+  *dist_data_arguments = trimWhitespace(trimmed_expression, open_paren_pos + 1,
+      trimmed_expression.size() - open_paren_pos - 2);
   return true;
 }
 
@@ -863,7 +868,7 @@ void OpenMPMapClause::addItem(const std::string &expr,
   bool has_dist_data = splitMapExpressionDistDataSuffix(
       expr, &array_section_expression, &dist_data_arguments);
 
-  const std::string trimmed_expression = trimWhitespaceCopy(expr);
+  const std::string trimmed_expression = trimWhitespace(expr);
   std::string item_expression = trimmed_expression;
   if (has_dist_data) {
     item_expression = array_section_expression + " dist_data(" +
@@ -881,7 +886,7 @@ void OpenMPMapClause::addItem(const std::string &expr,
     const std::vector<std::string> policy_texts =
         splitTopLevelCommaSeparated(dist_data_arguments);
     for (const std::string &raw_policy : policy_texts) {
-      const std::string policy_text = trimWhitespaceCopy(raw_policy);
+      const std::string policy_text = trimWhitespace(raw_policy);
       if (policy_text.empty()) {
         continue;
       }
@@ -907,12 +912,12 @@ void OpenMPMapClause::addItem(const std::string &expr,
           }
         }
         if (close_pos == std::string::npos ||
-            trimWhitespaceCopy(policy_text.substr(close_pos + 1)).size() != 0) {
+            trimWhitespace(policy_text, close_pos + 1, policy_text.size() - close_pos - 1).size() != 0) {
           continue;
         }
-        policy_name = trimWhitespaceCopy(policy_text.substr(0, open_pos));
-        policy_argument = trimWhitespaceCopy(
-            policy_text.substr(open_pos + 1, close_pos - open_pos - 1));
+        policy_name = trimWhitespace(policy_text, 0, open_pos);
+        policy_argument = trimWhitespace(
+            policy_text, open_pos + 1, close_pos - open_pos - 1);
       }
 
       std::string normalized_name = policy_name;
