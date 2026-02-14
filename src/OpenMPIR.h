@@ -22,8 +22,6 @@
 #include <string>
 #include <vector>
 
-using namespace std;
-
 enum OpenMPBaseLang { Lang_C, Lang_Cplusplus, Lang_Fortran, Lang_unknown };
 
 enum OpenMPExprParseMode {
@@ -211,7 +209,7 @@ protected:
    * should only have one OpenMPClause object for each instance of kind and full
    * parameters
    */
-  map<OpenMPClauseKind, vector<OpenMPClause *> *> clauses;
+  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> clauses;
 
   // Owned storage for clause objects to ensure automatic cleanup
   std::vector<std::unique_ptr<OpenMPClause>> clause_storage;
@@ -270,7 +268,7 @@ public:
 
   OpenMPDirectiveKind getKind() { return kind; };
 
-  map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *getAllClauses() {
+  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *getAllClauses() {
     return &clauses;
   };
 
@@ -320,8 +318,8 @@ public:
 // atomic directive
 class OpenMPAtomicDirective : public OpenMPDirective {
 protected:
-  map<OpenMPClauseKind, vector<OpenMPClause *> *> clauses_atomic_after;
-  map<OpenMPClauseKind, vector<OpenMPClause *> *> clauses_atomic_clauses;
+  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> clauses_atomic_after;
+  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> clauses_atomic_clauses;
   std::vector<std::unique_ptr<std::vector<OpenMPClause *>>>
       atomic_clause_vector_storage;
 
@@ -343,11 +341,11 @@ public:
     }
     return clauses_atomic_clauses[kind];
   };
-  map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *
+  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *
   getAllClausesAtomicAfter() {
     return &clauses_atomic_after;
   };
-  map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *getAllAtomicClauses() {
+  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *getAllAtomicClauses() {
     return &clauses_atomic_clauses;
   };
 };
