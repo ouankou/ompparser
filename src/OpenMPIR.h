@@ -1782,7 +1782,7 @@ protected:
 
 public:
   OpenMPDeviceTypeClause(OpenMPDeviceTypeClauseKind _device_type_kind)
-      : OpenMPClause(OMPC_default), device_type_kind(_device_type_kind) {};
+      : OpenMPClause(OMPC_device_type), device_type_kind(_device_type_kind) {};
 
   OpenMPDeviceTypeClauseKind getDeviceTypeClauseKind() {
     return device_type_kind;
