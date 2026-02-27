@@ -141,6 +141,8 @@ OPENMP_DIRECTIVE(teams_distribute_parallel_loop)
 OPENMP_DIRECTIVE(teams_distribute_parallel_loop_simd)
 OPENMP_DIRECTIVE(target_teams_distribute_parallel_loop)
 OPENMP_DIRECTIVE(target_teams_distribute_parallel_loop_simd)
+// Implementation-defined extension sentinel directive for Fortran ("!$ompx ...").
+OPENMP_DIRECTIVE_EXT(ompx, "")
 OPENMP_DIRECTIVE_EXT(unknown, "")
 #endif
 

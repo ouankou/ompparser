@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -171,6 +171,85 @@ void setNormalizeClauses(bool normalize) { normalize_clauses_global = normalize;
 bool clause_separator_comma = false;
 static std::string current_pragma_raw;
 
+static std::string trimWhitespaceCopy(const std::string &text) {
+  const std::size_t begin = text.find_first_not_of(" \t\r\n");
+  if (begin == std::string::npos) {
+    return std::string();
+  }
+  const std::size_t end = text.find_last_not_of(" \t\r\n");
+  return text.substr(begin, end - begin + 1);
+}
+
+static bool startsWithCaseInsensitiveAt(const std::string &text,
+                                        std::size_t offset,
+                                        const char *keyword) {
+  if (keyword == nullptr || offset >= text.size()) {
+    return false;
+  }
+
+  std::size_t i = 0;
+  while (keyword[i] != '\0') {
+    if (offset + i >= text.size()) {
+      return false;
+    }
+    const unsigned char lhs = static_cast<unsigned char>(text[offset + i]);
+    const unsigned char rhs = static_cast<unsigned char>(keyword[i]);
+    if (std::tolower(lhs) != std::tolower(rhs)) {
+      return false;
+    }
+    ++i;
+  }
+  return true;
+}
+
+static std::string extractFortranOmpxPayloadPreserveCase(
+    const std::string &pragma_text) {
+  std::size_t pos = 0;
+  while (pos < pragma_text.size() &&
+         std::isspace(static_cast<unsigned char>(pragma_text[pos]))) {
+    ++pos;
+  }
+
+  if (pos >= pragma_text.size()) {
+    return std::string();
+  }
+
+  const char marker = static_cast<char>(
+      std::tolower(static_cast<unsigned char>(pragma_text[pos])));
+  if (marker != '!' && marker != 'c' && marker != 'd' && marker != '*') {
+    return std::string();
+  }
+  ++pos;
+
+  while (pos < pragma_text.size() &&
+         std::isspace(static_cast<unsigned char>(pragma_text[pos]))) {
+    ++pos;
+  }
+  if (pos >= pragma_text.size() || pragma_text[pos] != '$') {
+    return std::string();
+  }
+  ++pos;
+
+  while (pos < pragma_text.size() &&
+         std::isspace(static_cast<unsigned char>(pragma_text[pos]))) {
+    ++pos;
+  }
+  if (!startsWithCaseInsensitiveAt(pragma_text, pos, "ompx")) {
+    return std::string();
+  }
+  pos += 4;
+
+  if (pos < pragma_text.size()) {
+    const unsigned char boundary =
+        static_cast<unsigned char>(pragma_text[pos]);
+    if (std::isalnum(boundary) || boundary == '_') {
+      return std::string();
+    }
+  }
+
+  return trimWhitespaceCopy(pragma_text.substr(pos));
+}
+
 template <typename DirectiveType, typename... Args>
 static DirectiveType *makeDirectiveAt(int line, int column, Args &&...args) {
   auto *directive = new DirectiveType(std::forward<Args>(args)...);
@@ -220,7 +299,7 @@ corresponding C type is union name defaults to YYSTYPE.
         }
 
 
-%token  OMP PARALLEL FOR DO DECLARE DISTRIBUTE LOOP SCAN SECTIONS SECTION SINGLE CANCEL TASKGROUP CANCELLATION POINT THREAD VARIANT THREADPRIVATE METADIRECTIVE MAPPER
+%token  OMP OMPX PARALLEL FOR DO DECLARE DISTRIBUTE LOOP SCAN SECTIONS SECTION SINGLE CANCEL TASKGROUP CANCELLATION POINT THREAD VARIANT THREADPRIVATE METADIRECTIVE MAPPER
         IF NUM_THREADS DEFAULT PRIVATE FIRSTPRIVATE SAVED SHARED COPYIN REDUCTION PROC_BIND ALLOCATE SIMD TASK LASTPRIVATE WHEN MATCH PARTIAL FULL
         LINEAR SCHEDULE COLLAPSE NOWAIT ORDER ORDERED MODIFIER_CONDITIONAL MODIFIER_MONOTONIC MODIFIER_NONMONOTONIC STATIC DYNAMIC GUIDED AUTO RUNTIME MODOFIER_VAL MODOFIER_REF MODOFIER_UVAL MODIFIER_SIMD
         SAFELEN SIMDLEN ALIGNED ALIGN NONTEMPORAL UNIFORM INBRANCH NOTINBRANCH DIST_SCHEDULE BIND INCLUSIVE EXCLUSIVE COPYPRIVATE ALLOCATOR INITIALIZER OMP_PRIV IDENTIFIER_DEFAULT WORKSHARE/*YAYING*/
@@ -542,6 +621,7 @@ openmp_directive : parallel_directive
                  | split_directive
                  | stripe_directive
                  | declare_induction_directive
+                 | ompx_directive
                  ;
 
 variant_directive : parallel_do_directive
@@ -697,6 +777,33 @@ end_directive : END { current_directive = makeDirectiveAt<OpenMPEndDirective>(@1
 
 end_clause_seq : fortran_paired_directive
                ;
+
+ompx_directive : OMPX {
+                  current_directive =
+                      makeDirectiveAt<OpenMPDirective>(@1.first_line,
+                                                       @1.first_column,
+                                                       OMPD_ompx);
+                  current_directive->setFortranSentinel(OMPFS_ompx);
+                  openmp_begin_raw_expression();
+                } ompx_payload_opt
+               ;
+
+ompx_payload_opt : /* empty */
+                 | EXPR_STRING {
+                    if (current_directive != nullptr) {
+                      std::string payload =
+                          extractFortranOmpxPayloadPreserveCase(
+                              current_pragma_raw);
+                      if (payload.empty()) {
+                        payload =
+                          trimWhitespaceCopy($1 ? std::string($1)
+                                                : std::string());
+                      }
+                      current_directive->setImplementationDefinedPayload(
+                          payload);
+                    }
+                   }
+                 ;
 
 metadirective_directive : METADIRECTIVE { current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_metadirective); }
                           metadirective_clause_optseq
@@ -6115,7 +6222,7 @@ OpenMPDirective* parseOpenMP(const char* _input,
     std::string input_string;  // Must persist until after start_lexer()
     const char *input = _input;
     current_pragma_raw = (_input != nullptr) ? std::string(_input) : "";
-    std::regex fortran_regex ("[!cC*][$][Oo][Mm][Pp]");
+    std::regex fortran_regex ("[!cC*][$][Oo][Mm][Pp]([Xx])?");
 
     if (_input == nullptr) {
         yyerror("Null input provided to parseOpenMP.");

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -55,7 +55,7 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
                                                   std::string ending_symbol) {
 
   if (this->getBaseLang() == Lang_Fortran && prefix == "#pragma omp ") {
-    prefix = "!$omp ";
+    prefix = (this->getFortranSentinel() == OMPFS_ompx) ? "!$ompx " : "!$omp ";
   };
   std::string result = prefix;
 
@@ -337,6 +337,13 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
 
 std::string OpenMPDirective::toString() {
   switch (this->getKind()) {
+  case OMPD_ompx: {
+    const std::string &payload = this->getImplementationDefinedPayload();
+    if (payload.empty()) {
+      return std::string();
+    }
+    return payload + " ";
+  }
   case OMPD_parallel_do:
     if (this->getCompactParallelDo()) {
       return "paralleldo ";

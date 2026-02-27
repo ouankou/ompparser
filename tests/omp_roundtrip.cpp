@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -117,7 +117,8 @@ int main(int argc, const char *argv[]) {
   }
 
   // Regex to detect Fortran directives (case-insensitive for $omp/$OMP)
-  std::regex fortran_regex("^[[:blank:]]*[!cC\\*]\\$omp", std::regex_constants::icase);
+  std::regex fortran_regex("^[[:blank:]]*[!cC\\*]\\$ompx?",
+                           std::regex_constants::icase);
 
   // parse the preprocessed inputs
   for (i = 0; i < omp_pragmas->size(); i++) {
