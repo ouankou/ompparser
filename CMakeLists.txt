@@ -83,6 +83,13 @@ if(OMPPARSER_ENABLE_WASM)
   add_subdirectory(wasm)
 endif()
 
+if(BUILD_TESTING)
+  add_custom_target(check
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    DEPENDS tester omp_roundtrip test_locations
+    COMMENT "Running all tests...")
+endif()
+
 set(ompparser_targets ompparser)
 
 # Install headers and libraries
