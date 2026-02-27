@@ -1659,8 +1659,13 @@ otherwise_clause : OTHERWISE {
 // OpenMP 6.0 clause implementations
 graph_id_clause : GRAPH_ID { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_graph_id); } '(' expression ')'
                 ;
-graph_reset_clause : GRAPH_RESET { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_graph_reset); }
+graph_reset_clause : GRAPH_RESET {
+                      current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_graph_reset);
+                    } opt_graph_reset_parens
                    ;
+opt_graph_reset_parens : /* empty */
+                       | '(' expression ')'
+                       ;
 transparent_clause : TRANSPARENT { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_transparent); } opt_transparent_parens
                    ;
 
@@ -2391,6 +2396,7 @@ taskgraph_clause : graph_id_clause
                  | replayable_clause
                  | threadset_clause
                  | if_taskgraph_clause
+                 | nogroup_clause
                  ;
 task_iteration_clause_seq : task_iteration_clause
                           | task_iteration_clause_seq task_iteration_clause
@@ -2590,6 +2596,7 @@ target_clause: if_target_clause
              | thread_limit_clause
              | private_clause
              | firstprivate_clause
+             | shared_clause
              | in_reduction_clause
              | map_clause
              | is_device_ptr_clause

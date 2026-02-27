@@ -1348,11 +1348,15 @@ OpenMPClause *OpenMPDirective::addOpenMPClause(int k, ...) {
   case OMPC_no_openmp_constructs:
   case OMPC_no_openmp_routines:
   case OMPC_no_parallelism:
+  case OMPC_graph_id:
+  case OMPC_graph_reset:
+  case OMPC_replayable:
   case OMPC_indirect:
   case OMPC_transparent:
   case OMPC_threadset:
   case OMPC_safesync:
   case OMPC_device_safesync:
+  case OMPC_memscope:
   case OMPC_local:
   case OMPC_init:
   case OMPC_init_complete:
@@ -3014,7 +3018,12 @@ std::string OpenMPGraphIdClause::toString() {
   return "graph_id(" + expressionToString() + ") ";
 }
 
-std::string OpenMPGraphResetClause::toString() { return "graph_reset "; }
+std::string OpenMPGraphResetClause::toString() {
+  std::string str = expressionToString();
+  if (str.empty())
+    return "graph_reset ";
+  return "graph_reset(" + str + ") ";
+}
 
 std::string OpenMPTransparentClause::toString() {
   std::string str = expressionToString();
