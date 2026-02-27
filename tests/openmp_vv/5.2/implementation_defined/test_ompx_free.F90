@@ -3,4 +3,5 @@
 !$omp target map(to: isSharedProb)
 !$omp end target
 !$omp                 parallel shared(ARR_ERR) private(i)  num_threads(2)
+!$ompx test_nonexistent
 !$omp                 end parallel

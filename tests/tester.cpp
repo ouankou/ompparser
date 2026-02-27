@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -87,7 +87,7 @@ int main(int argc, const char *argv[]) {
 
   char current_char = input_file.peek();
   std::string current_line;
-  std::regex fortran_regex("^[!cC*][$][Oo][Mm][Pp]");
+  std::regex fortran_regex("^[!cC*][$][Oo][Mm][Pp]([Xx])?");
   const std::string invalid_marker = "invalid test without paired validation.";
   bool expect_invalid_next = false;
   bool expect_invalid_block = false;

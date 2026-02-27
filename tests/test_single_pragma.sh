@@ -103,13 +103,13 @@ fi
 
 # Extract original pragmas from the input file
 if [ $is_fortran -eq 1 ]; then
-    mapfile -t original_pragmas < <(grep -iE '^[[:space:]]*[!cC*]\$omp' "$PRAGMA_FILE" || true)
+    mapfile -t original_pragmas < <(grep -iE '^[[:space:]]*[!cC*]\$ompx?' "$PRAGMA_FILE" || true)
 else
     mapfile -t original_pragmas < <(grep -E '^[[:space:]]*#pragma[[:space:]]+omp' "$PRAGMA_FILE" || true)
 fi
 
 # Extract round-tripped pragmas from ompp output
-mapfile -t roundtrip_pragmas < <(echo "$OUTPUT" | grep -E '^#pragma omp|^[!cC*]\$omp' || true)
+mapfile -t roundtrip_pragmas < <(echo "$OUTPUT" | grep -E '^#pragma omp|^[!cC*]\$ompx?' || true)
 
 # If no pragmas were found, nothing to compare
 if [ ${#original_pragmas[@]} -eq 0 ] && [ ${#roundtrip_pragmas[@]} -eq 0 ]; then

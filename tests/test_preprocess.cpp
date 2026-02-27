@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -25,7 +25,7 @@ preProcessCManaged(std::ifstream &input_file) {
   std::regex c_regex(
       "^([[:blank:]]*#pragma)([[:blank:]]+)(omp)[[:blank:]]+(.*)");
   std::regex fortran_regex(
-      "^([[:blank:]]*[!cC*]\\$omp&?)([[:blank:]]*)(.*)",
+      "^([[:blank:]]*[!cC*]\\$ompx?&?)([[:blank:]]*)(.*)",
       std::regex_constants::icase);
   std::regex comment_regex("[/][*]([^*]|[*][^/])*[*][/]");
   std::regex continue_regex("([\\\\]+[[:blank:]]*$)");

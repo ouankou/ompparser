@@ -1,0 +1,13 @@
+/*
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
+ * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
+ * and Lawrence Livermore National Security, LLC.
+ *
+ * SPDX-License-Identifier: (BSD-3-Clause)
+ */
+
+!$ompx test_nonexistent
+PASS: !$ompx test_nonexistent
+
+!$ompx vendor foo(bar, baz)
+PASS: !$ompx vendor foo(bar, baz)

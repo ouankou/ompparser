@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -25,6 +25,11 @@
 using namespace std;
 
 enum OpenMPBaseLang { Lang_C, Lang_Cplusplus, Lang_Fortran, Lang_unknown };
+
+enum OpenMPFortranSentinelKind {
+  OMPFS_omp,
+  OMPFS_ompx
+};
 
 enum OpenMPExprParseMode {
   OMP_EXPR_PARSE_none,
@@ -185,6 +190,8 @@ protected:
   bool use_declare_target_underscore = false;
   bool compact_parallel_do = false;
   bool requires_explicit_end = false;
+  OpenMPFortranSentinelKind fortran_sentinel = OMPFS_omp;
+  std::string implementation_defined_payload;
 
   /* The vector is used to store the pointers of clauses in original order.
    * While unparsing, the generated pragma keeps the clauses in the same order
@@ -311,6 +318,18 @@ public:
   bool getCompactParallelDo() const { return compact_parallel_do; }
   void setRequiresExplicitEnd(bool value) { requires_explicit_end = value; }
   bool getRequiresExplicitEnd() const { return requires_explicit_end; }
+  void setFortranSentinel(OpenMPFortranSentinelKind sentinel) {
+    fortran_sentinel = sentinel;
+  }
+  OpenMPFortranSentinelKind getFortranSentinel() const {
+    return fortran_sentinel;
+  }
+  void setImplementationDefinedPayload(const std::string &payload) {
+    implementation_defined_payload = payload;
+  }
+  const std::string &getImplementationDefinedPayload() const {
+    return implementation_defined_payload;
+  }
 
   // Registers a clause for automatic lifetime management
   // Takes ownership of the clause and returns a raw pointer for use

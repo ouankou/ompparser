@@ -593,21 +593,25 @@ process_file() {
             return
         fi
 
-        # Extract Fortran directives (!$omp, c$omp, *$omp - case insensitive) and merge continuations
+        # Extract Fortran directives (!$omp/!$ompx, c$omp/c$ompx, *$omp/*$ompx - case insensitive) and merge continuations
         local raw_pragmas=()
-        IFS=$'\n' read -r -d '' -a raw_pragmas < <(echo "$preprocessed" | grep -iE '^[[:space:]]*[!cC*]\$omp' || true; printf '\0')
+        IFS=$'\n' read -r -d '' -a raw_pragmas < <(echo "$preprocessed" | grep -iE '^[[:space:]]*[!cC*]\$ompx?' || true; printf '\0')
 
         local combined_pragmas=()
         if [ ${#raw_pragmas[@]} -gt 0 ]; then
             local current=""
-            local line trimmed lower prefix remainder
+            local line trimmed lower remainder strip_len
             for line in "${raw_pragmas[@]}"; do
                 trimmed=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
                 lower=$(echo "$trimmed" | tr '[:upper:]' '[:lower:]')
-                prefix="${lower:0:6}"
 
-                if [ "$prefix" = '!$omp&' ] || [ "$prefix" = 'c$omp&' ] || [ "$prefix" = '*$omp&' ]; then
-                    remainder="${trimmed:6}"
+                if [[ "$lower" == '!$omp&'* || "$lower" == 'c$omp&'* || "$lower" == '*$omp&'* || \
+                      "$lower" == '!$ompx&'* || "$lower" == 'c$ompx&'* || "$lower" == '*$ompx&'* ]]; then
+                    strip_len=6
+                    if [[ "$lower" == '!$ompx&'* || "$lower" == 'c$ompx&'* || "$lower" == '*$ompx&'* ]]; then
+                        strip_len=7
+                    fi
+                    remainder="${trimmed:$strip_len}"
                     remainder=$(echo "$remainder" | sed 's/^[[:space:]]*//')
                     current=$(echo "$current" | sed 's/[[:space:]]*&$//')
                     current="${current}${remainder}"
@@ -679,7 +683,7 @@ process_file() {
                 rm -f "$pragma_file"
                 continue
             fi
-            roundtrip=$(echo "$roundtrip_output" | grep -E '^[!cC*]\$omp' | head -1 || true)
+            roundtrip=$(echo "$roundtrip_output" | grep -E '^[!cC*]\$ompx?' | head -1 || true)
             if [ -z "$roundtrip" ]; then
                 file_parse_errors=$((file_parse_errors + 1))
                 file_failed=$((file_failed + 1))

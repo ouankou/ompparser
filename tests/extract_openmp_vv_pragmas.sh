@@ -177,17 +177,20 @@ for file in "${source_files[@]}"; do
 
         # Extract Fortran directives and merge continuations
         raw_pragmas=()
-        IFS=$'\n' read -r -d '' -a raw_pragmas < <(echo "$preprocessed" | grep -iE '^[[:space:]]*[!cC*]\$omp' || true; printf '\0')
+        IFS=$'\n' read -r -d '' -a raw_pragmas < <(echo "$preprocessed" | grep -iE '^[[:space:]]*[!cC*]\$ompx?' || true; printf '\0')
 
         if [ ${#raw_pragmas[@]} -gt 0 ]; then
             current=""
             for line in "${raw_pragmas[@]}"; do
                 trimmed=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
                 lower=$(echo "$trimmed" | tr '[:upper:]' '[:lower:]')
-                prefix="${lower:0:6}"
-
-                if [ "$prefix" = '!$omp&' ] || [ "$prefix" = 'c$omp&' ] || [ "$prefix" = '*$omp&' ]; then
-                    remainder="${trimmed:6}"
+                if [[ "$lower" == '!$omp&'* || "$lower" == 'c$omp&'* || "$lower" == '*$omp&'* || \
+                      "$lower" == '!$ompx&'* || "$lower" == 'c$ompx&'* || "$lower" == '*$ompx&'* ]]; then
+                    strip_len=6
+                    if [[ "$lower" == '!$ompx&'* || "$lower" == 'c$ompx&'* || "$lower" == '*$ompx&'* ]]; then
+                        strip_len=7
+                    fi
+                    remainder="${trimmed:$strip_len}"
                     remainder=$(echo "$remainder" | sed 's/^[[:space:]]*//')
                     current=$(echo "$current" | sed 's/[[:space:]]*&$//')
                     current="${current}${remainder}"
