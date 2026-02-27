@@ -11,3 +11,9 @@ PASS: !$ompx test_nonexistent
 
 !$ompx vendor foo(bar, baz)
 PASS: !$ompx vendor foo(bar, baz)
+
+!$ompx vendor Name("GPU0")
+PASS: !$ompx vendor Name("GPU0")
+
+!$OMPX vendor Name("GPU0")
+PASS: !$ompx vendor Name("GPU0")

@@ -180,6 +180,76 @@ static std::string trimWhitespaceCopy(const std::string &text) {
   return text.substr(begin, end - begin + 1);
 }
 
+static bool startsWithCaseInsensitiveAt(const std::string &text,
+                                        std::size_t offset,
+                                        const char *keyword) {
+  if (keyword == nullptr || offset >= text.size()) {
+    return false;
+  }
+
+  std::size_t i = 0;
+  while (keyword[i] != '\0') {
+    if (offset + i >= text.size()) {
+      return false;
+    }
+    const unsigned char lhs = static_cast<unsigned char>(text[offset + i]);
+    const unsigned char rhs = static_cast<unsigned char>(keyword[i]);
+    if (std::tolower(lhs) != std::tolower(rhs)) {
+      return false;
+    }
+    ++i;
+  }
+  return true;
+}
+
+static std::string extractFortranOmpxPayloadPreserveCase(
+    const std::string &pragma_text) {
+  std::size_t pos = 0;
+  while (pos < pragma_text.size() &&
+         std::isspace(static_cast<unsigned char>(pragma_text[pos]))) {
+    ++pos;
+  }
+
+  if (pos >= pragma_text.size()) {
+    return std::string();
+  }
+
+  const char marker = static_cast<char>(
+      std::tolower(static_cast<unsigned char>(pragma_text[pos])));
+  if (marker != '!' && marker != 'c' && marker != 'd' && marker != '*') {
+    return std::string();
+  }
+  ++pos;
+
+  while (pos < pragma_text.size() &&
+         std::isspace(static_cast<unsigned char>(pragma_text[pos]))) {
+    ++pos;
+  }
+  if (pos >= pragma_text.size() || pragma_text[pos] != '$') {
+    return std::string();
+  }
+  ++pos;
+
+  while (pos < pragma_text.size() &&
+         std::isspace(static_cast<unsigned char>(pragma_text[pos]))) {
+    ++pos;
+  }
+  if (!startsWithCaseInsensitiveAt(pragma_text, pos, "ompx")) {
+    return std::string();
+  }
+  pos += 4;
+
+  if (pos < pragma_text.size()) {
+    const unsigned char boundary =
+        static_cast<unsigned char>(pragma_text[pos]);
+    if (std::isalnum(boundary) || boundary == '_') {
+      return std::string();
+    }
+  }
+
+  return trimWhitespaceCopy(pragma_text.substr(pos));
+}
+
 template <typename DirectiveType, typename... Args>
 static DirectiveType *makeDirectiveAt(int line, int column, Args &&...args) {
   auto *directive = new DirectiveType(std::forward<Args>(args)...);
@@ -721,9 +791,14 @@ ompx_directive : OMPX {
 ompx_payload_opt : /* empty */
                  | EXPR_STRING {
                     if (current_directive != nullptr) {
-                      const std::string payload =
+                      std::string payload =
+                          extractFortranOmpxPayloadPreserveCase(
+                              current_pragma_raw);
+                      if (payload.empty()) {
+                        payload =
                           trimWhitespaceCopy($1 ? std::string($1)
                                                 : std::string());
+                      }
                       current_directive->setImplementationDefinedPayload(
                           payload);
                     }
