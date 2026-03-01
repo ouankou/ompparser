@@ -272,6 +272,7 @@ public:
       : SourceLocation(_line, _col), kind(k), lang(_lang) {
     normalize_clauses = normalize_clauses_global;
   };
+  virtual ~OpenMPDirective() = default;
 
   OpenMPDirectiveKind getKind() { return kind; };
 
