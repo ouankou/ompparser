@@ -9,7 +9,7 @@
 #   CC=clang-22 CXX=clang++-22 FC=flang-22 ./extract_openmp_examples_pragmas.sh
 #
 # To use a different LLVM version:
-#   LLVM_VERSION=22 CC=clang-22 CXX=clang++-22 FC=flang-22 ./extract_openmp_examples_pragmas.sh
+#   LLVM_VERSION=<LLVM_VERSION> CC=clang-<LLVM_VERSION> CXX=clang++-<LLVM_VERSION> FC=flang-<LLVM_VERSION> ./extract_openmp_examples_pragmas.sh
 #
 # The script will:
 # 1. Wipe the tests/openmp_examples/ directory completely
@@ -58,7 +58,7 @@ REQUIRED_FC="flang-${LLVM_VERSION}"
 if [ "${CC:-}" != "$REQUIRED_CC" ] && [ "${CC:-}" != "clang" ]; then
     echo -e "${RED}ERROR: CC must be set to ${REQUIRED_CC}${NC}"
     echo "Usage: CC=${REQUIRED_CC} CXX=${REQUIRED_CXX} FC=${REQUIRED_FC} $0"
-    echo "Or:    LLVM_VERSION=22 CC=clang-22 CXX=clang++-22 FC=flang-22 $0"
+    echo "Or:    LLVM_VERSION=<LLVM_VERSION> CC=clang-<LLVM_VERSION> CXX=clang++-<LLVM_VERSION> FC=flang-<LLVM_VERSION> $0"
     exit 1
 fi
 
