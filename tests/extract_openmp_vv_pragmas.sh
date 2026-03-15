@@ -5,11 +5,11 @@
 # This script extracts OpenMP pragmas from the OpenMP Validation & Verification
 # test suite and saves them as individual test files for our parser.
 #
-# IMPORTANT: This script MUST be run with LLVM toolchain (default: LLVM 20):
-#   CC=clang-20 CXX=clang++-20 FC=flang-20 ./extract_openmp_vv_pragmas.sh
+# IMPORTANT: This script MUST be run with LLVM toolchain (default: LLVM 22):
+#   CC=clang-22 CXX=clang++-22 FC=flang-22 ./extract_openmp_vv_pragmas.sh
 #
 # To use a different LLVM version:
-#   LLVM_VERSION=21 CC=clang-21 CXX=clang++-21 FC=flang-21 ./extract_openmp_vv_pragmas.sh
+#   LLVM_VERSION=<LLVM_VERSION> CC=clang-<LLVM_VERSION> CXX=clang++-<LLVM_VERSION> FC=flang-<LLVM_VERSION> ./extract_openmp_vv_pragmas.sh
 #
 # The script will:
 # 1. Wipe the tests/openmp_vv/ directory completely
@@ -29,7 +29,7 @@
 set -euo pipefail
 
 # Configuration
-LLVM_VERSION="${LLVM_VERSION:-20}"  # Default to LLVM 20, can be overridden
+LLVM_VERSION="${LLVM_VERSION:-22}"  # Default to LLVM 22, can be overridden
 REPO_URL="https://github.com/OpenMP-Validation-and-Verification/OpenMP_VV"
 REPO_PATH="build/openmp_vv"
 TESTS_DIR="tests"
@@ -60,7 +60,7 @@ REQUIRED_CLANG_FORMAT="clang-format-${LLVM_VERSION}"
 if [ "${CC:-}" != "$REQUIRED_CC" ] && [ "${CC:-}" != "clang" ]; then
     echo -e "${RED}ERROR: CC must be set to ${REQUIRED_CC}${NC}"
     echo "Usage: CC=${REQUIRED_CC} CXX=${REQUIRED_CXX} FC=${REQUIRED_FC} $0"
-    echo "Or:    LLVM_VERSION=21 CC=clang-21 CXX=clang++-21 FC=flang-21 $0"
+    echo "Or:    LLVM_VERSION=<LLVM_VERSION> CC=clang-<LLVM_VERSION> CXX=clang++-<LLVM_VERSION> FC=flang-<LLVM_VERSION> $0"
     exit 1
 fi
 
