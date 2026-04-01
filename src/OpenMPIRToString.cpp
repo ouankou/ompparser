@@ -227,6 +227,10 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       }
       result += " ";
       goto default_case;
+    } else if (paired != nullptr &&
+               paired->getKind() == OMPD_begin_metadirective) {
+      result += "metadirective ";
+      goto default_case;
     } else if (paired != nullptr) {
       result += paired->generatePragmaString("", "", "");
       goto default_case;

@@ -53,8 +53,8 @@ static int thirdParameter = 0;
 static int schedule_clause_line = 0;
 static int schedule_clause_column = 0;
 static OpenMPUsesAllocatorsClauseAllocator usesAllocator;
-static const char *firstStringParameter = "";
-static const char *secondStringParameter = "";
+static std::string firstStringParameter;
+static std::string secondStringParameter;
 static const char *reduction_modifier_expression = nullptr;
 OpenMPClauseSeparator current_expr_separator = OMPC_CLAUSE_SEP_space;
 OpenMPClauseSeparator current_apply_transform_separator = OMPC_CLAUSE_SEP_comma;
@@ -700,7 +700,6 @@ fortran_paired_directive : parallel_directive
                          | parallel_sections_directive
                          | parallel_single_directive
                          | do_paired_directive
-                         | metadirective_directive
                          | begin_metadirective_directive
                          | master_directive
                          | masked_directive
@@ -775,8 +774,20 @@ end_directive : END { current_directive = makeDirectiveAt<OpenMPEndDirective>(@1
               }
               ;
 
-end_clause_seq : fortran_paired_directive
+end_clause_seq : end_metadirective_directive
+               | fortran_paired_directive
                ;
+
+end_metadirective_directive : METADIRECTIVE {
+                // END METADIRECTIVE closes the structured BEGIN
+                // METADIRECTIVE block form, not the statement-associated
+                // METADIRECTIVE directive.
+                current_directive =
+                    makeDirectiveAt<OpenMPDirective>(@1.first_line,
+                                                     @1.first_column,
+                                                     OMPD_begin_metadirective);
+              }
+              ;
 
 ompx_directive : OMPX {
                   current_directive =
@@ -2950,24 +2961,24 @@ defaultmap_category : CATEGORY_SCALAR { current_clause = addClauseAt(current_dir
                     | CATEGORY_ALL { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_defaultmap,firstParameter,OMPC_DEFAULTMAP_CATEGORY_all); }
                     | CATEGORY_ALLOCATABLE { if (user_set_lang == Lang_Fortran || auto_lang == Lang_Fortran) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_defaultmap,firstParameter,OMPC_DEFAULTMAP_CATEGORY_allocatable);} else { yyerror("Defaultmap clause does not support allocatable in C/C++."); YYABORT;} }
                     ;
-uses_allocators_clause : USES_ALLOCATORS  { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_uses_allocators); firstParameter = OMPC_USESALLOCATORS_ALLOCATOR_unspecified; firstStringParameter = ""; secondStringParameter = ""; } '(' uses_allocators_parameter ')' ;
+uses_allocators_clause : USES_ALLOCATORS  { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_uses_allocators); firstParameter = OMPC_USESALLOCATORS_ALLOCATOR_unspecified; firstStringParameter.clear(); secondStringParameter.clear(); } '(' uses_allocators_parameter ')' ;
 uses_allocators_parameter : allocators_list
                           | allocators_list ',' uses_allocators_parameter
                           ;
 
 allocators_list : TRAITS '(' EXPR_STRING ')' ':' EXPR_STRING {
                     usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_unspecified;
-                    firstStringParameter = $3;
-                    secondStringParameter = $6;
+                    firstStringParameter = $3 ? $3 : "";
+                    secondStringParameter = $6 ? $6 : "";
                     ((OpenMPUsesAllocatorsClause*)current_clause)
                         ->addUsesAllocatorsAllocatorSequence(
                             usesAllocator, firstStringParameter,
                             secondStringParameter);
                   }
-                | allocators_list_parameter_enum { firstStringParameter = ""; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
-                | allocators_list_parameter_enum '(' EXPR_STRING ')' { firstStringParameter = $3; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
-                | allocators_list_parameter_user { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_user; firstStringParameter = ""; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
-                | allocators_list_parameter_user '(' EXPR_STRING ')' { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_user; firstStringParameter = $3; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
+                | allocators_list_parameter_enum { firstStringParameter.clear(); ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
+                | allocators_list_parameter_enum '(' EXPR_STRING ')' { firstStringParameter = $3 ? $3 : ""; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
+                | allocators_list_parameter_user { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_user; firstStringParameter.clear(); ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
+                | allocators_list_parameter_user '(' EXPR_STRING ')' { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_user; firstStringParameter = $3 ? $3 : ""; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
                 ;
 
 allocators_list_parameter_enum : DEFAULT_MEM_ALLOC { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_default; }
@@ -2979,7 +2990,7 @@ allocators_list_parameter_enum : DEFAULT_MEM_ALLOC { usesAllocator = OMPC_USESAL
                                | PTEAM_MEM_ALLOC { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_pteam;  }
                                | THREAD_MEM_ALLOC { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_thread; }
                                ;
-allocators_list_parameter_user : EXPR_STRING { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_unspecified; secondStringParameter = $1; }
+allocators_list_parameter_user : EXPR_STRING { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_unspecified; secondStringParameter = $1 ? $1 : ""; }
                                ;
 to_clause: TO { current_expr_separator = OMPC_CLAUSE_SEP_space; } '(' to_parameter ')' ;
 to_parameter : EXPR_STRING  { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_to, OMPC_TO_unspecified); static_cast<OpenMPToClause*>(current_clause)->addItem($1); }
@@ -3064,6 +3075,7 @@ map_clause : MAP {
              secondParameter = OMPC_MAP_MODIFIER_unspecified;
              thirdParameter = OMPC_MAP_MODIFIER_unspecified;
              map_ref_modifier_parameter = OMPC_MAP_REF_MODIFIER_unspecified;
+             firstStringParameter.clear();
              current_expr_separator = OMPC_CLAUSE_SEP_space;
            }'(' map_parameter')';
 
@@ -3071,14 +3083,14 @@ map_parameter : EXPR_STRING {
                  current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                      OMPC_map, firstParameter, secondParameter, thirdParameter,
                      OMPC_MAP_TYPE_unspecified, map_ref_modifier_parameter,
-                     firstStringParameter);
+                     firstStringParameter.c_str());
                  static_cast<OpenMPMapClause *>(current_clause)->addItem($1);
                }
               | EXPR_STRING ',' {
                   current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                       OMPC_map, firstParameter, secondParameter, thirdParameter,
                       OMPC_MAP_TYPE_unspecified, map_ref_modifier_parameter,
-                      firstStringParameter);
+                      firstStringParameter.c_str());
                   current_expr_separator = OMPC_CLAUSE_SEP_comma;
                   static_cast<OpenMPMapClause *>(current_clause)->addItem($1);
                 } map_var_list
@@ -3146,7 +3158,7 @@ map_type : MAP_TYPE_TO {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
                  OMPC_MAP_TYPE_to, map_ref_modifier_parameter,
-                 firstStringParameter);
+                 firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3155,7 +3167,7 @@ map_type : MAP_TYPE_TO {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
                  OMPC_MAP_TYPE_from, map_ref_modifier_parameter,
-                 firstStringParameter);
+                 firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3164,7 +3176,7 @@ map_type : MAP_TYPE_TO {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
                  OMPC_MAP_TYPE_tofrom, map_ref_modifier_parameter,
-                 firstStringParameter);
+                 firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3173,7 +3185,7 @@ map_type : MAP_TYPE_TO {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
                  OMPC_MAP_TYPE_storage, map_ref_modifier_parameter,
-                 firstStringParameter);
+                 firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3182,7 +3194,7 @@ map_type : MAP_TYPE_TO {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
                  OMPC_MAP_TYPE_alloc, map_ref_modifier_parameter,
-                 firstStringParameter);
+                 firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3191,7 +3203,7 @@ map_type : MAP_TYPE_TO {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
                  OMPC_MAP_TYPE_release, map_ref_modifier_parameter,
-                 firstStringParameter);
+                 firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3200,7 +3212,7 @@ map_type : MAP_TYPE_TO {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
                  OMPC_MAP_TYPE_delete, map_ref_modifier_parameter,
-                 firstStringParameter);
+                 firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3209,7 +3221,7 @@ map_type : MAP_TYPE_TO {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
                  OMPC_MAP_TYPE_present, map_ref_modifier_parameter,
-                 firstStringParameter);
+                 firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3218,13 +3230,13 @@ map_type : MAP_TYPE_TO {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
                  OMPC_MAP_TYPE_self, map_ref_modifier_parameter,
-                 firstStringParameter);
+                 firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
            }
          ;
-map_modifier_mapper : MAP_MODIFIER_MAPPER '('EXPR_STRING')' { firstStringParameter = $3; }
+map_modifier_mapper : MAP_MODIFIER_MAPPER '('EXPR_STRING')' { firstStringParameter = $3 ? $3 : ""; }
                    ;
 map_modifier_iterator : MAP_MODIFIER_ITERATOR {
                           firstParameter = OMPC_MAP_MODIFIER_iterator;
