@@ -2975,8 +2975,8 @@ allocators_list : TRAITS '(' EXPR_STRING ')' ':' EXPR_STRING {
                             usesAllocator, firstStringParameter,
                             secondStringParameter);
                   }
-                | allocators_list_parameter_enum { firstStringParameter.clear(); ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
-                | allocators_list_parameter_enum '(' EXPR_STRING ')' { firstStringParameter = $3 ? $3 : ""; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
+                | allocators_list_parameter_enum { firstStringParameter.clear(); secondStringParameter.clear(); ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
+                | allocators_list_parameter_enum '(' EXPR_STRING ')' { firstStringParameter = $3 ? $3 : ""; secondStringParameter.clear(); ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
                 | allocators_list_parameter_user { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_user; firstStringParameter.clear(); ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
                 | allocators_list_parameter_user '(' EXPR_STRING ')' { usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_user; firstStringParameter = $3 ? $3 : ""; ((OpenMPUsesAllocatorsClause*)current_clause)->addUsesAllocatorsAllocatorSequence(usesAllocator, firstStringParameter, secondStringParameter); }
                 ;
