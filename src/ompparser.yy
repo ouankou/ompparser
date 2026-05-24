@@ -163,6 +163,15 @@ OpenMPBaseLang user_set_lang = Lang_unknown;
 OpenMPBaseLang auto_lang;
 void setLang(OpenMPBaseLang _lang) { user_set_lang = _lang; };
 
+static inline bool isCLikeOpenMPBaseLang(OpenMPBaseLang lang) {
+  return lang == Lang_C || lang == Lang_Cplusplus;
+}
+
+static inline bool parserLanguageIsCLike() {
+  return isCLikeOpenMPBaseLang(user_set_lang) ||
+         isCLikeOpenMPBaseLang(auto_lang);
+}
+
 /* used for clause normalization control */
 bool normalize_clauses_global = true;
 void setNormalizeClauses(bool normalize) { normalize_clauses_global = normalize; };
@@ -4614,7 +4623,7 @@ type_var : EXPR_STRING {
                    if (auto_lang == Lang_unknown) {
                        auto_lang = Lang_Fortran;
                    }
-               } else if (user_set_lang == Lang_C || auto_lang == Lang_C) { 
+               } else if (parserLanguageIsCLike()) {
                    int length = type_var.length() - 1;
                    for (int i = length; i >= 0; i--) {
                        if (type_var[i] == ' ' || type_var[i] == '*') { 
@@ -4633,7 +4642,7 @@ type_var : EXPR_STRING {
                    YYABORT; 
                }
          } 
-         | declare_mapper_type DOUBLE_COLON declare_mapper_var { if (user_set_lang == Lang_C || auto_lang == Lang_C) yyerror("The syntax should be \"type var\" in C"); YYABORT; }
+         | declare_mapper_type DOUBLE_COLON declare_mapper_var { if (parserLanguageIsCLike()) yyerror("The syntax should be \"type var\" in C"); YYABORT; }
          ;
          
 declare_mapper_type : EXPR_STRING { ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperType($1); }

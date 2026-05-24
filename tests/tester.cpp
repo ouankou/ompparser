@@ -50,9 +50,24 @@ int openFile(std::ifstream &file, const char *filename) {
 int main(int argc, const char *argv[]) {
   const char *filename = nullptr;
   int result = -1;
+  OpenMPBaseLang default_base_lang = Lang_C;
 
-  if (argc > 1)
-    filename = argv[1];
+  for (int arg_idx = 1; arg_idx < argc; ++arg_idx) {
+    const std::string arg = argv[arg_idx];
+    if (arg == "--lang=c") {
+      default_base_lang = Lang_C;
+    } else if (arg == "--lang=c++" || arg == "--lang=cpp" ||
+               arg == "--lang=cxx") {
+      default_base_lang = Lang_Cplusplus;
+    } else if (arg == "--lang=fortran") {
+      default_base_lang = Lang_Fortran;
+    } else if (filename == nullptr) {
+      filename = argv[arg_idx];
+    } else {
+      std::cout << "Unexpected testing argument: " << arg << "\n";
+      return -1;
+    }
+  }
 
   std::ifstream input_file;
   std::ofstream output_file;
@@ -91,7 +106,7 @@ int main(int argc, const char *argv[]) {
   const std::string invalid_marker = "invalid test without paired validation.";
   bool expect_invalid_next = false;
   bool expect_invalid_block = false;
-  OpenMPBaseLang base_lang = Lang_C;
+  OpenMPBaseLang base_lang = default_base_lang;
 
   std::string filename_string = std::string(filename);
   filename_string = filename_string.substr(filename_string.rfind("/") + 1);
@@ -143,7 +158,7 @@ int main(int argc, const char *argv[]) {
       if (is_fortran_directive) {
         base_lang = Lang_Fortran;
       } else {
-        base_lang = Lang_C;
+        base_lang = default_base_lang;
       }
       setLang(base_lang);
 

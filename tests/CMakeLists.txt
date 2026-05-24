@@ -36,10 +36,14 @@ file(GLOB TEST_SUITE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/builtin/*.txt")
 list(SORT TEST_SUITE_FILES)
 foreach(TEST_FILE IN LISTS TEST_SUITE_FILES)
   get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
+  set(TEST_LANG_ARGS)
+  if(TEST_NAME MATCHES "_cplusplus$")
+    set(TEST_LANG_ARGS "--lang=c++")
+  endif()
   add_test(NAME builtin_${TEST_NAME}
            COMMAND ${CMAKE_COMMAND} -E env
                    "${OMPPARSER_TEST_LD_LIBRARY_PATH}"
-                   $<TARGET_FILE:tester> "${TEST_FILE}"
+                   $<TARGET_FILE:tester> ${TEST_LANG_ARGS} "${TEST_FILE}"
            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endforeach()
 
