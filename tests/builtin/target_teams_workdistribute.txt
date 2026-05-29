@@ -1,0 +1,13 @@
+/*
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
+ * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
+ * and Lawrence Livermore National Security, LLC.
+ *
+ * SPDX-License-Identifier: (BSD-3-Clause)
+ */
+
+#pragma omp target teams workdistribute collapse(2) lastprivate(x) order(concurrent)
+PASS: #pragma omp target teams workdistribute collapse(2) lastprivate (x) order (concurrent)
+
+!$omp target teams workdistribute collapse(2) lastprivate(x) order(concurrent)
+PASS: !$omp target teams workdistribute collapse(2) lastprivate (x) order (concurrent)

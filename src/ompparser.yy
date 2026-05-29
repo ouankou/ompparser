@@ -3974,7 +3974,26 @@ target_teams_workdistribute_clause_seq : target_teams_workdistribute_clause
                                        | target_teams_workdistribute_clause_seq target_teams_workdistribute_clause
                                        | target_teams_workdistribute_clause_seq ',' target_teams_workdistribute_clause
                                        ;
-target_teams_workdistribute_clause : target_teams_clause
+target_teams_workdistribute_clause : if_target_clause
+                                   | device_clause
+                                   | private_clause
+                                   | firstprivate_clause
+                                   | in_reduction_clause
+                                   | map_clause
+                                   | is_device_ptr_clause
+                                   | defaultmap_clause
+                                   | nowait_clause
+                                   | allocate_clause
+                                   | depend_with_modifier_clause
+                                   | uses_allocators_clause
+                                   | num_teams_clause
+                                   | thread_limit_clause
+                                   | default_clause
+                                   | shared_clause
+                                   | reduction_clause
+                                   | lastprivate_clause
+                                   | collapse_clause
+                                   | order_clause
                                    ;
 target_teams_distribute_directive : TARGET TEAMS DISTRIBUTE{
                         current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_target_teams_distribute);
