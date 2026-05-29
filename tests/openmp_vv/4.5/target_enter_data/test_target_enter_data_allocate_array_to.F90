@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp             target enter data map(to: my1DPtr(:))
 !$omp             target map(tofrom: my1DArr)
 !$omp             end target

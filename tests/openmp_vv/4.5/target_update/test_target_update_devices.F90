@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp          target enter data map (alloc: h_matrix)
 !$omp          target update to(h_matrix)
 !$omp          target map(alloc: h_matrix) map(tofrom: isHost(dev))

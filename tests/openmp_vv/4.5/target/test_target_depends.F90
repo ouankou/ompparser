@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp             target depend(out: dep_1) map(tofrom: dep_1(1:1024))
 !$omp             end target
 !$omp             target depend(out: dep_2) map(tofrom: dep_2(1:1024))

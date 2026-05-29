@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp     target teams num_teams(8                     ) thread_limit(8)map(tofrom: x, y, z, num_teams)
 !$omp     loop private(j)
 !$omp     end loop

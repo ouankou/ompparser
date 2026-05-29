@@ -310,6 +310,7 @@ corresponding C type is union name defaults to YYSTYPE.
 
 %token  OMP OMPX PARALLEL FOR DO DECLARE DISTRIBUTE LOOP SCAN SECTIONS SECTION SINGLE CANCEL TASKGROUP CANCELLATION POINT THREAD VARIANT THREADPRIVATE METADIRECTIVE MAPPER
         IF NUM_THREADS DEFAULT PRIVATE FIRSTPRIVATE SAVED SHARED COPYIN REDUCTION PROC_BIND ALLOCATE SIMD TASK LASTPRIVATE WHEN MATCH PARTIAL FULL
+%token  FIRSTPRIVATE_MODIFIER_PARALLEL FIRSTPRIVATE_MODIFIER_FOR FIRSTPRIVATE_MODIFIER_DO FIRSTPRIVATE_MODIFIER_DISTRIBUTE FIRSTPRIVATE_MODIFIER_SECTIONS FIRSTPRIVATE_MODIFIER_SINGLE FIRSTPRIVATE_MODIFIER_SCOPE FIRSTPRIVATE_MODIFIER_TARGET FIRSTPRIVATE_MODIFIER_TASK FIRSTPRIVATE_MODIFIER_TASKLOOP FIRSTPRIVATE_MODIFIER_TEAMS
         LINEAR SCHEDULE COLLAPSE NOWAIT ORDER ORDERED MODIFIER_CONDITIONAL MODIFIER_MONOTONIC MODIFIER_NONMONOTONIC STATIC DYNAMIC GUIDED AUTO RUNTIME MODOFIER_VAL MODOFIER_REF MODOFIER_UVAL MODIFIER_SIMD
         SAFELEN SIMDLEN ALIGNED ALIGN NONTEMPORAL UNIFORM INBRANCH NOTINBRANCH DIST_SCHEDULE BIND INCLUSIVE EXCLUSIVE COPYPRIVATE ALLOCATOR INITIALIZER OMP_PRIV IDENTIFIER_DEFAULT WORKSHARE/*YAYING*/
         NONE MASTER PRIMARY CLOSE SPREAD MODIFIER_INSCAN MODIFIER_TASK MODIFIER_DEFAULT 
@@ -351,6 +352,7 @@ corresponding C type is union name defaults to YYSTYPE.
 %type <stype> expression
 %type <itype> init_depinfo_kind
 %type <itype> directive_name
+%type <itype> firstprivate_directive_name_modifier
 
 /* start point for the parsing */
 %start openmp_directive
@@ -589,6 +591,7 @@ openmp_directive : parallel_directive
 	                 | target_teams_distribute_simd_directive
 	                 | target_teams_loop_directive
 	                 | target_teams_loop_simd_directive
+	                 | target_teams_workdistribute_directive
 	                 | target_teams_distribute_parallel_for_directive
 	                 | target_teams_distribute_parallel_for_simd_directive
 	                 | target_teams_distribute_parallel_loop_directive
@@ -699,6 +702,7 @@ variant_directive : parallel_do_directive
 	                  | target_teams_distribute_parallel_loop_simd_directive
 	                  | target_teams_loop_directive
 	                  | target_teams_loop_simd_directive
+	                  | target_teams_workdistribute_directive
 	                  | target_teams_directive
 	                  | target_loop_directive
 	                  | target_loop_simd_directive
@@ -763,6 +767,7 @@ fortran_paired_directive : parallel_directive
                          | target_teams_distribute_directive
                          | target_teams_distribute_simd_directive
                          | target_teams_loop_directive
+                         | target_teams_workdistribute_directive
                          | target_teams_distribute_parallel_do_directive
                          | target_teams_distribute_parallel_do_simd_directive
                          | unroll_directive
@@ -3957,6 +3962,20 @@ target_teams_clause : if_target_clause
                     | shared_clause
                     | reduction_default_only_clause
                     ;
+target_teams_workdistribute_directive : TARGET TEAMS WORKDISTRIBUTE{
+                        current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_target_teams_workdistribute);
+                                         }
+                     target_teams_workdistribute_clause_optseq
+                       ;
+target_teams_workdistribute_clause_optseq : /* empty */
+                                          | target_teams_workdistribute_clause_seq
+                                          ;
+target_teams_workdistribute_clause_seq : target_teams_workdistribute_clause
+                                       | target_teams_workdistribute_clause_seq target_teams_workdistribute_clause
+                                       | target_teams_workdistribute_clause_seq ',' target_teams_workdistribute_clause
+                                       ;
+target_teams_workdistribute_clause : target_teams_clause
+                                   ;
 target_teams_distribute_directive : TARGET TEAMS DISTRIBUTE{
                         current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_target_teams_distribute);
                                          }
@@ -5805,6 +5824,17 @@ firstprivate_parameter : {
                             firstprivate_clause->setSaved(false);
                           }
                         } var_list
+                      | firstprivate_directive_name_modifier {
+                          if (current_clause != nullptr) {
+                            current_clause->setDirectiveNameModifier(
+                                static_cast<OpenMPDirectiveKind>($1));
+                          }
+                          auto *firstprivate_clause =
+                              dynamic_cast<OpenMPFirstprivateClause *>(current_clause);
+                          if (firstprivate_clause != nullptr) {
+                            firstprivate_clause->setSaved(false);
+                          }
+                        } var_list
                       | SAVED ':' {
                           auto *firstprivate_clause =
                               dynamic_cast<OpenMPFirstprivateClause *>(current_clause);
@@ -5813,6 +5843,40 @@ firstprivate_parameter : {
                           }
                         } var_list
                       ;
+firstprivate_directive_name_modifier : FIRSTPRIVATE_MODIFIER_PARALLEL {
+                                         $$ = OMPD_parallel;
+                                       }
+                                     | FIRSTPRIVATE_MODIFIER_FOR {
+                                         $$ = OMPD_for;
+                                       }
+                                     | FIRSTPRIVATE_MODIFIER_DO {
+                                         $$ = OMPD_do;
+                                       }
+                                     | FIRSTPRIVATE_MODIFIER_DISTRIBUTE {
+                                         $$ = OMPD_distribute;
+                                       }
+                                     | FIRSTPRIVATE_MODIFIER_SECTIONS {
+                                         $$ = OMPD_sections;
+                                       }
+                                     | FIRSTPRIVATE_MODIFIER_SINGLE {
+                                         $$ = OMPD_single;
+                                       }
+                                     | FIRSTPRIVATE_MODIFIER_SCOPE {
+                                         $$ = OMPD_scope;
+                                       }
+                                     | FIRSTPRIVATE_MODIFIER_TARGET {
+                                         $$ = OMPD_target;
+                                       }
+                                     | FIRSTPRIVATE_MODIFIER_TASK {
+                                         $$ = OMPD_task;
+                                       }
+                                     | FIRSTPRIVATE_MODIFIER_TASKLOOP {
+                                         $$ = OMPD_taskloop;
+                                       }
+                                     | FIRSTPRIVATE_MODIFIER_TEAMS {
+                                         $$ = OMPD_teams;
+                                       }
+                                     ;
 
 copyprivate_clause : COPYPRIVATE {
                            current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_copyprivate);

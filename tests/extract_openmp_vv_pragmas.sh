@@ -20,10 +20,10 @@
 # 6. Report the total number of pragmas extracted
 #
 # Extracted from OpenMP_VV repository:
-# Commit: 49ad6cbd5281c461447c3c18272e4371496b8981
-# Date:   2025-10-23 13:16:43
+# Commit: 4843b5ad559ea45ad94e5c6e22c9baf0fe54d6b5
+# Date:   2026-03-05 13:43:56
 #
-# Last extraction: 2025-11-05 21:25:59
+# Last extraction: 2026-05-29 22:49:12
 #
 
 set -euo pipefail
@@ -34,7 +34,9 @@ REPO_URL="https://github.com/OpenMP-Validation-and-Verification/OpenMP_VV"
 REPO_PATH="build/openmp_vv"
 TESTS_DIR="tests"
 OUTPUT_DIR="tests/openmp_vv"
-REQUIRED_MIN_PRAGMAS=6687
+# Source-origin-filtered extraction excludes boilerplate directives from
+# OpenMP_VV/ompvv support headers/modules.
+EXPECTED_PRAGMAS=3589
 
 # Colors for output
 RED='\033[0;31m'
@@ -114,9 +116,13 @@ else
     git fetch origin || {
         echo -e "${YELLOW}Warning: Failed to fetch updates${NC}"
     }
-    git reset --hard origin/main || git reset --hard origin/master || {
+    if git rev-parse --verify --quiet origin/main >/dev/null; then
+        git reset --hard origin/main
+    elif git rev-parse --verify --quiet origin/master >/dev/null; then
+        git reset --hard origin/master
+    else
         echo -e "${YELLOW}Warning: Failed to reset to latest${NC}"
-    }
+    fi
     cd - >/dev/null
     echo -e "${GREEN}✓${NC} Updated successfully"
 fi
@@ -141,6 +147,54 @@ mapfile -t source_files < <(find "$REPO_PATH/$TESTS_DIR" -type f \( \
     \) | sort)
 echo "Found ${#source_files[@]} source files"
 echo ""
+
+TESTS_ROOT_ABS=$(realpath -m "$REPO_PATH/$TESTS_DIR")
+TESTS_ROOT_REL="$REPO_PATH/$TESTS_DIR"
+
+filter_test_source_pragmas() {
+    local directive_regex="$1"
+    awk -v tests_root_abs="$TESTS_ROOT_ABS" \
+        -v tests_root_rel="$TESTS_ROOT_REL" \
+        -v directive_regex="$directive_regex" '
+        function normalize_marker_path(path) {
+            while (path ~ /^\.\//) {
+                sub(/^\.\//, "", path)
+            }
+            return path
+        }
+        function is_test_source(path) {
+            path = normalize_marker_path(path)
+            return path == tests_root_abs || index(path, tests_root_abs "/") == 1 ||
+                   path == tests_root_rel || index(path, tests_root_rel "/") == 1
+        }
+        function set_source_from_marker(line, path) {
+            path = line
+            if (path ~ /^#line[[:space:]]+"/) {
+                sub(/^#line[[:space:]]+"/, "", path)
+                sub(/".*/, "", path)
+                in_test_source = is_test_source(path)
+                return 1
+            }
+            if (path ~ /^#[[:space:]]+[0-9]+[[:space:]]+"/) {
+                sub(/^#[[:space:]]+[0-9]+[[:space:]]+"/, "", path)
+                sub(/".*/, "", path)
+                in_test_source = is_test_source(path)
+                return 1
+            }
+            return 0
+        }
+        BEGIN {
+            in_test_source = 1
+        }
+        {
+            if (set_source_from_marker($0)) {
+                next
+            }
+            if (in_test_source && $0 ~ directive_regex) {
+                print
+            }
+        }'
+}
 
 # Extract pragmas
 echo "Extracting pragmas..."
@@ -169,15 +223,18 @@ for file in "${source_files[@]}"; do
     pragmas=()
     if [ $is_fortran -eq 1 ]; then
         # Fortran file
-        preprocessed=$("$REQUIRED_FC" -E -P -fopenmp "${include_flags[@]}" "$file" 2>/dev/null || true)
+        preprocessed=$("$REQUIRED_FC" -E -fopenmp "${include_flags[@]}" "$file" 2>/dev/null || true)
 
         if [ -z "$preprocessed" ]; then
             continue
         fi
 
-        # Extract Fortran directives and merge continuations
+        # Extract Fortran directives from real OpenMP_VV test sources and
+        # merge continuations. This keeps directives from included test files,
+        # but filters out boilerplate from ompvv/ support modules.
         raw_pragmas=()
-        IFS=$'\n' read -r -d '' -a raw_pragmas < <(echo "$preprocessed" | grep -iE '^[[:space:]]*[!cC*]\$ompx?' || true; printf '\0')
+        mapfile -t raw_pragmas < <(
+            filter_test_source_pragmas '^[[:space:]]*[!cC*][$]ompx?' <<< "$preprocessed")
 
         if [ ${#raw_pragmas[@]} -gt 0 ]; then
             current=""
@@ -219,14 +276,17 @@ for file in "${source_files[@]}"; do
                 ;;
         esac
 
-        preprocessed=$("$preprocessor" -E -P -CC -fopenmp "${include_flags[@]}" "$file" 2>/dev/null || true)
+        preprocessed=$("$preprocessor" -E -CC -fopenmp "${include_flags[@]}" "$file" 2>/dev/null || true)
 
         if [ -z "$preprocessed" ]; then
             continue
         fi
 
-        # Extract pragmas
-        mapfile -t pragmas < <(echo "$preprocessed" | grep -E '^[[:space:]]*#pragma[[:space:]]+omp' || true)
+        # Extract pragmas from real OpenMP_VV test sources. This preserves
+        # directives expanded at the test call site while dropping support
+        # header boilerplate.
+        mapfile -t pragmas < <(
+            filter_test_source_pragmas '^[[:space:]]*#pragma[[:space:]]+omp' <<< "$preprocessed")
     fi
 
     # Save all pragmas to a file matching upstream structure
@@ -258,15 +318,15 @@ echo "Total pragmas extracted: $total_pragmas"
 echo "Output directory:        $OUTPUT_DIR"
 echo ""
 
-# Check if we got enough pragmas
-if [ $total_pragmas -lt $REQUIRED_MIN_PRAGMAS ]; then
-    echo -e "${RED}ERROR: Only extracted $total_pragmas pragmas (expected at least $REQUIRED_MIN_PRAGMAS)${NC}"
-    echo -e "${RED}This indicates the extraction did not work correctly.${NC}"
-    echo -e "${RED}Make sure you are using LLVM 20 toolchain!${NC}"
+# Check if we got the expected source-origin-filtered pragma inventory
+if [ $total_pragmas -ne $EXPECTED_PRAGMAS ]; then
+    echo -e "${RED}ERROR: Extracted $total_pragmas pragmas (expected exactly $EXPECTED_PRAGMAS)${NC}"
+    echo -e "${RED}This indicates the OpenMP_VV suite or extraction logic changed.${NC}"
+    echo -e "${RED}Make sure you are using LLVM ${LLVM_VERSION} toolchain!${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓${NC} Successfully extracted $total_pragmas pragmas (minimum $REQUIRED_MIN_PRAGMAS required)"
+echo -e "${GREEN}✓${NC} Successfully extracted expected pragma count: $total_pragmas"
 echo ""
 
 # Update this script's header with commit information

@@ -1,7 +1,3 @@
-#pragma omp begin declare variant match(device={kind(host)})
-#pragma omp end declare variant
-#pragma omp begin declare variant match(device={kind(nohost)})
-#pragma omp end declare variant
 #pragma omp declare variant(p_fn) match(construct = {parallel})
 #pragma omp declare variant(t_fn) match(construct = {target})
 #pragma omp for

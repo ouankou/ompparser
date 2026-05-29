@@ -105,6 +105,8 @@ public:
 protected:
   OpenMPClauseKind kind;
   OpenMPDirectiveKind directive_kind = OMPD_unknown;
+  bool has_directive_name_modifier = false;
+  OpenMPDirectiveKind directive_name_modifier = OMPD_unknown;
   // the clause position in the vector of clauses in original order
   int clause_position = -1;
   // flag to allow duplicate expressions (e.g., sizes(4, 4))
@@ -138,6 +140,14 @@ public:
   OpenMPClauseKind getKind() { return kind; };
   OpenMPDirectiveKind getDirectiveKind() const { return directive_kind; }
   void setDirectiveKind(OpenMPDirectiveKind value) { directive_kind = value; }
+  void setDirectiveNameModifier(OpenMPDirectiveKind value) {
+    has_directive_name_modifier = true;
+    directive_name_modifier = value;
+  }
+  bool hasDirectiveNameModifier() const { return has_directive_name_modifier; }
+  OpenMPDirectiveKind getDirectiveNameModifier() const {
+    return directive_name_modifier;
+  }
   int getClausePosition() { return clause_position; };
   void setClausePosition(int _clause_position) {
     clause_position = _clause_position;

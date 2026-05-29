@@ -34,6 +34,14 @@ std::string getDirectiveSpelling(OpenMPDirectiveKind kind) {
   return std::string();
 }
 
+std::string getDirectiveNameModifierSpelling(OpenMPDirectiveKind kind) {
+  std::string result = getDirectiveSpelling(kind);
+  while (!result.empty() && result.back() == ' ') {
+    result.pop_back();
+  }
+  return result;
+}
+
 std::string getClauseSpelling(OpenMPClauseKind kind) {
   switch (kind) {
 #define OPENMP_CLAUSE(Name, Class)                                             \
@@ -415,6 +423,14 @@ std::string OpenMPClause::toString() {
   }
 
   std::string clause_string = "(";
+  if (this->hasDirectiveNameModifier()) {
+    std::string modifier =
+        getDirectiveNameModifierSpelling(this->getDirectiveNameModifier());
+    if (!modifier.empty()) {
+      clause_string += modifier;
+      clause_string += ": ";
+    }
+  }
   clause_string += this->expressionToString();
   clause_string += ")";
   if (clause_string.size() > 2) {
@@ -1526,6 +1542,14 @@ std::string OpenMPFirstprivateClause::toString() {
 
   bool current_chunk_saved = saved_statuses.empty() ? false : saved_statuses[0];
   std::string current_chunk_str = "firstprivate(";
+  if (hasDirectiveNameModifier()) {
+    std::string modifier =
+        getDirectiveNameModifierSpelling(getDirectiveNameModifier());
+    if (!modifier.empty()) {
+      current_chunk_str += modifier;
+      current_chunk_str += ": ";
+    }
+  }
   if (current_chunk_saved) {
     current_chunk_str += "saved: ";
   }
@@ -1542,6 +1566,14 @@ std::string OpenMPFirstprivateClause::toString() {
         // Start new chunk
         current_chunk_saved = is_saved;
         current_chunk_str = "firstprivate(";
+        if (hasDirectiveNameModifier()) {
+          std::string modifier =
+              getDirectiveNameModifierSpelling(getDirectiveNameModifier());
+          if (!modifier.empty()) {
+            current_chunk_str += modifier;
+            current_chunk_str += ": ";
+          }
+        }
         if (current_chunk_saved) {
           current_chunk_str += "saved: ";
         }

@@ -924,6 +924,17 @@ cgroup                    { return CGROUP; }
 
 <FIRSTPRIVATE_STATE>"("                     { return '('; }
 <FIRSTPRIVATE_STATE>")"                     { yy_pop_state(); return ')'; }
+<FIRSTPRIVATE_STATE>distribute{blank}*":"   { return FIRSTPRIVATE_MODIFIER_DISTRIBUTE; }
+<FIRSTPRIVATE_STATE>parallel{blank}*":"     { return FIRSTPRIVATE_MODIFIER_PARALLEL; }
+<FIRSTPRIVATE_STATE>sections{blank}*":"     { return FIRSTPRIVATE_MODIFIER_SECTIONS; }
+<FIRSTPRIVATE_STATE>single{blank}*":"       { return FIRSTPRIVATE_MODIFIER_SINGLE; }
+<FIRSTPRIVATE_STATE>target{blank}*":"       { return FIRSTPRIVATE_MODIFIER_TARGET; }
+<FIRSTPRIVATE_STATE>taskloop{blank}*":"     { return FIRSTPRIVATE_MODIFIER_TASKLOOP; }
+<FIRSTPRIVATE_STATE>task{blank}*":"         { return FIRSTPRIVATE_MODIFIER_TASK; }
+<FIRSTPRIVATE_STATE>teams{blank}*":"        { return FIRSTPRIVATE_MODIFIER_TEAMS; }
+<FIRSTPRIVATE_STATE>scope{blank}*":"        { return FIRSTPRIVATE_MODIFIER_SCOPE; }
+<FIRSTPRIVATE_STATE>for{blank}*":"          { return FIRSTPRIVATE_MODIFIER_FOR; }
+<FIRSTPRIVATE_STATE>do{blank}*":"           { return FIRSTPRIVATE_MODIFIER_DO; }
 <FIRSTPRIVATE_STATE>saved{blank}*/:         { return SAVED; }
 <FIRSTPRIVATE_STATE>":"                     { return ':'; }
 <FIRSTPRIVATE_STATE>{blank}*                { ; }

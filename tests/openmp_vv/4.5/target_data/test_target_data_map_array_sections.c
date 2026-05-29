@@ -1,7 +1,3 @@
-#pragma omp begin declare variant match(device={kind(host)})
-#pragma omp end declare variant
-#pragma omp begin declare variant match(device={kind(nohost)})
-#pragma omp end declare variant
 #pragma omp target data map(from: a1d[1:1000 - 2])
 #pragma omp target map(alloc: a1d[1:1000 - 2])
 #pragma omp target data map(from: a2d[1:1000 - 2][0:2])

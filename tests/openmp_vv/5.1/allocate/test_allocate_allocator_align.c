@@ -1,7 +1,3 @@
-#pragma omp begin declare variant match(device={kind(host)})
-#pragma omp end declare variant
-#pragma omp begin declare variant match(device={kind(nohost)})
-#pragma omp end declare variant
 #pragma omp allocate(x) allocator(omp_default_mem_alloc) align(64)
 #pragma omp target map(from:x[:1024])
 #pragma omp parallel for simd simdlen(16) aligned(x: 64)

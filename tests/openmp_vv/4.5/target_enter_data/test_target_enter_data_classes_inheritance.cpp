@@ -1,7 +1,3 @@
-#pragma omp begin declare variant match(device={kind(host)})
-#pragma omp end declare variant
-#pragma omp begin declare variant match(device={kind(nohost)})
-#pragma omp end declare variant
 #pragma omp target enter data map(to:solutionPtr[0:1]) if(not_mapped)
 #pragma omp target exit data map(delete: solutionPtr[0:1]) if(not_mapped)
 #pragma omp target enter data map(to:solutionX[0:n], cpy_n)

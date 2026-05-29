@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp             target data map(from: h_array_h(1:1000), h_array_s(1:1000))
 !$omp               target map(tofrom: aux_array)
 !$omp               end target

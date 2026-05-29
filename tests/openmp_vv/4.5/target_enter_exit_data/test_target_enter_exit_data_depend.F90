@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp          task depend(out: in_1_ptr) shared(in_1_ptr)
 !$omp          end task
 !$omp          task depend(out: in_2_ptr) shared(in_2_ptr)
