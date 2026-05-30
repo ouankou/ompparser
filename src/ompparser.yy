@@ -310,7 +310,7 @@ corresponding C type is union name defaults to YYSTYPE.
 
 %token  OMP OMPX PARALLEL FOR DO DECLARE DISTRIBUTE LOOP SCAN SECTIONS SECTION SINGLE CANCEL TASKGROUP CANCELLATION POINT THREAD VARIANT THREADPRIVATE METADIRECTIVE MAPPER
         IF NUM_THREADS DEFAULT PRIVATE FIRSTPRIVATE SAVED SHARED COPYIN REDUCTION PROC_BIND ALLOCATE SIMD TASK LASTPRIVATE WHEN MATCH PARTIAL FULL
-%token  FIRSTPRIVATE_MODIFIER_PARALLEL FIRSTPRIVATE_MODIFIER_FOR FIRSTPRIVATE_MODIFIER_DO FIRSTPRIVATE_MODIFIER_DISTRIBUTE FIRSTPRIVATE_MODIFIER_SECTIONS FIRSTPRIVATE_MODIFIER_SINGLE FIRSTPRIVATE_MODIFIER_SCOPE FIRSTPRIVATE_MODIFIER_TARGET FIRSTPRIVATE_MODIFIER_TASK FIRSTPRIVATE_MODIFIER_TASKLOOP FIRSTPRIVATE_MODIFIER_TEAMS
+%token  FIRSTPRIVATE_MODIFIER_PARALLEL FIRSTPRIVATE_MODIFIER_FOR FIRSTPRIVATE_MODIFIER_DO FIRSTPRIVATE_MODIFIER_DISTRIBUTE FIRSTPRIVATE_MODIFIER_SECTIONS FIRSTPRIVATE_MODIFIER_SINGLE FIRSTPRIVATE_MODIFIER_SCOPE FIRSTPRIVATE_MODIFIER_TARGET FIRSTPRIVATE_MODIFIER_TARGET_DATA FIRSTPRIVATE_MODIFIER_TASK FIRSTPRIVATE_MODIFIER_TASKLOOP FIRSTPRIVATE_MODIFIER_TEAMS
         LINEAR SCHEDULE COLLAPSE NOWAIT ORDER ORDERED MODIFIER_CONDITIONAL MODIFIER_MONOTONIC MODIFIER_NONMONOTONIC STATIC DYNAMIC GUIDED AUTO RUNTIME MODOFIER_VAL MODOFIER_REF MODOFIER_UVAL MODIFIER_SIMD
         SAFELEN SIMDLEN ALIGNED ALIGN NONTEMPORAL UNIFORM INBRANCH NOTINBRANCH DIST_SCHEDULE BIND INCLUSIVE EXCLUSIVE COPYPRIVATE ALLOCATOR INITIALIZER OMP_PRIV IDENTIFIER_DEFAULT WORKSHARE/*YAYING*/
         NONE MASTER PRIMARY CLOSE SPREAD MODIFIER_INSCAN MODIFIER_TASK MODIFIER_DEFAULT 
@@ -5849,23 +5849,33 @@ firstprivate_parameter : {
                             firstprivate_clause->setSaved(false);
                           }
                         } var_list
-                      | firstprivate_directive_name_modifier {
+                      | {
+                          auto *firstprivate_clause =
+                              dynamic_cast<OpenMPFirstprivateClause *>(current_clause);
+                          if (firstprivate_clause != nullptr) {
+                            firstprivate_clause->clearCurrentDirectiveNameModifier();
+                            firstprivate_clause->setSaved(false);
+                          }
+                        } firstprivate_modifier_specification_list ':' var_list
+                      ;
+firstprivate_modifier_specification_list : firstprivate_modifier_specification
+                                         | firstprivate_modifier_specification_list ',' firstprivate_modifier_specification
+                                         ;
+firstprivate_modifier_specification : firstprivate_directive_name_modifier {
                           auto *firstprivate_clause =
                               dynamic_cast<OpenMPFirstprivateClause *>(current_clause);
                           if (firstprivate_clause != nullptr) {
                             firstprivate_clause->setCurrentDirectiveNameModifier(
                                 static_cast<OpenMPDirectiveKind>($1));
-                            firstprivate_clause->setSaved(false);
                           }
-                        } var_list
-                      | SAVED ':' {
+                        }
+                      | SAVED {
                           auto *firstprivate_clause =
                               dynamic_cast<OpenMPFirstprivateClause *>(current_clause);
                           if (firstprivate_clause != nullptr) {
-                            firstprivate_clause->clearCurrentDirectiveNameModifier();
                             firstprivate_clause->setSaved();
                           }
-                        } var_list
+                        }
                       ;
 firstprivate_directive_name_modifier : FIRSTPRIVATE_MODIFIER_PARALLEL {
                                          $$ = OMPD_parallel;
@@ -5890,6 +5900,9 @@ firstprivate_directive_name_modifier : FIRSTPRIVATE_MODIFIER_PARALLEL {
                                        }
                                      | FIRSTPRIVATE_MODIFIER_TARGET {
                                          $$ = OMPD_target;
+                                       }
+                                     | FIRSTPRIVATE_MODIFIER_TARGET_DATA {
+                                         $$ = OMPD_target_data;
                                        }
                                      | FIRSTPRIVATE_MODIFIER_TASK {
                                          $$ = OMPD_task;

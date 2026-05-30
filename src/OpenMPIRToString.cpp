@@ -1544,15 +1544,23 @@ std::string OpenMPFirstprivateClause::toString() {
                                bool has_modifier,
                                OpenMPDirectiveKind modifier_kind) {
     chunk = "firstprivate(";
+    bool emitted_modifier = false;
     if (has_modifier) {
       std::string modifier = getDirectiveNameModifierSpelling(modifier_kind);
       if (!modifier.empty()) {
         chunk += modifier;
-        chunk += ": ";
+        emitted_modifier = true;
       }
     }
     if (is_saved) {
-      chunk += "saved: ";
+      if (emitted_modifier) {
+        chunk += ", ";
+      }
+      chunk += "saved";
+      emitted_modifier = true;
+    }
+    if (emitted_modifier) {
+      chunk += ": ";
     }
   };
 
