@@ -12,6 +12,9 @@ project(ompparser)
 include(CTest)
 
 option(OMPPARSER_BUILD_TESTING "Build ompparser's standalone tests." ${BUILD_TESTING})
+if(OMPPARSER_BUILD_TESTING)
+  enable_testing()
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

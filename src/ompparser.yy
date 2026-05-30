@@ -2481,6 +2481,8 @@ workdistribute_clause : private_clause
                       | allocate_clause
                       | collapse_clause
                       | order_clause
+                      | dist_schedule_clause
+                      | induction_clause
                       ;
 fuse_clause_seq : fuse_clause
                 | fuse_clause_seq fuse_clause
@@ -3994,6 +3996,8 @@ target_teams_workdistribute_clause : if_target_clause
                                    | lastprivate_clause
                                    | collapse_clause
                                    | order_clause
+                                   | dist_schedule_clause
+                                   | induction_clause
                                    ;
 target_teams_distribute_directive : TARGET TEAMS DISTRIBUTE{
                         current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_target_teams_distribute);

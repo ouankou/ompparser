@@ -9,5 +9,11 @@
 #pragma omp target teams workdistribute collapse(2) lastprivate(x) order(concurrent)
 PASS: #pragma omp target teams workdistribute collapse(2) lastprivate (x) order (concurrent)
 
+#pragma omp target teams workdistribute dist_schedule(static) induction(step(i + 1), j : k)
+PASS: #pragma omp target teams workdistribute dist_schedule (static) induction(step(i+1), j: k)
+
 !$omp target teams workdistribute collapse(2) lastprivate(x) order(concurrent)
 PASS: !$omp target teams workdistribute collapse(2) lastprivate (x) order (concurrent)
+
+!$omp target teams workdistribute dist_schedule(static) induction(step(i + 1), j : k)
+PASS: !$omp target teams workdistribute dist_schedule (static) induction(step(i+1), j: k)
