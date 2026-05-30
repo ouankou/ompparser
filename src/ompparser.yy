@@ -5828,6 +5828,11 @@ private_clause : PRIVATE {
 
 firstprivate_clause : FIRSTPRIVATE {
                          current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_firstprivate);
+                         auto *firstprivate_clause =
+                             dynamic_cast<OpenMPFirstprivateClause *>(current_clause);
+                         if (firstprivate_clause != nullptr) {
+                           firstprivate_clause->clearCurrentDirectiveNameModifier();
+                         }
                          if (!current_clause->getExpressions()->empty()) {
                            current_expr_separator = OMPC_CLAUSE_SEP_comma;
                          } else {
@@ -5840,17 +5845,16 @@ firstprivate_parameter : {
                           auto *firstprivate_clause =
                               dynamic_cast<OpenMPFirstprivateClause *>(current_clause);
                           if (firstprivate_clause != nullptr) {
+                            firstprivate_clause->clearCurrentDirectiveNameModifier();
                             firstprivate_clause->setSaved(false);
                           }
                         } var_list
                       | firstprivate_directive_name_modifier {
-                          if (current_clause != nullptr) {
-                            current_clause->setDirectiveNameModifier(
-                                static_cast<OpenMPDirectiveKind>($1));
-                          }
                           auto *firstprivate_clause =
                               dynamic_cast<OpenMPFirstprivateClause *>(current_clause);
                           if (firstprivate_clause != nullptr) {
+                            firstprivate_clause->setCurrentDirectiveNameModifier(
+                                static_cast<OpenMPDirectiveKind>($1));
                             firstprivate_clause->setSaved(false);
                           }
                         } var_list
@@ -5858,6 +5862,7 @@ firstprivate_parameter : {
                           auto *firstprivate_clause =
                               dynamic_cast<OpenMPFirstprivateClause *>(current_clause);
                           if (firstprivate_clause != nullptr) {
+                            firstprivate_clause->clearCurrentDirectiveNameModifier();
                             firstprivate_clause->setSaved();
                           }
                         } var_list

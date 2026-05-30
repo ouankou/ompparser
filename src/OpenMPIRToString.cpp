@@ -1540,46 +1540,53 @@ std::string OpenMPFirstprivateClause::toString() {
     return "";
   }
 
-  bool current_chunk_saved = saved_statuses.empty() ? false : saved_statuses[0];
-  std::string current_chunk_str = "firstprivate(";
-  if (hasDirectiveNameModifier()) {
-    std::string modifier =
-        getDirectiveNameModifierSpelling(getDirectiveNameModifier());
-    if (!modifier.empty()) {
-      current_chunk_str += modifier;
-      current_chunk_str += ": ";
+  auto appendChunkPrefix = [&](std::string &chunk, bool is_saved,
+                               bool has_modifier,
+                               OpenMPDirectiveKind modifier_kind) {
+    chunk = "firstprivate(";
+    if (has_modifier) {
+      std::string modifier = getDirectiveNameModifierSpelling(modifier_kind);
+      if (!modifier.empty()) {
+        chunk += modifier;
+        chunk += ": ";
+      }
     }
-  }
-  if (current_chunk_saved) {
-    current_chunk_str += "saved: ";
-  }
+    if (is_saved) {
+      chunk += "saved: ";
+    }
+  };
+
+  bool current_chunk_saved = saved_statuses.empty() ? false : saved_statuses[0];
+  bool current_chunk_has_modifier = expressionHasDirectiveNameModifier(0);
+  OpenMPDirectiveKind current_chunk_modifier =
+      getExpressionDirectiveNameModifier(0);
+  std::string current_chunk_str;
+  appendChunkPrefix(current_chunk_str, current_chunk_saved,
+                    current_chunk_has_modifier, current_chunk_modifier);
 
   for (size_t i = 0; i < expressions.size(); ++i) {
     bool is_saved = (i < saved_statuses.size()) ? saved_statuses[i] : false;
+    bool has_modifier = expressionHasDirectiveNameModifier(i);
+    OpenMPDirectiveKind modifier = getExpressionDirectiveNameModifier(i);
 
     if (i > 0) {
-      if (is_saved != current_chunk_saved) {
+      if (is_saved != current_chunk_saved ||
+          has_modifier != current_chunk_has_modifier ||
+          (has_modifier && modifier != current_chunk_modifier)) {
         // Close current chunk
         current_chunk_str += ")";
         result += current_chunk_str + " ";
 
         // Start new chunk
         current_chunk_saved = is_saved;
-        current_chunk_str = "firstprivate(";
-        if (hasDirectiveNameModifier()) {
-          std::string modifier =
-              getDirectiveNameModifierSpelling(getDirectiveNameModifier());
-          if (!modifier.empty()) {
-            current_chunk_str += modifier;
-            current_chunk_str += ": ";
-          }
-        }
-        if (current_chunk_saved) {
-          current_chunk_str += "saved: ";
-        }
+        current_chunk_has_modifier = has_modifier;
+        current_chunk_modifier = modifier;
+        appendChunkPrefix(current_chunk_str, current_chunk_saved,
+                          current_chunk_has_modifier, current_chunk_modifier);
       } else {
         // Append separator
-        if (expression_separators[i] == OMPC_CLAUSE_SEP_comma) {
+        if (i < expression_separators.size() &&
+            expression_separators[i] == OMPC_CLAUSE_SEP_comma) {
           current_chunk_str += ", ";
         } else {
           current_chunk_str += " ";

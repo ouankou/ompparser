@@ -813,11 +813,47 @@ void OpenMPFirstprivateClause::addLangExpr(const char *expression,
                                            OpenMPClauseSeparator sep, int line,
                                            int col,
                                            OpenMPExprParseMode parse_mode) {
-  size_t old_size = expressions.size();
-  OpenMPClause::addLangExpr(expression, sep, line, col, parse_mode);
-  if (expressions.size() > old_size) {
-    saved_statuses.push_back(current_saved_state);
+  if (expression == nullptr) {
+    return;
   }
+  std::string normalized = normalizeClauseExpression(this->kind, expression);
+  if (!allow_duplicates) {
+    for (size_t i = 0; i < this->expressions.size(); ++i) {
+      const bool same_saved =
+          i < saved_statuses.size() && saved_statuses[i] == current_saved_state;
+      const bool existing_has_modifier = expressionHasDirectiveNameModifier(i);
+      const bool same_modifier =
+          existing_has_modifier == current_has_directive_name_modifier &&
+          (!current_has_directive_name_modifier ||
+           getExpressionDirectiveNameModifier(i) ==
+               current_directive_name_modifier);
+      if (!strcmp(expressions.at(i), normalized.c_str()) && same_saved &&
+          same_modifier) {
+        return;
+      }
+    }
+  }
+
+  const OpenMPExprParseMode effective_parse_mode =
+      resolveClauseExpressionParseMode(this->kind, parse_mode, normalized);
+  const void *expression_node =
+      openmpParseExpressionNode(this->directive_kind, this->kind,
+                                effective_parse_mode, normalized.c_str());
+  size_t length = normalized.size();
+  auto owned_value = std::make_unique<char[]>(length + 1);
+  std::memcpy(owned_value.get(), normalized.c_str(), length + 1);
+  const char *stored_expression = owned_value.get();
+  expressions.push_back(stored_expression);
+  expressionNodes.push_back(expression_node);
+  expression_separators.push_back(sep);
+  owned_expressions.push_back(std::move(owned_value));
+  locations.push_back(SourceLocation(line, col));
+  saved_statuses.push_back(current_saved_state);
+  directive_name_modifier_statuses.push_back(
+      current_has_directive_name_modifier);
+  directive_name_modifiers.push_back(current_has_directive_name_modifier
+                                         ? current_directive_name_modifier
+                                         : OMPD_unknown);
 };
 
 void OpenMPInductionClause::addStepExpression(const char *expression) {
