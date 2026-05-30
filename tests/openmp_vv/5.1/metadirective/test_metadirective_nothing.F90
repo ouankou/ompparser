@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp     target map(tofrom: A, max_num_threads_target, max_num_threads_parallel)
 !$omp     begin metadirective when(device={kind(nohost)}: nothing) when(device={arch("nvptx")}: nothing) when(implementation={vendor(amd)}: nothing) default(parallel do num_threads(max_num_threads_target+1))
 !$omp     end metadirective

@@ -48,7 +48,7 @@ foreach(TEST_FILE IN LISTS TEST_SUITE_FILES)
 endforeach()
 
 # Register OpenMP VV extracted pragma files as CTest tests
-file(GLOB_RECURSE OPENMP_VV_FILES
+file(GLOB_RECURSE OPENMP_VV_FILES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/openmp_vv/*.c"
      "${CMAKE_CURRENT_SOURCE_DIR}/openmp_vv/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/openmp_vv/*.cc"
@@ -70,7 +70,7 @@ foreach(TEST_FILE IN LISTS OPENMP_VV_FILES)
 endforeach()
 
 # Register OpenMP Examples extracted pragma files as CTest tests
-file(GLOB_RECURSE OPENMP_EXAMPLES_FILES
+file(GLOB_RECURSE OPENMP_EXAMPLES_FILES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/openmp_examples/*.c"
      "${CMAKE_CURRENT_SOURCE_DIR}/openmp_examples/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/openmp_examples/*.cc"

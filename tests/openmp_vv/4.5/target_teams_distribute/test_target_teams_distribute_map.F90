@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp     target enter data map(alloc: b(1:1024))
 !$omp     target teams distribute map(to: a(1:1024), b(1:1024))
 !$omp     target exit data map(from: b(1:1024))

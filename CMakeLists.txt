@@ -11,6 +11,10 @@ project(ompparser)
 
 include(CTest)
 
+option(OMPPARSER_BUILD_TESTING "Build ompparser's standalone tests." ${BUILD_TESTING})
+if(OMPPARSER_BUILD_TESTING)
+  enable_testing()
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -75,7 +79,7 @@ target_include_directories(ompparser PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
 
-if(BUILD_TESTING)
+if(OMPPARSER_BUILD_TESTING)
   add_subdirectory(tests)
 endif()
 
@@ -83,7 +87,7 @@ if(OMPPARSER_ENABLE_WASM)
   add_subdirectory(wasm)
 endif()
 
-if(BUILD_TESTING)
+if(OMPPARSER_BUILD_TESTING)
   add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
     DEPENDS tester omp_roundtrip test_locations

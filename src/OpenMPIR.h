@@ -105,6 +105,8 @@ public:
 protected:
   OpenMPClauseKind kind;
   OpenMPDirectiveKind directive_kind = OMPD_unknown;
+  bool has_directive_name_modifier = false;
+  OpenMPDirectiveKind directive_name_modifier = OMPD_unknown;
   // the clause position in the vector of clauses in original order
   int clause_position = -1;
   // flag to allow duplicate expressions (e.g., sizes(4, 4))
@@ -138,6 +140,14 @@ public:
   OpenMPClauseKind getKind() { return kind; };
   OpenMPDirectiveKind getDirectiveKind() const { return directive_kind; }
   void setDirectiveKind(OpenMPDirectiveKind value) { directive_kind = value; }
+  void setDirectiveNameModifier(OpenMPDirectiveKind value) {
+    has_directive_name_modifier = true;
+    directive_name_modifier = value;
+  }
+  bool hasDirectiveNameModifier() const { return has_directive_name_modifier; }
+  OpenMPDirectiveKind getDirectiveNameModifier() const {
+    return directive_name_modifier;
+  }
   int getClausePosition() { return clause_position; };
   void setClausePosition(int _clause_position) {
     clause_position = _clause_position;
@@ -1372,12 +1382,24 @@ public:
 
 class OpenMPFirstprivateClause : public OpenMPClause {
   std::vector<bool> saved_statuses;
+  std::vector<bool> directive_name_modifier_statuses;
+  std::vector<OpenMPDirectiveKind> directive_name_modifiers;
   bool current_saved_state = false;
+  bool current_has_directive_name_modifier = false;
+  OpenMPDirectiveKind current_directive_name_modifier = OMPD_unknown;
 
 public:
   OpenMPFirstprivateClause() : OpenMPClause(OMPC_firstprivate) {}
 
   void setSaved(bool value = true) { current_saved_state = value; }
+  void setCurrentDirectiveNameModifier(OpenMPDirectiveKind value) {
+    current_has_directive_name_modifier = true;
+    current_directive_name_modifier = value;
+  }
+  void clearCurrentDirectiveNameModifier() {
+    current_has_directive_name_modifier = false;
+    current_directive_name_modifier = OMPD_unknown;
+  }
   bool isSaved() const {
     // Return true if any operand is saved, or based on current state?
     // For now returning current state might be misleading if used for whole
@@ -1389,6 +1411,16 @@ public:
   }
 
   const std::vector<bool> &getSavedStatuses() const { return saved_statuses; }
+  bool expressionHasDirectiveNameModifier(size_t index) const {
+    return index < directive_name_modifier_statuses.size()
+               ? directive_name_modifier_statuses[index]
+               : false;
+  }
+  OpenMPDirectiveKind getExpressionDirectiveNameModifier(size_t index) const {
+    return index < directive_name_modifiers.size()
+               ? directive_name_modifiers[index]
+               : OMPD_unknown;
+  }
 
   void addLangExpr(const char *expression,
                    OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,

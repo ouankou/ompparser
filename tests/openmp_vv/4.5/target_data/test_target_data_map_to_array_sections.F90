@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp             target data map(to: my1DPtr(10:50-10)) map(to: my1DPtr2(10:), my1DPtr3(:50-10))
 !$omp               target map(alloc: my1DPtr(10:50-10)) map(alloc: my1DPtr2(10:), my1DPtr3(:50-10)) map(tofrom: myTmpArray)
 !$omp               end target

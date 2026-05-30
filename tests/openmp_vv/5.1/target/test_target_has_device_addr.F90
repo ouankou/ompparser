@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp     target enter data map(to: x, arr)
 !$omp     target data use_device_addr(x, arr)
 !$omp     end target data

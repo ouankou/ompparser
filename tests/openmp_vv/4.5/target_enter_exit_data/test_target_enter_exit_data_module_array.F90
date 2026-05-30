@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp             target enter data map(to: array_1d) map(to: array_2d,array_3d)
 !$omp             target map(from: mod_helper_array_1d) map(from: mod_helper_array_2d, mod_helper_array_3d)
 !$omp             end target

@@ -1,7 +1,3 @@
-#pragma omp begin declare variant match(device={kind(host)})
-#pragma omp end declare variant
-#pragma omp begin declare variant match(device={kind(nohost)})
-#pragma omp end declare variant
 #pragma omp target enter data map(alloc: h_array[0:1000], in_1[0:1000], in_2[0:1000]) depend(out: h_array, in_1, in_2)
 #pragma omp task depend(out: in_1) shared(in_1)
 #pragma omp task depend(out: in_2) shared(in_2)

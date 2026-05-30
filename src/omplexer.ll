@@ -362,6 +362,126 @@ static inline void prepare_expression_capture_str(const char* initial_str) {
   current_string = initial_str;
 }
 
+static inline bool is_firstprivate_blank(char ch) {
+  return ch == ' ';
+}
+
+static inline bool is_firstprivate_identifier_char(char ch) {
+  return std::isalnum(static_cast<unsigned char>(ch)) || ch == '_';
+}
+
+static inline void skip_firstprivate_blanks(const std::string &text,
+                                            std::size_t &pos) {
+  while (pos < text.size() && is_firstprivate_blank(text[pos])) {
+    ++pos;
+  }
+}
+
+static bool consume_firstprivate_modifier_word(const std::string &text,
+                                               std::size_t &pos,
+                                               const char *word) {
+  const std::size_t start = pos;
+  for (std::size_t index = 0; word[index] != '\0'; ++index) {
+    if (pos + index >= text.size() || text[pos + index] != word[index]) {
+      pos = start;
+      return false;
+    }
+  }
+  pos += std::strlen(word);
+  if (pos < text.size() && is_firstprivate_identifier_char(text[pos])) {
+    pos = start;
+    return false;
+  }
+  return true;
+}
+
+static bool consume_firstprivate_modifier(const std::string &text,
+                                          std::size_t &pos) {
+  const std::size_t start = pos;
+  if (consume_firstprivate_modifier_word(text, pos, "target")) {
+    std::size_t after_target = pos;
+    skip_firstprivate_blanks(text, after_target);
+    std::size_t after_data = after_target;
+    if (consume_firstprivate_modifier_word(text, after_data, "data")) {
+      pos = after_data;
+      return true;
+    }
+    return true;
+  }
+  pos = start;
+
+  static const char *const modifiers[] = {
+      "distribute", "parallel", "sections", "single", "taskloop",
+      "task",       "teams",    "scope",    "saved",  "for",
+      "do"};
+  for (const char *modifier : modifiers) {
+    if (consume_firstprivate_modifier_word(text, pos, modifier)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static bool firstprivate_modifier_list_follows_current_token() {
+  std::vector<int> peeked_chars;
+  std::string lookahead;
+  for (std::size_t index = 0; index < 256; ++index) {
+    const int ch = tracked_yyinput();
+    if (ch == EOF) {
+      break;
+    }
+    peeked_chars.push_back(ch);
+    lookahead.push_back(static_cast<char>(ch));
+    if (ch == ':' || ch == ')' || ch == '\n') {
+      break;
+    }
+  }
+
+  for (auto it = peeked_chars.rbegin(); it != peeked_chars.rend(); ++it) {
+    tracked_unput(*it);
+  }
+
+  std::size_t pos = 0;
+  skip_firstprivate_blanks(lookahead, pos);
+  if (pos >= lookahead.size()) {
+    return false;
+  }
+  if (lookahead[pos] == ':') {
+    return true;
+  }
+  if (lookahead[pos] != ',') {
+    return false;
+  }
+
+  while (pos < lookahead.size() && lookahead[pos] == ',') {
+    ++pos;
+    skip_firstprivate_blanks(lookahead, pos);
+    if (!consume_firstprivate_modifier(lookahead, pos)) {
+      return false;
+    }
+    skip_firstprivate_blanks(lookahead, pos);
+    if (pos < lookahead.size() && lookahead[pos] == ':') {
+      return true;
+    }
+    if (pos >= lookahead.size() || lookahead[pos] != ',') {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+#define RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(Token)                            \
+  do {                                                                         \
+    const std::string firstprivate_token_text(yytext, yyleng);                 \
+    if (firstprivate_modifier_list_follows_current_token()) {                  \
+      return Token;                                                            \
+    }                                                                          \
+    yy_push_state(EXPR_STATE);                                                 \
+    prepare_expression_capture_str(firstprivate_token_text.c_str());           \
+  } while (0)
+
 #define REWIND_LINEAR_DELIMITER(delim)                                             \
   do {                                                                            \
     int keep_len = yyleng;                                                        \
@@ -924,8 +1044,21 @@ cgroup                    { return CGROUP; }
 
 <FIRSTPRIVATE_STATE>"("                     { return '('; }
 <FIRSTPRIVATE_STATE>")"                     { yy_pop_state(); return ')'; }
-<FIRSTPRIVATE_STATE>saved{blank}*/:         { return SAVED; }
+<FIRSTPRIVATE_STATE>target{blank}+data      { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_TARGET_DATA); }
+<FIRSTPRIVATE_STATE>distribute              { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_DISTRIBUTE); }
+<FIRSTPRIVATE_STATE>parallel                { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_PARALLEL); }
+<FIRSTPRIVATE_STATE>sections                { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_SECTIONS); }
+<FIRSTPRIVATE_STATE>single                  { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_SINGLE); }
+<FIRSTPRIVATE_STATE>target                  { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_TARGET); }
+<FIRSTPRIVATE_STATE>taskloop                { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_TASKLOOP); }
+<FIRSTPRIVATE_STATE>task                    { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_TASK); }
+<FIRSTPRIVATE_STATE>teams                   { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_TEAMS); }
+<FIRSTPRIVATE_STATE>scope                   { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_SCOPE); }
+<FIRSTPRIVATE_STATE>for                     { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_FOR); }
+<FIRSTPRIVATE_STATE>do                      { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(FIRSTPRIVATE_MODIFIER_DO); }
+<FIRSTPRIVATE_STATE>saved                   { RETURN_FIRSTPRIVATE_MODIFIER_OR_EXPR(SAVED); }
 <FIRSTPRIVATE_STATE>":"                     { return ':'; }
+<FIRSTPRIVATE_STATE>","                     { return ','; }
 <FIRSTPRIVATE_STATE>{blank}*                { ; }
 <FIRSTPRIVATE_STATE>.                       { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 

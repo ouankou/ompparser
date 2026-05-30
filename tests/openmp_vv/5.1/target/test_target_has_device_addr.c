@@ -1,7 +1,3 @@
-#pragma omp begin declare variant match(device={kind(host)})
-#pragma omp end declare variant
-#pragma omp begin declare variant match(device={kind(nohost)})
-#pragma omp end declare variant
 #pragma omp target enter data map(to: x, arr)
 #pragma omp target map(from: first_scalar_device_addr, first_arr_device_addr) map(to: x, arr)
 #pragma omp target data use_device_addr(x, arr)

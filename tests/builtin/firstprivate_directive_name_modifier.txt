@@ -1,0 +1,22 @@
+/*
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
+ * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
+ * and Lawrence Livermore National Security, LLC.
+ *
+ * SPDX-License-Identifier: (BSD-3-Clause)
+ */
+
+#pragma omp target teams distribute firstprivate(a) firstprivate(target: b) firstprivate(teams: c) firstprivate(d)
+PASS: #pragma omp target teams distribute firstprivate(a) firstprivate(target: b) firstprivate(teams: c) firstprivate(d)
+
+#pragma omp target teams distribute firstprivate(target, saved: e) firstprivate(saved, teams: f) firstprivate(target data: g)
+PASS: #pragma omp target teams distribute firstprivate(target, saved: e) firstprivate(teams, saved: f) firstprivate(target data: g)
+
+#pragma omp parallel firstprivate(saved, target)
+PASS: #pragma omp parallel firstprivate(saved, target)
+
+!$omp target teams distribute firstprivate(a) firstprivate(target: b) firstprivate(teams: c) firstprivate(d)
+PASS: !$omp target teams distribute firstprivate(a) firstprivate(target: b) firstprivate(teams: c) firstprivate(d)
+
+!$omp target teams distribute firstprivate(target, saved: e) firstprivate(saved, teams: f) firstprivate(target data: g)
+PASS: !$omp target teams distribute firstprivate(target, saved: e) firstprivate(teams, saved: f) firstprivate(target data: g)

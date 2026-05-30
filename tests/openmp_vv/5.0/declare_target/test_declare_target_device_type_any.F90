@@ -1,7 +1,3 @@
-!$omp target map(from:ompvv_isHost)
-!$omp end target
-!$omp target map(to: isSharedProb)
-!$omp end target
 !$omp     declare target to(a, b, c, i)
 !$omp       declare target to(update) device_type(any)
 !$omp       target update to(a, b, c)
