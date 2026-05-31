@@ -283,6 +283,8 @@ public:
     normalize_clauses = normalize_clauses_global;
   };
 
+  virtual ~OpenMPDirective() = default;
+
   OpenMPDirectiveKind getKind() { return kind; };
 
   std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *getAllClauses() {
@@ -421,12 +423,18 @@ public:
 
 class OpenMPEndDirective : public OpenMPDirective {
 protected:
-  OpenMPDirective *paired_directive;
+  OpenMPDirective *paired_directive = nullptr;
+  std::unique_ptr<OpenMPDirective> paired_directive_storage;
   bool use_compact_enddo = false;
 
 public:
   OpenMPEndDirective() : OpenMPDirective(OMPD_end) {};
+  void setPairedDirective(std::unique_ptr<OpenMPDirective> _paired_directive) {
+    paired_directive_storage = std::move(_paired_directive);
+    paired_directive = paired_directive_storage.get();
+  };
   void setPairedDirective(OpenMPDirective *_paired_directive) {
+    paired_directive_storage.reset();
     paired_directive = _paired_directive;
   };
   OpenMPDirective *getPairedDirective() { return paired_directive; };
@@ -1120,6 +1128,7 @@ protected:
 
   ScoredExpression user_condition_expression;
   std::vector<std::pair<std::string, OpenMPDirective *>> construct_directives;
+  std::vector<std::unique_ptr<OpenMPDirective>> construct_directive_storage;
   ScoredExpression arch_expression;
   ScoredExpression isa_expression;
   std::pair<std::string, OpenMPClauseContextKind> context_kind_name =
@@ -1145,8 +1154,22 @@ public:
   ScoredExpression *getUserCondition() { return &user_condition_expression; };
   void addConstructDirective(const char *_score,
                              OpenMPDirective *_construct_directive) {
+    if (_construct_directive == nullptr) {
+      return;
+    }
     construct_directives.push_back(
         std::make_pair(std::string(_score), _construct_directive));
+  };
+  void addConstructDirective(
+      const char *_score,
+      std::unique_ptr<OpenMPDirective> _construct_directive) {
+    if (_construct_directive == nullptr) {
+      return;
+    }
+    auto *construct_directive = _construct_directive.get();
+    construct_directive_storage.push_back(std::move(_construct_directive));
+    construct_directives.push_back(
+        std::make_pair(std::string(_score), construct_directive));
   };
   std::vector<std::pair<std::string, OpenMPDirective *>> *
   getConstructDirective() {
@@ -1224,11 +1247,17 @@ class OpenMPWhenClause : public OpenMPVariantClause {
 protected:
   OpenMPDirective *variant_directive =
       NULL; // variant directive inside the WHEN clause
+  std::unique_ptr<OpenMPDirective> variant_directive_storage;
 
 public:
   OpenMPWhenClause() : OpenMPVariantClause(OMPC_when) {};
   OpenMPDirective *getVariantDirective() { return variant_directive; };
+  void setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
+    variant_directive_storage = std::move(_variant_directive);
+    variant_directive = variant_directive_storage.get();
+  };
   void setVariantDirective(OpenMPDirective *_variant_directive) {
+    variant_directive_storage.reset();
     variant_directive = _variant_directive;
   };
 
@@ -1241,11 +1270,17 @@ class OpenMPOtherwiseClause : public OpenMPVariantClause {
 protected:
   OpenMPDirective *variant_directive =
       NULL; // variant directive inside the OTHERWISE clause
+  std::unique_ptr<OpenMPDirective> variant_directive_storage;
 
 public:
   OpenMPOtherwiseClause() : OpenMPVariantClause(OMPC_otherwise) {};
   OpenMPDirective *getVariantDirective() { return variant_directive; };
+  void setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
+    variant_directive_storage = std::move(_variant_directive);
+    variant_directive = variant_directive_storage.get();
+  };
   void setVariantDirective(OpenMPDirective *_variant_directive) {
+    variant_directive_storage.reset();
     variant_directive = _variant_directive;
   };
 
@@ -1302,6 +1337,7 @@ protected:
   OpenMPDefaultClauseKind default_kind = OMPC_DEFAULT_unknown;
   OpenMPDirective *variant_directive =
       NULL; // variant directive inside the DEFAULT clause
+  std::unique_ptr<OpenMPDirective> variant_directive_storage;
 
 public:
   OpenMPDefaultClause(OpenMPDefaultClauseKind _default_kind)
@@ -1310,7 +1346,12 @@ public:
   OpenMPDefaultClauseKind getDefaultClauseKind() { return default_kind; };
 
   OpenMPDirective *getVariantDirective() { return variant_directive; };
+  void setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
+    variant_directive_storage = std::move(_variant_directive);
+    variant_directive = variant_directive_storage.get();
+  };
   void setVariantDirective(OpenMPDirective *_variant_directive) {
+    variant_directive_storage.reset();
     variant_directive = _variant_directive;
   };
 

@@ -16,11 +16,13 @@
 
 #include "OpenMPIR.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <regex>
 #include <string>
 #include <utility>
@@ -45,6 +47,7 @@ static OpenMPDirective *current_directive = nullptr;
 static OpenMPClause *current_clause = nullptr;
 static OpenMPDirective *current_parent_directive = nullptr;
 static OpenMPClause *current_parent_clause = nullptr;
+static std::vector<std::unique_ptr<OpenMPDirective>> directive_storage;
 static std::vector<OpenMPApplyClause *> apply_clause_stack;
 static std::vector<OpenMPClauseSeparator> apply_clause_separator_stack;
 static int firstParameter = 0;
@@ -261,7 +264,9 @@ static std::string extractFortranOmpxPayloadPreserveCase(
 
 template <typename DirectiveType, typename... Args>
 static DirectiveType *makeDirectiveAt(int line, int column, Args &&...args) {
-  auto *directive = new DirectiveType(std::forward<Args>(args)...);
+  auto owned_directive =
+      std::make_unique<DirectiveType>(std::forward<Args>(args)...);
+  auto *directive = owned_directive.get();
   if (directive != nullptr) {
     if (line > 0) {
       directive->setLine(line);
@@ -270,7 +275,28 @@ static DirectiveType *makeDirectiveAt(int line, int column, Args &&...args) {
       directive->setColumn(column);
     }
   }
+  directive_storage.push_back(std::move(owned_directive));
   return directive;
+}
+
+static std::unique_ptr<OpenMPDirective>
+takeDirectiveOwnership(OpenMPDirective *directive) {
+  auto directive_iter =
+      std::find_if(directive_storage.begin(), directive_storage.end(),
+                   [directive](const std::unique_ptr<OpenMPDirective> &owned) {
+                     return owned.get() == directive;
+                   });
+  if (directive_iter == directive_storage.end()) {
+    return nullptr;
+  }
+
+  auto owned_directive = std::move(*directive_iter);
+  directive_storage.erase(directive_iter);
+  return owned_directive;
+}
+
+static OpenMPDirective *releaseDirectiveOwnership(OpenMPDirective *directive) {
+  return takeDirectiveOwnership(directive).release();
 }
 
 template <typename... Args>
@@ -780,7 +806,8 @@ end_directive : END { current_directive = makeDirectiveAt<OpenMPEndDirective>(@1
                 ((OpenMPEndDirective*)current_directive)
                     ->setUseCompactEndDo(openmp_consume_compact_enddo());
               } end_clause_seq {
-                ((OpenMPEndDirective*)current_parent_directive)->setPairedDirective(current_directive);
+                ((OpenMPEndDirective*)current_parent_directive)
+                    ->setPairedDirective(takeDirectiveOwnership(current_directive));
                 current_directive = current_parent_directive;
                 current_clause = current_parent_clause;
                 current_parent_directive = nullptr;
@@ -860,7 +887,10 @@ when_clause : WHEN { current_clause = addClauseAt(current_directive, @1.first_li
                 } ')'
             ;
 
-when_variant_directive : variant_directive {((OpenMPWhenClause*)current_parent_clause)->setVariantDirective(current_directive); }
+when_variant_directive : variant_directive {
+                    ((OpenMPWhenClause*)current_parent_clause)
+                        ->setVariantDirective(takeDirectiveOwnership(current_directive));
+                }
                 | { ; }
                 ;
 
@@ -894,7 +924,9 @@ trait_selector_list : trait_selector { trait_score = ""; }
 
 trait_selector : condition_selector
                 | construct_selector {
-                    ((OpenMPVariantClause*)current_parent_clause)->addConstructDirective(trait_score, current_directive);
+                    ((OpenMPVariantClause*)current_parent_clause)
+                        ->addConstructDirective(
+                            trait_score, takeDirectiveOwnership(current_directive));
                 }
                 | device_selector
                 | target_device_selector
@@ -1201,7 +1233,8 @@ target_region_boundary_opt : /* empty */
                                 OpenMPDirective *paired_target = current_directive;
                                 paired_target->setRequiresExplicitEnd(true);
                                 auto *end_directive = makeDirectiveAt<OpenMPEndDirective>(@1.first_line, @1.first_column);
-                                end_directive->setPairedDirective(paired_target);
+                                end_directive->setPairedDirective(
+                                    takeDirectiveOwnership(paired_target));
                                 current_directive = end_directive;
                                 current_clause = nullptr;
                              }
@@ -1673,7 +1706,8 @@ otherwise_clause : OTHERWISE {
                     current_parent_directive = current_directive;
                     current_parent_clause = current_clause;
                  } '(' variant_directive {
-                    ((OpenMPOtherwiseClause*)current_parent_clause)->setVariantDirective(current_directive);
+                    ((OpenMPOtherwiseClause*)current_parent_clause)
+                        ->setVariantDirective(takeDirectiveOwnership(current_directive));
                     current_directive = current_parent_directive;
                     current_clause = current_parent_clause;
                     current_parent_directive = nullptr;
@@ -5762,7 +5796,9 @@ default_variant_clause : DEFAULT '(' default_variant_directive ')' { }
 default_variant_directive : { current_clause = addClauseAt(current_directive, @$.first_line, @$.first_column, OMPC_default, OMPC_DEFAULT_variant);
                             current_parent_directive = current_directive;
                             current_parent_clause = current_clause; } variant_directive {
-                            ((OpenMPDefaultClause*)current_parent_clause)->setVariantDirective(current_directive);
+                            ((OpenMPDefaultClause*)current_parent_clause)
+                                ->setVariantDirective(
+                                    takeDirectiveOwnership(current_directive));
                             current_directive = current_parent_directive;
                             current_clause = current_parent_clause;
                             current_parent_directive = nullptr;
@@ -6351,6 +6387,10 @@ OpenMPDirective* parseOpenMP(const char* _input,
                              void *_exprParseUserData) {
     OpenMPBaseLang base_lang = Lang_C;
     current_directive = nullptr;
+    current_clause = nullptr;
+    current_parent_directive = nullptr;
+    current_parent_clause = nullptr;
+    directive_storage.clear();
     resetScheduleClauseLocationState();
     std::string input_string;  // Must persist until after start_lexer()
     const char *input = _input;
@@ -6407,10 +6447,23 @@ OpenMPDirective* parseOpenMP(const char* _input,
     openmpSetExprParseMode(OMP_EXPR_PARSE_none);
     openmp_reset_lexer_flags();
     start_lexer(input);
-    yyparse();
+    const int parse_result = yyparse();
     end_lexer();
-    if (current_directive) {
-        current_directive->setBaseLang(base_lang);
+    if (parse_result != 0 || current_directive == nullptr) {
+        current_directive = nullptr;
+        current_clause = nullptr;
+        current_parent_directive = nullptr;
+        current_parent_clause = nullptr;
+        directive_storage.clear();
+        return nullptr;
     }
-    return current_directive;
+
+    current_directive->setBaseLang(base_lang);
+    OpenMPDirective *result = releaseDirectiveOwnership(current_directive);
+    current_directive = nullptr;
+    current_clause = nullptr;
+    current_parent_directive = nullptr;
+    current_parent_clause = nullptr;
+    directive_storage.clear();
+    return result;
 }
