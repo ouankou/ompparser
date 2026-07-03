@@ -20,17 +20,19 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-24.04]
-        version: [9, 10, 11, 12, 13, 14]
+        os: [ubuntu-26.04]
+        version: [11, 12, 13, 14, 15, 16]
     env:
       CC: gcc-${{ matrix.version }}
       CXX: g++-${{ matrix.version }}
       FC: gfortran-${{ matrix.version }}
+      CLANG_FORMAT: clang-format
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           sudo apt-get update
-          sudo apt-get install -y cmake bison flex gcc-${{ matrix.version }} g++-${{ matrix.version }} gfortran-${{ matrix.version }}
+          sudo apt-get install -y cmake bison flex clang-format gcc-${{ matrix.version }} g++-${{ matrix.version }} gfortran-${{ matrix.version }}
+      - run: cmake -E rm -rf $BUILD_DIR
       - run: cmake -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
       - run: cmake --build $BUILD_DIR -- -j
       - name: Run built-in tests
@@ -45,20 +47,24 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-24.04]
-        version: [17, 18, 19, 20, 21]
+        os: [ubuntu-26.04]
+        version: [21, 22]
     env:
       CC: clang-${{ matrix.version }}
       CXX: clang++-${{ matrix.version }}
       FC: flang-${{ matrix.version }}
+      CLANG_FORMAT: clang-format-${{ matrix.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
-          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/llvm-snapshot.asc > /dev/null
-          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-${{ matrix.version }} main"
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates gnupg wget
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor --yes -o /usr/share/keyrings/llvm-snapshot.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg] http://apt.llvm.org/resolute/ llvm-toolchain-resolute-${{ matrix.version }} main" | sudo tee /etc/apt/sources.list.d/llvm-toolchain-resolute-${{ matrix.version }}.list
       - run: |
           sudo apt-get update
           sudo apt-get install -y cmake bison flex clang-${{ matrix.version }} clang-format-${{ matrix.version }} flang-${{ matrix.version }}
+      - run: cmake -E rm -rf $BUILD_DIR
       - run: cmake -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
       - run: cmake --build $BUILD_DIR -- -j
       - name: Run built-in tests
@@ -70,13 +76,14 @@ jobs:
 
   build-wasm:
     name: Build & Test (WASM)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           sudo apt-get update
-          sudo apt-get install -y cmake bison flex
-      - uses: mymindstorm/setup-emsdk@v14
+          sudo apt-get install -y cmake bison flex python-is-python3
+      - run: cmake -E rm -rf build-wasm
+      - uses: mymindstorm/setup-emsdk@v16
       - run: emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DOMPPARSER_ENABLE_WASM=ON
       - run: cmake --build build-wasm --target ompparser_wasm -- -j
       - name: Run WASM builtin tests
@@ -84,17 +91,18 @@ jobs:
 
   deploy-pages:
     name: Deploy gh-pages
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [build-gcc, build-clang, build-wasm]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           sudo apt-get update
-          sudo apt-get install -y cmake bison flex
-      - uses: mymindstorm/setup-emsdk@v14
+          sudo apt-get install -y cmake bison flex python-is-python3
+      - run: cmake -E rm -rf build-wasm
+      - uses: mymindstorm/setup-emsdk@v16
       - run: emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DOMPPARSER_ENABLE_WASM=ON
       - run: cmake --build build-wasm --target ompparser_wasm -- -j
       - name: Prepare gh-pages content
