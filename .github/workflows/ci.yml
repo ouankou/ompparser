@@ -89,13 +89,14 @@ jobs:
       - name: Run WASM builtin tests
         run: node wasm/tests/run_wasm_builtin_tests.js --js build-wasm/wasm/ompparser.js --wasm build-wasm/wasm/ompparser.wasm
 
-  deploy-pages:
-    name: Deploy gh-pages
+  build-pages:
+    name: Build Pages
     runs-on: ubuntu-26.04
     needs: [build-gcc, build-clang, build-wasm]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
-      contents: write
+      contents: read
+      pages: write
     steps:
       - uses: actions/checkout@v7
       - run: |
@@ -105,18 +106,36 @@ jobs:
       - uses: mymindstorm/setup-emsdk@v16
       - run: emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DOMPPARSER_ENABLE_WASM=ON
       - run: cmake --build build-wasm --target ompparser_wasm -- -j
-      - name: Prepare gh-pages content
+      - name: Prepare Pages content
         run: |
           rm -rf dist
           mkdir -p dist
-          cp -R web/* dist/
+          cp -R web/. dist/
           cp build-wasm/wasm/ompparser.js build-wasm/wasm/ompparser.wasm dist/
-      - name: Deploy to gh-pages
-        if: env.ACT != 'true'
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Configure GitHub Pages
+        if: ${{ !env.ACT }}
+        uses: actions/configure-pages@v6
+      - name: Upload Pages artifact
+        if: ${{ !env.ACT }}
+        uses: actions/upload-pages-artifact@v5
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: dist
-          force_orphan: true
-          cname: ompparser.ouankou.com
+          path: dist
+
+  deploy-pages:
+    name: Deploy Pages
+    runs-on: ubuntu-26.04
+    needs: build-pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        if: ${{ !env.ACT }}
+        id: deployment
+        uses: actions/deploy-pages@v5
