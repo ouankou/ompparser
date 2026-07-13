@@ -7,6 +7,7 @@
  */
 
 #include "OpenMPIR.h"
+#include "OpenMPParser.h"
 #include <cctype>
 #include <emscripten/bind.h>
 #include <regex>
@@ -149,9 +150,8 @@ std::vector<std::string> ExtractPragmas(const std::string &input) {
   std::string current_line;
   std::regex c_regex(
       "^([[:blank:]]*#[[:blank:]]*pragma)([[:blank:]]+)(omp)[[:blank:]]+(.*)");
-  std::regex fortran_regex(
-      "^([[:blank:]]*[!cC*]\\$ompx?&?)([[:blank:]]*)(.*)",
-      std::regex_constants::icase);
+  std::regex fortran_regex("^([[:blank:]]*[!cC*]\\$ompx?&?)([[:blank:]]*)(.*)",
+                           std::regex_constants::icase);
   std::regex line_comment_regex("//.*$");
   std::regex continue_regex("([\\\\]+[[:blank:]]*$)");
   bool in_block_comment = false;
@@ -166,12 +166,10 @@ std::vector<std::string> ExtractPragmas(const std::string &input) {
 
     if (std::regex_match(stripped_line, c_regex)) {
       std::string input_pragma;
-      stripped_line =
-          std::regex_replace(stripped_line, line_comment_regex, "");
+      stripped_line = std::regex_replace(stripped_line, line_comment_regex, "");
 
       while (std::regex_search(stripped_line, continue_regex)) {
-        stripped_line =
-            std::regex_replace(stripped_line, continue_regex, "");
+        stripped_line = std::regex_replace(stripped_line, continue_regex, "");
         input_pragma += stripped_line;
         if (!std::getline(stream, current_line)) {
           stripped_line.clear();
@@ -225,9 +223,8 @@ std::vector<std::string> ExtractPragmas(const std::string &input) {
         if (!std::getline(stream, continuation_line))
           break;
         StripTrailingCarriageReturn(continuation_line);
-        continuation_line =
-            StripBlockComments(continuation_line, in_block_comment,
-                               pending_space);
+        continuation_line = StripBlockComments(continuation_line,
+                                               in_block_comment, pending_space);
 
         std::smatch continuation_match;
         if (!std::regex_match(continuation_line, continuation_match,
@@ -250,14 +247,13 @@ std::vector<std::string> ExtractPragmas(const std::string &input) {
   return pragmas;
 }
 
-std::string ParseAndUnparse(const std::string &input, int lang_mode,
-                            int lang_hint) {
+emscripten::val ParseAndUnparseImpl(const std::string &input, int lang_mode,
+                                    int lang_hint, bool allow_extensions) {
   std::vector<std::string> pragmas = ExtractPragmas(input);
   std::ostringstream output;
+  emscripten::val diagnostics = emscripten::val::array();
   const bool auto_lang = (lang_mode == LangMode_Auto);
   OpenMPBaseLang default_lang = ResolveLang(lang_mode, lang_hint);
-
-  setNormalizeClauses(true);
 
   bool first = true;
   for (const auto &pragma : pragmas) {
@@ -265,32 +261,75 @@ std::string ParseAndUnparse(const std::string &input, int lang_mode,
     if (auto_lang && IsFortranDirective(pragma))
       lang = Lang_Fortran;
 
-    setLang(lang);
     std::string parse_input = pragma;
     if (lang == Lang_Fortran)
       parse_input = TrimLeadingWhitespace(pragma);
-    OpenMPDirective *openmp_ast =
-        parseOpenMP(parse_input.c_str(), nullptr, nullptr);
-    if (!openmp_ast)
+
+    ompparser::ParseOptions options;
+    if (lang == Lang_Fortran)
+      options.language = ompparser::BaseLanguage::Fortran;
+    else if (lang == Lang_Cplusplus)
+      options.language = ompparser::BaseLanguage::CXX;
+    else
+      options.language = ompparser::BaseLanguage::C;
+    if (allow_extensions) {
+      options.extensions = ompparser::ExtensionPolicy::AllowRegistered;
+    }
+
+    ompparser::ParseResult parse_result =
+        ompparser::parseDirective(parse_input, options);
+    for (const ompparser::Diagnostic &diagnostic : parse_result.diagnostics) {
+      emscripten::val item = emscripten::val::object();
+      item.set("code", static_cast<int>(diagnostic.code));
+      item.set("message", diagnostic.message);
+      item.set("line", diagnostic.range.begin.line);
+      item.set("column", diagnostic.range.begin.column);
+      diagnostics.call<void>("push", item);
+    }
+    if (!parse_result.success())
       continue;
 
-    std::string line = openmp_ast->generatePragmaString();
-    delete openmp_ast;
-
-    if (line.empty())
+    ompparser::UnparseResult unparse_result =
+        ompparser::unparse(*parse_result.directive);
+    for (const ompparser::Diagnostic &diagnostic : unparse_result.diagnostics) {
+      emscripten::val item = emscripten::val::object();
+      item.set("code", static_cast<int>(diagnostic.code));
+      item.set("message", diagnostic.message);
+      item.set("line", diagnostic.range.begin.line);
+      item.set("column", diagnostic.range.begin.column);
+      diagnostics.call<void>("push", item);
+    }
+    if (!unparse_result.success())
       continue;
 
     if (!first)
       output << "\n";
-    output << line;
+    output << unparse_result.text;
     first = false;
   }
 
-  return output.str();
+  emscripten::val result = emscripten::val::object();
+  result.set("text", output.str());
+  result.set("diagnostics", diagnostics);
+  return result;
+}
+
+emscripten::val ParseAndUnparse(const std::string &input, int lang_mode,
+                                int lang_hint) {
+  return ParseAndUnparseImpl(input, lang_mode, lang_hint,
+                             /*allow_extensions=*/false);
+}
+
+emscripten::val ParseAndUnparseWithExtensions(const std::string &input,
+                                              int lang_mode, int lang_hint) {
+  return ParseAndUnparseImpl(input, lang_mode, lang_hint,
+                             /*allow_extensions=*/true);
 }
 
 } // namespace
 
 EMSCRIPTEN_BINDINGS(ompparser_wasm_module) {
   emscripten::function("parseAndUnparse", &ParseAndUnparse);
+  emscripten::function("parseAndUnparseWithExtensions",
+                       &ParseAndUnparseWithExtensions);
 }

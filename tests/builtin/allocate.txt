@@ -35,13 +35,13 @@ PASS: #pragma omp allocate (z,x) align(3)
 PASS: #pragma omp allocate (z,x) align(3) allocator (omp_default_mem_alloc)
 
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 #pragma omp allocate allocator(omp_default_mem_alloc:a,b,c)
 
+EXPECT: invalid
 #pragma omp allocate(a,b,v) allocator(omp_default_mem_alloc:a,b,c)
 
+EXPECT: invalid
 #pragma omp allocate(a,b,v) allocator(omp_default_mem_alloc) allocator(omp_allocator_handle_td) 
 
 

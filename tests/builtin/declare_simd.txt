@@ -35,21 +35,25 @@ PASS: #pragma omp declare simd notinbranch
 PASS: #pragma omp declare simd uniform(i) linear (k) notinbranch
 
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 #pragma omp declare simd safelen
 
+EXPECT: invalid
 #pragma omp declare simd simdlen
 
+EXPECT: invalid
 #pragma omp declare simd linear
 
+EXPECT: invalid
 #pragma omp declare simd aligned
 
+EXPECT: invalid
 #pragma omp declare simd notinbranch(v)
 
+EXPECT: invalid
 #pragma omp declare simd inbranch(dfa:23)
 
+EXPECT: invalid
 #pragma omp declare simd (DFHK) inbranch(dfa:23)
 
 

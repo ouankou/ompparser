@@ -22,10 +22,9 @@ PASS: !$omp threadprivate (c,b,d)
 !$omp threadprivate (from,b,d)
 PASS: !$omp threadprivate (from,b,d)
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp threadprivate
 
+EXPECT: invalid
 !$omp threadprivate (c,b,d) if(a)
 

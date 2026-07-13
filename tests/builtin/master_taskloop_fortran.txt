@@ -17,10 +17,10 @@
 PASS: !$omp master taskloop if (a) if (taskloop: b)
 
 !$omp master taskloop shared (a, b, c[1:10])
-PASS: !$omp master taskloop shared(a, b, c[1 : 10])
+PASS: !$omp master taskloop shared(a, b, c[1:10])
 
 !$omp master taskloop private (a, b) private (a, c)
-PASS: !$omp master taskloop private(a, b, c)
+PASS: !$omp master taskloop private(a, b) private(a, c)
  
 !$omp master taskloop firstprivate (x, y)
 PASS: !$omp master taskloop firstprivate(x, y)
@@ -68,41 +68,54 @@ PASS: !$omp master taskloop mergeable
 PASS: !$omp master taskloop nogroup
 
 !$omp master taskloop allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
-PASS: !$omp master taskloop allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1 : 5])
+PASS: !$omp master taskloop allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp master taskloop if (a) if (simd : b)
 
+EXPECT: invalid
 !$omp master taskloop shared 
 
+EXPECT: invalid
 !$omp master taskloop private (a, b) private
  
+EXPECT: invalid
 !$omp master taskloop firstprivate 
 
+EXPECT: invalid
 !$omp master taskloop lastprivate(sde:a,b,c)
 
 !$omp master taskloop reduction (task, + : a, foo(x))
+PASS: !$omp master taskloop reduction(task, + : a, foo(x))
 
+EXPECT: invalid
 !$omp master taskloop in_reduction (task, so : a, foo(x))
 
+EXPECT: invalid
 !$omp master taskloop default
 
+EXPECT: invalid
 !$omp master taskloop grainsize
 
+EXPECT: invalid
 !$omp master taskloop num_tasks
 
+EXPECT: invalid
 !$omp master taskloop collapse
 
+EXPECT: invalid
 !$omp master taskloop priority
 
+EXPECT: invalid
 !$omp master taskloop final
 
 !$omp master taskloop untied (23)
+PASS: !$omp master taskloop untied(23)
 
 !$omp master taskloop mergeable (23)
+PASS: !$omp master taskloop mergeable(23)
 
+EXPECT: invalid
 !$omp master taskloop nogroup (23)
 
 

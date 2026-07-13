@@ -14,8 +14,8 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 
+EXPECT: invalid
 !$omp declare mapper(myvec_t :: v)
-PASS: !$omp declare mapper(myvec_t :: v)
 
+EXPECT: invalid
 !$omp declare mapper( left_id: dzmat_t :: v)
-PASS: !$omp declare mapper(left_id: dzmat_t :: v)

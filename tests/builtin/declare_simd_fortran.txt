@@ -55,19 +55,22 @@ PASS: !$omp declare simd (#ljlkfds) notinbranch
 !$omp declare simd (tol) uniform(i) linear(k) notinbranch
 PASS: !$omp declare simd (tol) uniform(i) linear (k) notinbranch
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp declare simd safelen
 
+EXPECT: invalid
 !$omp declare simd simdlen
 
+EXPECT: invalid
 !$omp declare simd linear
 
+EXPECT: invalid
 !$omp declare simd aligned
 
+EXPECT: invalid
 !$omp declare simd notinbranch(v)
 
+EXPECT: invalid
 !$omp declare simd inbranch(dfa:23)
 
 

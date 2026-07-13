@@ -7,17 +7,31 @@
  */
 
 #include <OpenMPIR.h>
+#include <OpenMPParser.h>
 #include <algorithm>
 #include <cctype>
 #include <fstream>
 #include <iostream>
-#include <map>
 #include <regex>
 #include <string>
 
 void output(OpenMPDirective *);
 std::string test(OpenMPDirective *);
 int openFile(std::ifstream &, const char *);
+
+ompparser::BaseLanguage convertLanguage(OpenMPBaseLang language) {
+  switch (language) {
+  case Lang_C:
+    return ompparser::BaseLanguage::C;
+  case Lang_Cplusplus:
+    return ompparser::BaseLanguage::CXX;
+  case Lang_Fortran:
+    return ompparser::BaseLanguage::Fortran;
+  case Lang_unknown:
+    break;
+  }
+  return ompparser::BaseLanguage::C;
+}
 
 void output(OpenMPDirective *node) {
   if (!node)
@@ -51,6 +65,7 @@ int main(int argc, const char *argv[]) {
   const char *filename = nullptr;
   int result = -1;
   OpenMPBaseLang default_base_lang = Lang_C;
+  bool allow_extensions = false;
 
   for (int arg_idx = 1; arg_idx < argc; ++arg_idx) {
     const std::string arg = argv[arg_idx];
@@ -61,6 +76,8 @@ int main(int argc, const char *argv[]) {
       default_base_lang = Lang_Cplusplus;
     } else if (arg == "--lang=fortran") {
       default_base_lang = Lang_Fortran;
+    } else if (arg == "--allow-extensions") {
+      allow_extensions = true;
     } else if (filename == nullptr) {
       filename = argv[arg_idx];
     } else {
@@ -70,7 +87,6 @@ int main(int argc, const char *argv[]) {
   }
 
   std::ifstream input_file;
-  std::ofstream output_file;
 
   if (filename != nullptr)
     result = openFile(input_file, filename);
@@ -80,18 +96,9 @@ int main(int argc, const char *argv[]) {
     return -1;
   }
 
-  // open the result table file in /tmp to avoid cluttering source tree
-  output_file.open("/tmp/ompparser_results.md", std::ios_base::app);
-  if (!output_file.is_open()) {
-    std::cout << "No output file is available.\n";
-    return -1;
-  }
-
   std::string input_pragma;
   std::string output_pragma;
   std::string validation_string;
-  std::string pass = "true";
-  std::map<std::string, std::string> processed_data;
   int total_amount = 0;
   int passed_amount = 0;
   int failed_amount = 0;
@@ -103,9 +110,7 @@ int main(int argc, const char *argv[]) {
   char current_char = input_file.peek();
   std::string current_line;
   std::regex fortran_regex("^[!cC*][$][Oo][Mm][Pp]([Xx])?");
-  const std::string invalid_marker = "invalid test without paired validation.";
   bool expect_invalid_next = false;
-  bool expect_invalid_block = false;
   OpenMPBaseLang base_lang = default_base_lang;
 
   std::string filename_string = std::string(filename);
@@ -121,22 +126,6 @@ int main(int argc, const char *argv[]) {
       std::getline(input_file, current_line);
       current_line = std::regex_replace(current_line, std::regex("^\\s+"),
                                         std::string(""));
-      if (current_line.find(invalid_marker) != std::string::npos) {
-        const auto comment_pos = current_line.find("//");
-        if (comment_pos != std::string::npos) {
-          std::string trimmed = current_line.substr(0, comment_pos);
-          while (!trimmed.empty() &&
-                 std::isspace(static_cast<unsigned char>(trimmed.back())))
-            trimmed.pop_back();
-          if (trimmed.empty()) {
-            expect_invalid_block = true;
-            current_char = input_file.peek();
-            continue;
-          }
-          current_line = trimmed;
-        }
-        expect_invalid_next = true;
-      }
       if (current_line.rfind("EXPECT:", 0) == 0) {
         std::string expectation = current_line.substr(7);
         const auto first = expectation.find_first_not_of(" \t");
@@ -160,8 +149,6 @@ int main(int argc, const char *argv[]) {
       } else {
         base_lang = default_base_lang;
       }
-      setLang(base_lang);
-
       if ((current_line.size() >= 7 &&
            current_line.compare(0, 7, "#pragma") == 0) ||
           is_fortran_directive) {
@@ -177,53 +164,48 @@ int main(int argc, const char *argv[]) {
         }
         current_pragma_line_no = line_no;
         input_pragma = current_line;
-        auto search_pragma = processed_data.find(input_pragma);
-        const bool has_cached_output = search_pragma != processed_data.end();
+        output_pragma.clear();
         bool generated_output = false;
-        const bool is_expected_invalid_case =
-            expect_invalid_next || expect_invalid_block;
-        if (has_cached_output) {
-          output_pragma = search_pragma->second;
-          generated_output = output_pragma.size() != 0;
-          if (is_expected_invalid_case)
-            pass = "true";
-          else
-            pass = generated_output ? "true" : "false";
-        } else {
-          OpenMPDirective *openMPAST =
-              parseOpenMP(input_pragma.c_str(), nullptr, nullptr);
-          output_pragma = test(openMPAST);
-          delete openMPAST;
-          generated_output = output_pragma.size() != 0;
-          if (is_expected_invalid_case)
-            pass = "true";
-          else if (!generated_output)
-            pass = "false";
-          output_file << filename_string.c_str() << " | ` "
-                      << input_pragma.c_str() << " ` | ` "
-                      << output_pragma.c_str() << " ` | " << pass.c_str()
-                      << "\n";
-          processed_data[input_pragma] = output_pragma;
+        const bool is_expected_invalid_case = expect_invalid_next;
+        ompparser::ParseOptions options;
+        options.language = convertLanguage(base_lang);
+        if (allow_extensions ||
+            filename_string.find("ompx") != std::string::npos)
+          options.extensions = ompparser::ExtensionPolicy::AllowRegistered;
+        ompparser::ParseResult parse_result =
+            ompparser::parseDirective(input_pragma, options);
+        if (parse_result.success()) {
+          ompparser::UnparseResult unparse_result =
+              ompparser::unparse(*parse_result.directive);
+          if (unparse_result.success())
+            output_pragma = std::move(unparse_result.text);
+        } else if (!is_expected_invalid_case) {
+          for (const ompparser::Diagnostic &diagnostic :
+               parse_result.diagnostics)
+            std::cout << "PARSE DIAGNOSTIC: " << diagnostic.message << "\n";
         }
+        generated_output = !output_pragma.empty();
         if (is_expected_invalid_case) {
           if (generated_output) {
             std::cout << "======================================\n";
             std::cout << "Line: " << current_pragma_line_no << "\n";
-            std::cout << "EXPECTED INVALID INPUT (IGNORED): " << input_pragma
+            std::cout << "EXPECTED INVALID INPUT WAS ACCEPTED: " << input_pragma
                       << "\n";
             std::cout << "PARSER OUTPUT: " << output_pragma << "\n";
             std::cout << "======================================\n";
           }
-          passed_amount += 1;
+          if (generated_output)
+            failed_amount += 1;
+          else
+            passed_amount += 1;
           expected_invalid_amount += 1;
           input_pragma.clear();
           validation_string.clear();
           output_pragma.clear();
-          pass = "true";
           expect_invalid_next = false;
-          break;
+          current_char = input_file.peek();
+          continue;
         }
-        pass = "true";
         expect_invalid_next = false;
       } else if (current_line.rfind("PASS:", 0) == 0) {
         validation_string = current_line.substr(5);
@@ -248,10 +230,13 @@ int main(int argc, const char *argv[]) {
         input_pragma.clear();
         validation_string.clear();
         expect_invalid_next = false;
-        expect_invalid_block = false;
       }
     }
     current_char = input_file.peek();
+  }
+  if (expect_invalid_next) {
+    std::cout << "Dangling EXPECT: invalid without an input directive.\n";
+    invalid_amount += 1;
   }
 
   if (input_pragma.size()) {

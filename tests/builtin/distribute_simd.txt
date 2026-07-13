@@ -70,29 +70,37 @@ PASS: #pragma omp distribute simd collapse(a)
 #pragma omp simd order(concurrent)
 PASS: #pragma omp simd order (concurrent)
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 #pragma omp distribute simd lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 #pragma omp distribute simd collapse
 
+EXPECT: invalid
 #pragma omp distribute simd dist_schedule(user,2)
 
+EXPECT: invalid
 #pragma omp distribute simd nontemporal
 
+EXPECT: invalid
 #pragma omp distribute simd order
 
+EXPECT: invalid
 #pragma omp distribute simd if(parallel:,b,c)
 
+EXPECT: invalid
 #pragma omp distribute simd safelen
 
+EXPECT: invalid
 #pragma omp distribute simd simdlen
 
+EXPECT: invalid
 #pragma omp distribute simd linear
 
+EXPECT: invalid
 #pragma omp distribute simd aligned
 
+EXPECT: invalid
 #pragma omp distribute simd private(conditional:a,b,c)
 
 

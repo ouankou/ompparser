@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -7,6 +7,7 @@
  */
 
 #include <OpenMPIR.h>
+#include <OpenMPParser.h>
 
 #include <iostream>
 #include <memory>
@@ -20,6 +21,26 @@ struct ClauseExpectation {
   int line;
   int column;
 };
+
+ompparser::BaseLanguage convertLanguage(OpenMPBaseLang language) {
+  switch (language) {
+  case Lang_C:
+    return ompparser::BaseLanguage::C;
+  case Lang_Cplusplus:
+    return ompparser::BaseLanguage::CXX;
+  case Lang_Fortran:
+    return ompparser::BaseLanguage::Fortran;
+  case Lang_unknown:
+    break;
+  }
+  return ompparser::BaseLanguage::C;
+}
+
+ompparser::ParseResult parse(const char *input, OpenMPBaseLang language) {
+  ompparser::ParseOptions options;
+  options.language = convertLanguage(language);
+  return ompparser::parseDirective(input, options);
+}
 
 OpenMPClause *findClause(OpenMPDirective *directive, OpenMPClauseKind kind) {
   if (directive == nullptr) {
@@ -52,17 +73,15 @@ bool checkCase(const std::string &label, const char *input, OpenMPBaseLang lang,
                OpenMPDirectiveKind expected_directive_kind,
                int expected_directive_line, int expected_directive_column,
                const std::vector<ClauseExpectation> &clause_expectations) {
-  setLang(lang);
-
-  std::unique_ptr<OpenMPDirective> directive(
-      parseOpenMP(input, nullptr, nullptr));
-  if (!directive) {
+  ompparser::ParseResult result = parse(input, lang);
+  if (!result.success()) {
     std::cerr << "[" << label << "] parse failed for input: " << input << "\n";
     return false;
   }
 
   bool ok = true;
 
+  OpenMPDirective *directive = result.directive.get();
   if (directive->getKind() != expected_directive_kind) {
     std::cerr << "[" << label << "] directive kind mismatch: expected "
               << expected_directive_kind << ", got " << directive->getKind()
@@ -79,7 +98,7 @@ bool checkCase(const std::string &label, const char *input, OpenMPBaseLang lang,
   }
 
   for (const ClauseExpectation &expectation : clause_expectations) {
-    OpenMPClause *clause = findClause(directive.get(), expectation.kind);
+    OpenMPClause *clause = findClause(directive, expectation.kind);
     if (clause == nullptr) {
       std::cerr << "[" << label << "] missing clause kind " << expectation.kind
                 << "\n";
@@ -102,14 +121,10 @@ bool checkCase(const std::string &label, const char *input, OpenMPBaseLang lang,
 
 bool checkInvalidCase(const std::string &label, const char *input,
                       OpenMPBaseLang lang) {
-  setLang(lang);
-
-  std::unique_ptr<OpenMPDirective> directive(
-      parseOpenMP(input, nullptr, nullptr));
-  if (directive != nullptr) {
-    std::cerr
-        << "[" << label
-        << "] expected parse failure but parseOpenMP returned a directive\n";
+  ompparser::ParseResult result = parse(input, lang);
+  if (result.success()) {
+    std::cerr << "[" << label
+              << "] expected parse failure but parsing returned a directive\n";
     return false;
   }
 
@@ -119,16 +134,13 @@ bool checkInvalidCase(const std::string &label, const char *input,
 bool checkMapClauseFirstExpressionContains(
     const std::string &label, const char *input, OpenMPBaseLang lang,
     const std::string &expected_fragment) {
-  setLang(lang);
-
-  std::unique_ptr<OpenMPDirective> directive(
-      parseOpenMP(input, nullptr, nullptr));
-  if (!directive) {
+  ompparser::ParseResult result = parse(input, lang);
+  if (!result.success()) {
     std::cerr << "[" << label << "] parse failed for input: " << input << "\n";
     return false;
   }
 
-  OpenMPClause *clause = findClause(directive.get(), OMPC_map);
+  OpenMPClause *clause = findClause(result.directive.get(), OMPC_map);
   if (clause == nullptr) {
     std::cerr << "[" << label << "] missing map clause\n";
     return false;
@@ -161,16 +173,13 @@ bool checkMapClauseFirstExpressionContains(
 bool checkMapClauseFirstPolicyCount(const std::string &label, const char *input,
                                     OpenMPBaseLang lang,
                                     std::size_t expected_count) {
-  setLang(lang);
-
-  std::unique_ptr<OpenMPDirective> directive(
-      parseOpenMP(input, nullptr, nullptr));
-  if (!directive) {
+  ompparser::ParseResult result = parse(input, lang);
+  if (!result.success()) {
     std::cerr << "[" << label << "] parse failed for input: " << input << "\n";
     return false;
   }
 
-  OpenMPClause *clause = findClause(directive.get(), OMPC_map);
+  OpenMPClause *clause = findClause(result.directive.get(), OMPC_map);
   if (clause == nullptr) {
     std::cerr << "[" << label << "] missing map clause\n";
     return false;
@@ -214,6 +223,32 @@ int main() {
                  Lang_Fortran, OMPD_parallel_do, 1, 7,
                  {{OMPC_private, 1, 19}}) &&
        ok;
+
+  ok = checkCase("fortran_compact_parallel_do", "!$omp paralleldo private(i)",
+                 Lang_Fortran, OMPD_parallel_do, 1, 7,
+                 {{OMPC_private, 1, 18}}) &&
+       ok;
+
+  ok = checkCase("c_declare_target_underscore",
+                 "#pragma omp declare_target device_type(nohost)", Lang_C,
+                 OMPD_declare_target, 1, 13, {{OMPC_device_type, 1, 40}}) &&
+       ok;
+
+  ok = checkCase("fortran_compact_end_do", "!$omp enddo nowait", Lang_Fortran,
+                 OMPD_end, 1, 7, {{OMPC_nowait, 1, 13}}) &&
+       ok;
+
+  ok = checkCase("c_target_enter_data_underscore",
+                 "#pragma omp target_enter_data map(to: EnterMap) nowait",
+                 Lang_C, OMPD_target_enter_data, 1, 13,
+                 {{OMPC_nowait, 1, 49}}) &&
+       ok;
+
+  ok =
+      checkCase("c_target_exit_data_underscore",
+                "#pragma omp target_exit_data map(from: ExitMap) nowait",
+                Lang_C, OMPD_target_exit_data, 1, 13, {{OMPC_nowait, 1, 49}}) &&
+      ok;
 
   ok = checkCase("metadirective_default",
                  "#pragma omp metadirective default(parallel)", Lang_C,
@@ -264,6 +299,5 @@ int main() {
            0) &&
        ok;
 
-  setLang(Lang_unknown);
   return ok ? 0 : 1;
 }

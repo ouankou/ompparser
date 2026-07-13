@@ -20,7 +20,7 @@ PASS: #pragma omp sections private(a, b, c)
 PASS: #pragma omp sections firstprivate(a, b, c)
 
 #pragma omp sections firstprivate( ection_count )
-PASS: #pragma omp sections firstprivate(ection_count)
+PASS: #pragma omp sections firstprivate(ection_count )
 
 #pragma omp sections lastprivate(conditional:a,b,c)
 PASS: #pragma omp sections lastprivate (conditional: a, b, c)
@@ -43,11 +43,10 @@ PASS: #pragma omp sections allocate (omp_default_mem_alloc: a, b, c)
 #pragma omp section
 PASS: #pragma omp section
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 #pragma omp section lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 #pragma omp section nowait(dsfasf)
 
 

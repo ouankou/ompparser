@@ -14,7 +14,7 @@
 //The other one is starting with "PASS: ", which is the result for validation.
 
 #pragma omp parallel loop private (a, b) private (a, c)
-PASS: #pragma omp parallel loop private(a, b, c)
+PASS: #pragma omp parallel loop private(a, b) private(a, c)
   
 #pragma omp parallel loop num_threads (3*5+4/(7+10))
 PASS: #pragma omp parallel loop num_threads(3*5+4/(7+10))
@@ -29,10 +29,10 @@ PASS: #pragma omp parallel loop lastprivate (conditional: a, b, c)
 PASS: #pragma omp parallel loop collapse(a)
 
 #pragma omp parallel loop shared (a, b, c[1:10])
-PASS: #pragma omp parallel loop shared(a, b, c[1 : 10])
+PASS: #pragma omp parallel loop shared(a, b, c[1:10])
 
 #pragma omp parallel loop copyin (a[foo(goo(x)):20],a,y)
-PASS: #pragma omp parallel loop copyin(a[foo(goo(x)) : 20], a, y)
+PASS: #pragma omp parallel loop copyin(a[foo(goo(x)):20], a, y)
 
 #pragma omp parallel loop default (shared)
 PASS: #pragma omp parallel loop default (shared)
@@ -56,7 +56,7 @@ PASS: #pragma omp parallel loop proc_bind (spread)
 PASS: #pragma omp parallel loop reduction(inscan, + : a, foo(x)) reduction(abc : x, y, z) reduction(task, user_defined_value : x, y, z) reduction(inscan, max : a, foo(x))
 
 #pragma omp parallel loop allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
-PASS: #pragma omp parallel loop allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1 : 5])
+PASS: #pragma omp parallel loop allocate (omp_high_bw_mem_alloc: m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test: m, n[1:5])
 
 #pragma omp parallel loop bind(thread)
 PASS: #pragma omp parallel loop bind (thread)
@@ -66,29 +66,37 @@ PASS: #pragma omp parallel loop bind (teams)
 
 #pragma omp parallel loop bind(parallel)
 PASS: #pragma omp parallel loop bind (parallel)
-// invalid test without paired validation.
-EXPECT: invalid
-
 #pragma omp parallel loop private (a[foo(x, goo(x, y)):100], b[1:30], c) num_threads (3*5+4/(7+10)) allocate (omp_user_defined_mem_alloc : m, n[1:5]) allocate (no, allo, cator)
+PASS: #pragma omp parallel loop private(a[foo(x, goo(x, y)):100], b[1:30], c) num_threads(3*5+4/(7+10)) allocate (omp_user_defined_mem_alloc: m, n[1:5]) allocate (no, allo, cator)
 
 #pragma omp parallel loop private (a, b, c) private (a, b, e) firstprivate (foo(x), y), shared (a, b, c[1:10])
+PASS: #pragma omp parallel loop private(a, b, c) private(a, b, e) firstprivate(foo(x), y), shared(a, b, c[1:10])
 
 #pragma omp parallel loop private (a[foo(x, goo(x, y)):100], b[1:30], c) firstprivate (foo(x), y), shared (a, b, c[1:10]) num_threads (4)
+PASS: #pragma omp parallel loop private(a[foo(x, goo(x, y)):100], b[1:30], c) firstprivate(foo(x), y), shared(a, b, c[1:10]) num_threads(4)
 
 #pragma omp parallel loop reduction (tasktest : x11, y, z) allocate (user_defined_test : m, n[1:5]) allocate (omp_high_bw_mem_alloc : m, n[1:5]) reduction (inscan, max : a, foo(x))
+PASS: #pragma omp parallel loop reduction(tasktest : x11, y, z) allocate (user_defined_test: m, n[1:5]) allocate (omp_high_bw_mem_alloc: m, n[1:5]) reduction(inscan, max : a, foo(x))
 
+EXPECT: invalid
 #pragma omp parallel loop lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 #pragma omp parallel loop collapse
 
+EXPECT: invalid
 #pragma omp parallel loop nowait(dsfasf)
 
+EXPECT: invalid
 #pragma omp parallel loop order
 
+EXPECT: invalid
 #pragma omp parallel loop if (simd:a)
 
 #pragma omp parallel loop default (firstprivate)
+PASS: #pragma omp parallel loop default (firstprivate)
 
 #pragma omp parallel loop default (private)
+PASS: #pragma omp parallel loop default (private)
 
 

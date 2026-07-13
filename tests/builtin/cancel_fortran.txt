@@ -25,13 +25,13 @@ PASS: !$omp cancel do if (a)
 !$omp cancel taskgroup if(a)
 PASS: !$omp cancel taskgroup if (a)
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp cancel simd if(a)
 
+EXPECT: invalid
 !$omp cancel for if(simd: a)
 
+EXPECT: invalid
 !$omp cancel for if(a) //still work
 
 
