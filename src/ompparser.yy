@@ -2922,7 +2922,7 @@ self_maps_clause: SELF_MAPS {
 ext_implementation_defined_requirement_clause: EXT_ EXPR_STRING {
                                                current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_ext_implementation_defined_requirement);
                                                ((OpenMPExtImplementationDefinedRequirementClause*)current_clause)->setImplementationDefinedRequirement($2);
-                                               current_clause->addLangExpr($2, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression);
+                                               current_clause->addLangExpr($2, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim);
                                                ((OpenMPExtImplementationDefinedRequirementClause*)current_clause)->mergeExtImplementationDefinedRequirement(current_directive, current_clause);
                                              }
                                              ;

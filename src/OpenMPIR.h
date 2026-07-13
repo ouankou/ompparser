@@ -24,10 +24,7 @@
 
 enum OpenMPBaseLang { Lang_C, Lang_Cplusplus, Lang_Fortran, Lang_unknown };
 
-enum OpenMPFortranSentinelKind {
-  OMPFS_omp,
-  OMPFS_ompx
-};
+enum OpenMPFortranSentinelKind { OMPFS_omp, OMPFS_ompx };
 
 enum OpenMPExprParseMode {
   OMP_EXPR_PARSE_none,
@@ -112,6 +109,8 @@ protected:
   // flag to allow duplicate expressions (e.g., sizes(4, 4))
   bool allow_duplicates = false;
   OpenMPClauseSeparator separator = OMPC_CLAUSE_SEP_space;
+  bool merged_from_end_directive = false;
+  std::string merged_from_end_source_text;
 
   /* consider this is a struct of array, i.e.
    * the expression/localtionLine/locationColumn are the same index are one
@@ -120,6 +119,7 @@ protected:
   std::vector<const char *> expressions;
   std::vector<OpenMPClauseSeparator> expression_separators;
   std::vector<const void *> expressionNodes;
+  std::vector<const void *> auxiliaryExpressionNodes;
 
   std::vector<SourceLocation> locations;
 
@@ -154,19 +154,30 @@ public:
   };
   void setPrecedingSeparator(OpenMPClauseSeparator sep) { separator = sep; }
   OpenMPClauseSeparator getPrecedingSeparator() const { return separator; }
+  void markMergedFromEndDirective(const std::string &source_text) {
+    merged_from_end_directive = true;
+    merged_from_end_source_text = source_text;
+  }
+  bool isMergedFromEndDirective() const { return merged_from_end_directive; }
+  const std::string &getMergedFromEndSourceText() const {
+    return merged_from_end_source_text;
+  }
 
   // a list of expressions or variables that are language-specific for the
   // clause, ompparser does not parse them, instead, it only stores them as
   // strings
-  virtual void addLangExpr(const char *expression,
-                           OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
-                           int line = 0, int col = 0,
-                           OpenMPExprParseMode parse_mode =
-                               OMP_EXPR_PARSE_none);
+  virtual void
+  addLangExpr(const char *expression,
+              OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space, int line = 0,
+              int col = 0,
+              OpenMPExprParseMode parse_mode = OMP_EXPR_PARSE_none);
 
   std::vector<const char *> *getExpressions() { return &expressions; };
   const std::vector<const void *> &getExpressionNodes() const {
     return expressionNodes;
+  }
+  const std::vector<const void *> &getAuxiliaryExpressionNodes() const {
+    return auxiliaryExpressionNodes;
   }
   const void *getExpressionNode(size_t index) const {
     return index < expressionNodes.size() ? expressionNodes[index] : nullptr;
@@ -178,6 +189,18 @@ public:
     return locations;
   }
 
+protected:
+  void addAuxiliaryLangExpr(
+      const std::string &expression,
+      OpenMPExprParseMode parse_mode = OMP_EXPR_PARSE_expression) {
+    if (expression.empty()) {
+      return;
+    }
+    auxiliaryExpressionNodes.push_back(openmpParseExpressionNode(
+        directive_kind, kind, parse_mode, expression.c_str()));
+  }
+
+public:
   virtual std::string toString();
   std::string expressionToString();
   virtual void generateDOT(std::ofstream &, int, int, std::string);
@@ -349,8 +372,10 @@ public:
 // atomic directive
 class OpenMPAtomicDirective : public OpenMPDirective {
 protected:
-  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> clauses_atomic_after;
-  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> clauses_atomic_clauses;
+  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *>
+      clauses_atomic_after;
+  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *>
+      clauses_atomic_clauses;
   std::vector<std::unique_ptr<std::vector<OpenMPClause *>>>
       atomic_clause_vector_storage;
 
@@ -376,7 +401,8 @@ public:
   getAllClausesAtomicAfter() {
     return &clauses_atomic_after;
   };
-  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *getAllAtomicClauses() {
+  std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *
+  getAllAtomicClauses() {
     return &clauses_atomic_clauses;
   };
 };
@@ -806,6 +832,7 @@ public:
                    const std::string &raw = "") {
     modifier = value;
     raw_modifier = raw;
+    addAuxiliaryLangExpr(raw_modifier, OMP_EXPR_PARSE_verbatim);
   }
   OpenMPAdjustArgsModifier getModifier() const { return modifier; }
   const std::string &getRawModifier() const { return raw_modifier; }
@@ -823,7 +850,10 @@ private:
 public:
   OpenMPAppendArgsClause() : OpenMPClause(OMPC_append_args) {}
 
-  void setLabel(const std::string &value) { label = value; }
+  void setLabel(const std::string &value) {
+    label = value;
+    addAuxiliaryLangExpr(label, OMP_EXPR_PARSE_verbatim);
+  }
   const std::string &getLabel() const { return label; }
   void setModifier(OpenMPAppendArgsModifier value) { modifier = value; }
   OpenMPAppendArgsModifier getModifier() const { return modifier; }
@@ -903,6 +933,7 @@ public:
 
   void setUserDefinedAllocator(char *_allocator) {
     user_defined_allocator = std::string(_allocator);
+    addAuxiliaryLangExpr(user_defined_allocator);
   }
 
   std::string getUserDefinedAllocator() { return user_defined_allocator; };
@@ -954,6 +985,7 @@ public:
 
   void setUserDefinedStep(const char *_step) {
     user_defined_step = _step;
+    addAuxiliaryLangExpr(user_defined_step);
   };
 
   std::string getUserDefinedStep() { return user_defined_step; };
@@ -982,6 +1014,7 @@ public:
 
   void setUserDefinedAlignment(const char *_alignment) {
     user_defined_alignment = _alignment;
+    addAuxiliaryLangExpr(user_defined_alignment);
   };
 
   std::string getUserDefinedAlignment() { return user_defined_alignment; };
@@ -1007,9 +1040,7 @@ public:
 
   OpenMPDistScheduleClauseKind getKind() { return dist_schedule_kind; };
 
-  void setChunkSize(const char *_chunk_size) {
-    chunk_size = _chunk_size;
-  };
+  void setChunkSize(const char *_chunk_size) { chunk_size = _chunk_size; };
 
   std::string getChunkSize() { return chunk_size; };
 
@@ -1056,9 +1087,7 @@ public:
                                          OpenMPScheduleClauseModifier,
                                          OpenMPScheduleClauseKind, char *);
 
-  void setChunkSize(const char *_step) {
-    chunk_size = _step;
-  };
+  void setChunkSize(const char *_step) { chunk_size = _step; };
 
   std::string getChunkSize() { return chunk_size; };
   std::string toString();
@@ -1150,6 +1179,8 @@ public:
     user_condition_expression.score = std::string(_score);
     user_condition_expression.expression =
         std::string(_user_condition_expression);
+    addAuxiliaryLangExpr(user_condition_expression.score);
+    addAuxiliaryLangExpr(user_condition_expression.expression);
   };
   ScoredExpression *getUserCondition() { return &user_condition_expression; };
   void addConstructDirective(const char *_score,
@@ -1160,9 +1191,9 @@ public:
     construct_directives.push_back(
         std::make_pair(std::string(_score), _construct_directive));
   };
-  void addConstructDirective(
-      const char *_score,
-      std::unique_ptr<OpenMPDirective> _construct_directive) {
+  void
+  addConstructDirective(const char *_score,
+                        std::unique_ptr<OpenMPDirective> _construct_directive) {
     if (_construct_directive == nullptr) {
       return;
     }
@@ -1178,11 +1209,15 @@ public:
   void setArchExpression(const char *_score, const char *_arch_expression) {
     arch_expression.score = std::string(_score);
     arch_expression.expression = std::string(_arch_expression);
+    addAuxiliaryLangExpr(arch_expression.score);
+    addAuxiliaryLangExpr(arch_expression.expression, OMP_EXPR_PARSE_verbatim);
   };
   ScoredExpression *getArchExpression() { return &arch_expression; };
   void setIsaExpression(const char *_score, const char *_isa_expression) {
     isa_expression.score = std::string(_score);
     isa_expression.expression = std::string(_isa_expression);
+    addAuxiliaryLangExpr(isa_expression.score);
+    addAuxiliaryLangExpr(isa_expression.expression, OMP_EXPR_PARSE_verbatim);
   };
   ScoredExpression *getIsaExpression() { return &isa_expression; };
   void setContextKind(const char *_score,
@@ -1196,12 +1231,16 @@ public:
                               const char *_device_num_expression) {
     device_num_expression.score = std::string(_score);
     device_num_expression.expression = std::string(_device_num_expression);
+    addAuxiliaryLangExpr(device_num_expression.score);
+    addAuxiliaryLangExpr(device_num_expression.expression);
   };
   ScoredExpression *getDeviceNumExpression() { return &device_num_expression; };
   void setExtensionExpression(const char *_score,
                               const char *_extension_expression) {
     extension_expression.score = std::string(_score);
     extension_expression.expression = std::string(_extension_expression);
+    addAuxiliaryLangExpr(extension_expression.score);
+    addAuxiliaryLangExpr(extension_expression.expression);
   };
   ScoredExpression *getExtensionExpression() { return &extension_expression; };
   void setImplementationKind(const char *_score,
@@ -1217,6 +1256,8 @@ public:
     implementation_user_defined_expression.kind = OMPC_IMPL_EXPR_requires;
     implementation_user_defined_expression.score = std::string(_score);
     implementation_user_defined_expression.expression = std::string(args);
+    addAuxiliaryLangExpr(implementation_user_defined_expression.score);
+    addAuxiliaryLangExpr(implementation_user_defined_expression.expression);
   };
   void setImplementationUserExpression(const char *_score,
                                        const char *_implementation_expression) {
@@ -1224,6 +1265,8 @@ public:
     implementation_user_defined_expression.score = std::string(_score);
     implementation_user_defined_expression.expression =
         std::string(_implementation_expression);
+    addAuxiliaryLangExpr(implementation_user_defined_expression.score);
+    addAuxiliaryLangExpr(implementation_user_defined_expression.expression);
   };
   ImplementationExpression *getImplementationExpression() {
     return &implementation_user_defined_expression;
@@ -1252,7 +1295,8 @@ protected:
 public:
   OpenMPWhenClause() : OpenMPVariantClause(OMPC_when) {};
   OpenMPDirective *getVariantDirective() { return variant_directive; };
-  void setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
+  void
+  setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
     variant_directive_storage = std::move(_variant_directive);
     variant_directive = variant_directive_storage.get();
   };
@@ -1275,7 +1319,8 @@ protected:
 public:
   OpenMPOtherwiseClause() : OpenMPVariantClause(OMPC_otherwise) {};
   OpenMPDirective *getVariantDirective() { return variant_directive; };
-  void setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
+  void
+  setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
     variant_directive_storage = std::move(_variant_directive);
     variant_directive = variant_directive_storage.get();
   };
@@ -1346,7 +1391,8 @@ public:
   OpenMPDefaultClauseKind getDefaultClauseKind() { return default_kind; };
 
   OpenMPDirective *getVariantDirective() { return variant_directive; };
-  void setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
+  void
+  setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
     variant_directive_storage = std::move(_variant_directive);
     variant_directive = variant_directive_storage.get();
   };
@@ -1463,11 +1509,11 @@ public:
                : OMPD_unknown;
   }
 
-  void addLangExpr(const char *expression,
-                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space,
-                   int line = 0, int col = 0,
-                   OpenMPExprParseMode parse_mode =
-                       OMP_EXPR_PARSE_none) override;
+  void
+  addLangExpr(const char *expression,
+              OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space, int line = 0,
+              int col = 0,
+              OpenMPExprParseMode parse_mode = OMP_EXPR_PARSE_none) override;
 
   std::string toString() override;
 };
@@ -1566,7 +1612,14 @@ public:
     dependence_vector = std::string(_dependence_vector);
   };
   std::string getDependenceVector() { return dependence_vector; };
-  void addIterator(const Iterator &it) { iterators.push_back(it); }
+  void addIterator(const Iterator &it) {
+    iterators.push_back(it);
+    addAuxiliaryLangExpr(it.qualifier);
+    addAuxiliaryLangExpr(it.var);
+    addAuxiliaryLangExpr(it.begin);
+    addAuxiliaryLangExpr(it.end);
+    addAuxiliaryLangExpr(it.step);
+  }
   const std::vector<Iterator> &getIterators() const { return iterators; }
   void clearIterators() { iterators.clear(); }
   void setDependIteratorsDefinitionClass(
@@ -1584,7 +1637,7 @@ public:
       if (vec.size() > 4 && vec[4]) {
         it.step = std::string(vec[4]);
       }
-      iterators.push_back(it);
+      addIterator(it);
     }
   };
   static OpenMPClause *addDependClause(OpenMPDirective *,
@@ -1669,6 +1722,11 @@ public:
       it.step = std::string(iterator_definition[4]);
     }
     iterators.push_back(it);
+    addAuxiliaryLangExpr(it.qualifier);
+    addAuxiliaryLangExpr(it.var);
+    addAuxiliaryLangExpr(it.begin);
+    addAuxiliaryLangExpr(it.end);
+    addAuxiliaryLangExpr(it.step);
   };
   const std::vector<Iterator> &getIterators() const { return iterators; };
   const std::vector<Iterator> &getIteratorsDefinitionClass() const {
@@ -1749,14 +1807,12 @@ public:
       return;
     }
     mapper_identifier = std::string(_identifier);
-    mapper_identifier_node = openmpParseExpressionNode(
-        directive_kind, kind, OMP_EXPR_PARSE_expression,
-        mapper_identifier.c_str());
+    mapper_identifier_node =
+        openmpParseExpressionNode(directive_kind, kind, OMP_EXPR_PARSE_verbatim,
+                                  mapper_identifier.c_str());
   };
   std::string getMapperIdentifier() { return mapper_identifier; };
-  const void *getMapperIdentifierNode() const {
-    return mapper_identifier_node;
-  }
+  const void *getMapperIdentifierNode() const { return mapper_identifier_node; }
   void addIterator(const std::string &qualifier, const std::string &var,
                    const std::string &begin, const std::string &end,
                    const std::string &step = std::string()) {
@@ -1767,6 +1823,11 @@ public:
     it.end = end;
     it.step = step;
     iterators.push_back(it);
+    addAuxiliaryLangExpr(it.qualifier);
+    addAuxiliaryLangExpr(it.var);
+    addAuxiliaryLangExpr(it.begin);
+    addAuxiliaryLangExpr(it.end);
+    addAuxiliaryLangExpr(it.step);
   }
   const std::vector<Iterator> &getIterators() const { return iterators; }
   void clearIterators() { iterators.clear(); }
@@ -1811,14 +1872,12 @@ public:
       return;
     }
     mapper_identifier = std::string(_identifier);
-    mapper_identifier_node = openmpParseExpressionNode(
-        directive_kind, kind, OMP_EXPR_PARSE_expression,
-        mapper_identifier.c_str());
+    mapper_identifier_node =
+        openmpParseExpressionNode(directive_kind, kind, OMP_EXPR_PARSE_verbatim,
+                                  mapper_identifier.c_str());
   };
   std::string getMapperIdentifier() { return mapper_identifier; };
-  const void *getMapperIdentifierNode() const {
-    return mapper_identifier_node;
-  }
+  const void *getMapperIdentifierNode() const { return mapper_identifier_node; }
   void addIterator(const std::string &qualifier, const std::string &var,
                    const std::string &begin, const std::string &end,
                    const std::string &step = std::string()) {
@@ -1829,6 +1888,11 @@ public:
     it.end = end;
     it.step = step;
     iterators.push_back(it);
+    addAuxiliaryLangExpr(it.qualifier);
+    addAuxiliaryLangExpr(it.var);
+    addAuxiliaryLangExpr(it.begin);
+    addAuxiliaryLangExpr(it.end);
+    addAuxiliaryLangExpr(it.step);
   }
   const std::vector<Iterator> &getIterators() const { return iterators; }
   void clearIterators() { iterators.clear(); }
@@ -1975,7 +2039,14 @@ public:
     ref_modifier = value;
   }
   std::string getMapperIdentifier() { return mapper_identifier; };
-  void addIterator(const Iterator &it) { iterators.push_back(it); }
+  void addIterator(const Iterator &it) {
+    iterators.push_back(it);
+    addAuxiliaryLangExpr(it.qualifier);
+    addAuxiliaryLangExpr(it.var);
+    addAuxiliaryLangExpr(it.begin);
+    addAuxiliaryLangExpr(it.end);
+    addAuxiliaryLangExpr(it.step);
+  }
   void addIterator(const std::string &qualifier, const std::string &var,
                    const std::string &begin, const std::string &end,
                    const std::string &step = std::string()) {
@@ -1986,6 +2057,11 @@ public:
     it.end = end;
     it.step = step;
     iterators.push_back(it);
+    addAuxiliaryLangExpr(it.qualifier);
+    addAuxiliaryLangExpr(it.var);
+    addAuxiliaryLangExpr(it.begin);
+    addAuxiliaryLangExpr(it.end);
+    addAuxiliaryLangExpr(it.step);
   }
   const std::vector<Iterator> &getIterators() const { return iterators; }
   void clearIterators() { iterators.clear(); }

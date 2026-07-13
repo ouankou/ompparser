@@ -43,8 +43,7 @@ const void *openmpParseExpressionNode(OpenMPDirectiveKind directive_kind,
   }
   OpenMPExprParseMode mode =
       parse_mode != OMP_EXPR_PARSE_none ? parse_mode : gOpenMPExprParseMode;
-  return gOpenMPExprParseCallback(directive_kind, clause_kind, mode,
-                                  expression,
+  return gOpenMPExprParseCallback(directive_kind, clause_kind, mode, expression,
                                   gOpenMPExprParseUserData);
 }
 
@@ -441,23 +440,22 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
   }
 
   std::string token = prefix.substr(token_begin, token_end - token_begin);
-  std::transform(token.begin(), token.end(), token.begin(),
-                 [](unsigned char ch) {
-                   return static_cast<char>(std::tolower(ch));
-                 });
+  std::transform(
+      token.begin(), token.end(), token.begin(),
+      [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
   if (token != "dist_data") {
     return false;
   }
 
-  const std::string base_expression =
-      trimWhitespace(prefix, 0, token_begin);
+  const std::string base_expression = trimWhitespace(prefix, 0, token_begin);
   if (!isValidDistDataBaseExpression(base_expression)) {
     return false;
   }
 
   *array_section_expression = base_expression;
-  *dist_data_arguments = trimWhitespace(trimmed_expression, open_paren_pos + 1,
-      trimmed_expression.size() - open_paren_pos - 2);
+  *dist_data_arguments =
+      trimWhitespace(trimmed_expression, open_paren_pos + 1,
+                     trimmed_expression.size() - open_paren_pos - 2);
   return true;
 }
 
@@ -703,6 +701,38 @@ resolveClauseExpressionParseMode(OpenMPClauseKind clause_kind,
                : OMP_EXPR_PARSE_expression;
   }
 
+  switch (clause_kind) {
+  case OMPC_if:
+  case OMPC_num_threads:
+  case OMPC_num_teams:
+  case OMPC_thread_limit:
+  case OMPC_collapse:
+  case OMPC_ordered:
+  case OMPC_partial:
+  case OMPC_nowait:
+  case OMPC_schedule:
+  case OMPC_dist_schedule:
+  case OMPC_safelen:
+  case OMPC_simdlen:
+  case OMPC_final:
+  case OMPC_priority:
+  case OMPC_detach:
+  case OMPC_grainsize:
+  case OMPC_num_tasks:
+  case OMPC_device:
+  case OMPC_sizes:
+  case OMPC_hint:
+  case OMPC_filter:
+  case OMPC_nocontext:
+  case OMPC_novariants:
+  case OMPC_looprange:
+  case OMPC_counts:
+  case OMPC_graph_id:
+    return OMP_EXPR_PARSE_expression;
+  default:
+    break;
+  }
+
   return parse_mode;
 }
 
@@ -910,8 +940,8 @@ void OpenMPMapClause::addItem(const std::string &expr,
   const std::string trimmed_expression = trimWhitespace(expr);
   std::string item_expression = trimmed_expression;
   if (has_dist_data) {
-    item_expression = array_section_expression + " dist_data(" +
-                      dist_data_arguments + ")";
+    item_expression =
+        array_section_expression + " dist_data(" + dist_data_arguments + ")";
   }
   items.push_back(OpenMPExpressionItem{item_expression, sep});
 
@@ -937,8 +967,8 @@ void OpenMPMapClause::addItem(const std::string &expr,
       if (open_pos != std::string::npos) {
         int depth = 0;
         std::string::size_type close_pos = std::string::npos;
-        for (std::string::size_type index = open_pos; index < policy_text.size();
-             ++index) {
+        for (std::string::size_type index = open_pos;
+             index < policy_text.size(); ++index) {
           const char ch = policy_text[index];
           if (ch == '(') {
             ++depth;
@@ -951,12 +981,14 @@ void OpenMPMapClause::addItem(const std::string &expr,
           }
         }
         if (close_pos == std::string::npos ||
-            trimWhitespace(policy_text, close_pos + 1, policy_text.size() - close_pos - 1).size() != 0) {
+            trimWhitespace(policy_text, close_pos + 1,
+                           policy_text.size() - close_pos - 1)
+                    .size() != 0) {
           continue;
         }
         policy_name = trimWhitespace(policy_text, 0, open_pos);
-        policy_argument = trimWhitespace(
-            policy_text, open_pos + 1, close_pos - open_pos - 1);
+        policy_argument =
+            trimWhitespace(policy_text, open_pos + 1, close_pos - open_pos - 1);
       }
 
       std::string normalized_name = policy_name;
@@ -993,6 +1025,7 @@ void OpenMPAdjustArgsClause::addArgument(const std::string &arg) {
   std::string cleaned =
       normalizeClauseExpression(OMPC_adjust_args, arg.c_str());
   arguments.push_back(cleaned);
+  addAuxiliaryLangExpr(cleaned);
 }
 
 std::string OpenMPAdjustArgsClause::toString() {
@@ -1031,6 +1064,7 @@ void OpenMPAppendArgsClause::addArgument(const std::string &arg) {
   std::string cleaned =
       normalizeClauseExpression(OMPC_append_args, arg.c_str());
   arguments.push_back(cleaned);
+  addAuxiliaryLangExpr(cleaned);
 }
 
 std::string OpenMPAppendArgsClause::toString() {
@@ -1059,6 +1093,8 @@ void OpenMPUsesAllocatorsClause::addUsesAllocatorsAllocatorSequence(
       OMPC_uses_allocators, _allocator_traits_array.c_str());
   std::string user_cleaned =
       normalizeClauseExpression(OMPC_uses_allocators, _allocator_user.c_str());
+  addAuxiliaryLangExpr(traits_cleaned);
+  addAuxiliaryLangExpr(user_cleaned);
   auto usesAllocatorsAllocator = std::make_unique<usesAllocatorParameter>(
       _allocator, traits_cleaned, user_cleaned);
   usesAllocatorsAllocatorSequenceView.push_back(usesAllocatorsAllocator.get());
@@ -2455,8 +2491,8 @@ void OpenMPDependClause::mergeDepend(OpenMPDirective *directive,
         if (para_merge == true) {
           const OpenMPClauseSeparator sep =
               (idx < current_separators.size())
-                  ? (has_existing && current_separators[idx] ==
-                                         OMPC_CLAUSE_SEP_space
+                  ? (has_existing &&
+                             current_separators[idx] == OMPC_CLAUSE_SEP_space
                          ? OMPC_CLAUSE_SEP_comma
                          : current_separators[idx])
                   : OMPC_CLAUSE_SEP_comma;

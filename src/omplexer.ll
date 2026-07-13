@@ -8,7 +8,6 @@
 
 %option prefix="openmp_"
 %option stack
-%option noyy_top_state
 %option
 
 %x AFFINITY_EXPR_STATE
@@ -118,7 +117,6 @@ extern int openmp_lex();
 
 /* Moved from Makefile.am to the source file to work with --with-pch Liao
    12/10/2009 */
-#define YY_NO_TOP_STATE
 #define YY_NO_POP_STATE
 
 /* Forward declaration - actual token values will be available after parser header */
@@ -1838,7 +1836,14 @@ cgroup                    { return CGROUP; }
                                                         if (parenthesis_local_count == 0 && brace_count == 0 &&
                                                             bracket_count == 0 && open_paren == close_paren &&
                                                             open_brace == close_brace && open_bracket == close_bracket) {
-                                                        return emit_expr_string_and_unput(',');
+                                                            // A uses_allocators item returns to its clause lexer so
+                                                            // the next predefined allocator is recognized.  Other
+                                                            // comma-separated expression lists intentionally remain
+                                                            // in EXPR_STATE for the following item.
+                                                            if (yy_top_state() == USES_ALLOCATORS_STATE) {
+                                                                yy_pop_state();
+                                                            }
+                                                            return emit_expr_string_and_unput(',');
                                                         }
                                                         current_string.push_back(current_char);
                                                     }
