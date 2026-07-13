@@ -40,17 +40,19 @@ PASS: !$omp loop bind (thread)
 !$omp end loop
 PASS: !$omp end loop
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp loop lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 !$omp loop collapse
 
+EXPECT: invalid
 !$omp loop order
 
+EXPECT: invalid
 !$omp loop schedule(task,max:a,b,c)
 
+EXPECT: invalid
 !$omp end loop bind(thread)
 
 

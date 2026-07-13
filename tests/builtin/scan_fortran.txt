@@ -20,9 +20,7 @@ PASS: !$omp scan inclusive(a, b, c)
 PASS: !$omp scan exclusive(a, b, c)
 
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp scan inclusive(a,b,c) exclusive(a,b,c)
 
 

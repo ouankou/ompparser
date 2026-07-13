@@ -80,9 +80,8 @@ async function main() {
     let currentInput = "";
     let currentOutput = "";
     let expectInvalidNext = false;
-    let expectInvalidBlock = false;
-
-    const invalidMarker = "invalid test without paired validation.";
+    const allowExtensions = /^(?:ompx_fortran|requires(?:_fortran)?|target_data)\.txt$/
+      .test(file);
 
     const reportFailure = (lineNo, message) => {
       failures += 1;
@@ -95,19 +94,6 @@ async function main() {
       if (line.endsWith("\r"))
         line = line.slice(0, -1);
       let trimmed = line.replace(/^\s+/, "");
-
-      if (trimmed.includes(invalidMarker)) {
-        const commentPos = trimmed.indexOf("//");
-        if (commentPos !== -1) {
-          const before = trimmed.slice(0, commentPos).trimEnd();
-          if (!before) {
-            expectInvalidBlock = true;
-            continue;
-          }
-          trimmed = before;
-        }
-        expectInvalidNext = true;
-      }
 
       if (trimmed.startsWith("EXPECT:")) {
         const expectation = trimmed
@@ -130,21 +116,29 @@ async function main() {
 
         logBuffer.length = 0;
         errBuffer.length = 0;
-        const output = wasmModule.parseAndUnparse(currentInput, LangMode.Auto,
-                                                  langHint);
-        const errors = errBuffer.join("\n");
-        const isExpectedInvalid = expectInvalidNext || expectInvalidBlock;
+        const parse = allowExtensions
+          ? wasmModule.parseAndUnparseWithExtensions
+          : wasmModule.parseAndUnparse;
+        const result = parse(currentInput, LangMode.Auto, langHint);
+        const output = result.text || "";
+        const diagnostics = Array.from(result.diagnostics || []);
+        const isExpectedInvalid = expectInvalidNext;
 
         if (isExpectedInvalid) {
-          if (expectInvalidNext)
-            expectInvalidNext = false;
+          if (output.trim() || diagnostics.length === 0) {
+            reportFailure(lineNo, "Expected invalid directive was accepted.");
+          }
+          expectInvalidNext = false;
           currentInput = "";
           currentOutput = "";
           continue;
         }
 
-        if (errors.includes("error:")) {
-          reportFailure(lineNo, `Parser error: ${errors.trim()}`);
+        if (diagnostics.length !== 0) {
+          reportFailure(
+            lineNo,
+            `Parser error: ${diagnostics.map((item) => item.message).join("; ")}`
+          );
           currentInput = "";
           continue;
         }
@@ -159,7 +153,6 @@ async function main() {
         if (!currentInput) {
           currentOutput = "";
           expectInvalidNext = false;
-          expectInvalidBlock = false;
           continue;
         }
 
@@ -173,12 +166,15 @@ async function main() {
         currentInput = "";
         currentOutput = "";
         expectInvalidNext = false;
-        expectInvalidBlock = false;
       }
     }
 
     if (currentInput) {
       reportFailure(lines.length, "Missing PASS line at end of file.");
+    }
+    if (expectInvalidNext) {
+      reportFailure(lines.length,
+                    "Dangling EXPECT: invalid without a directive.");
     }
   }
 

@@ -6,14 +6,14 @@
  * SPDX-License-Identifier: (BSD-3-Clause)
  */
 
+EXPECT: invalid
 #pragma omp target teams workdistribute collapse(2) lastprivate(x) order(concurrent)
-PASS: #pragma omp target teams workdistribute collapse(2) lastprivate (x) order (concurrent)
 
+EXPECT: invalid
 #pragma omp target teams workdistribute dist_schedule(static) induction(step(i + 1), j : k)
-PASS: #pragma omp target teams workdistribute dist_schedule (static) induction(step(i+1), j: k)
 
+EXPECT: invalid
 !$omp target teams workdistribute collapse(2) lastprivate(x) order(concurrent)
-PASS: !$omp target teams workdistribute collapse(2) lastprivate (x) order (concurrent)
 
+EXPECT: invalid
 !$omp target teams workdistribute dist_schedule(static) induction(step(i + 1), j : k)
-PASS: !$omp target teams workdistribute dist_schedule (static) induction(step(i+1), j: k)

@@ -22,10 +22,9 @@ PASS: #pragma omp threadprivate (to)
 #pragma omp threadprivate (c,b,d)
 PASS: #pragma omp threadprivate (c,b,d)
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 #pragma omp threadprivate
 
+EXPECT: invalid
 #pragma omp threadprivate (c,b,d) if(a)
 

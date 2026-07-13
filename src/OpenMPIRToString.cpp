@@ -7,7 +7,6 @@
  */
 
 #include "OpenMPIR.h"
-#include <stdarg.h>
 
 namespace {
 std::string formatDirectiveName(const char *name) {
@@ -56,11 +55,27 @@ std::string getClauseSpelling(OpenMPClauseKind kind) {
   }
   return std::string();
 }
+
+std::string
+getVariableCategorySpelling(OpenMPDefaultmapClauseCategory category) {
+  switch (category) {
+  case OMPC_DEFAULTMAP_CATEGORY_scalar:
+    return "scalar";
+  case OMPC_DEFAULTMAP_CATEGORY_aggregate:
+    return "aggregate";
+  case OMPC_DEFAULTMAP_CATEGORY_pointer:
+    return "pointer";
+  case OMPC_DEFAULTMAP_CATEGORY_all:
+    return "all";
+  case OMPC_DEFAULTMAP_CATEGORY_allocatable:
+    return "allocatable";
+  default:
+    return std::string();
+  }
+}
 } // namespace
 
-std::string OpenMPDirective::generatePragmaString(std::string prefix,
-                                                  std::string beginning_symbol,
-                                                  std::string ending_symbol) {
+std::string OpenMPDirective::generatePragmaString(std::string prefix) const {
 
   if (this->getBaseLang() == Lang_Fortran && prefix == "#pragma omp ") {
     prefix = (this->getFortranSentinel() == OMPFS_ompx) ? "!$ompx " : "!$omp ";
@@ -69,14 +84,12 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
 
   result += this->toString();
 
-  result += beginning_symbol;
-
   switch (this->getKind()) {
 
   case OMPD_declare_variant: {
-    result += "(" +
-              ((OpenMPDeclareVariantDirective *)this)->getVariantFuncID() +
-              ") ";
+    const auto *declare_variant =
+        static_cast<const OpenMPDeclareVariantDirective *>(this);
+    result += "(" + declare_variant->getVariantFuncID() + ") ";
     break;
   }
   case OMPD_allocate: {
@@ -86,7 +99,7 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     for (auto it = list.begin(); it != list.end(); ++it) {
       if (it != list.begin())
         result += ",";
-      result += *it;
+      result += it->spelling;
     }
     result += ") ";
     break;
@@ -98,7 +111,7 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     for (auto it = list.begin(); it != list.end(); ++it) {
       if (it != list.begin())
         result += ",";
-      result += *it;
+      result += it->spelling;
     }
     result += ")";
     break;
@@ -110,20 +123,19 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     for (auto it = list.begin(); it != list.end(); ++it) {
       if (it != list.begin())
         result += ",";
-      result += *it;
+      result += it->spelling;
     }
     result += ")";
     break;
   }
   case OMPD_declare_reduction: {
-    std::vector<const char *> *list =
-        ((OpenMPDeclareReductionDirective *)this)->getTypenameList();
-    std::vector<const char *>::iterator list_item;
-    std::string id = ((OpenMPDeclareReductionDirective *)this)->getIdentifier();
-    std::string combiner =
-        ((OpenMPDeclareReductionDirective *)this)->getCombiner();
-    std::vector<OpenMPClause *> *combiner_clauses =
-        this->getClauses(OMPC_combiner);
+    const auto *declaration =
+        static_cast<const OpenMPDeclareReductionDirective *>(this);
+    const auto &list = declaration->getTypenameList();
+    const std::string &id = declaration->getIdentifier();
+    const std::string &combiner = declaration->getCombiner();
+    const std::vector<OpenMPClause *> *combiner_clauses =
+        this->findClauses(OMPC_combiner);
     const bool has_combiner_clause =
         (combiner_clauses != nullptr && !combiner_clauses->empty());
 
@@ -135,14 +147,13 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     result += id;
     result += " : ";
     bool first_type = true;
-    for (list_item = list->begin(); list_item != list->end(); list_item++) {
-      std::string type = *list_item ? std::string(*list_item) : "";
+    for (const ompparser::HostFragment &list_item : list) {
       if (!first_type) {
         result += ", ";
       } else {
         first_type = false;
       }
-      result += type;
+      result += list_item.spelling;
     }
     if (!combiner.empty() && !has_combiner_clause) {
       result += " : ";
@@ -156,7 +167,8 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       result.pop_back();
     }
     result += "(";
-    std::vector<OpenMPClause *> *ind_clauses = this->getClauses(OMPC_induction);
+    const std::vector<OpenMPClause *> *ind_clauses =
+        this->findClauses(OMPC_induction);
     if (ind_clauses != nullptr && !ind_clauses->empty()) {
       auto *ind_clause =
           dynamic_cast<OpenMPInductionClause *>(ind_clauses->at(0));
@@ -170,8 +182,10 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     goto default_case;
   }
   case OMPD_declare_mapper: {
+    const auto *declare_mapper =
+        static_cast<const OpenMPDeclareMapperDirective *>(this);
     OpenMPDeclareMapperDirectiveIdentifier identifier =
-        ((OpenMPDeclareMapperDirective *)this)->getIdentifier();
+        declare_mapper->getIdentifier();
     // Remove trailing space from directive name before adding opening paren
     if (!result.empty() && result.back() == ' ') {
       result.pop_back();
@@ -184,8 +198,7 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
         break;
       }
       case OMPD_DECLARE_MAPPER_IDENTIFIER_user: {
-        std::string id =
-            ((OpenMPDeclareMapperDirective *)this)->getUserDefinedIdentifier();
+        const std::string &id = declare_mapper->getUserDefinedIdentifier();
         result += id;
         break;
       }
@@ -198,15 +211,15 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       }
     }
 
-    std::string declare_mapper_type =
-        ((OpenMPDeclareMapperDirective *)this)->getDeclareMapperType();
+    const std::string &declare_mapper_type =
+        declare_mapper->getDeclareMapperType();
     result += declare_mapper_type;
-    std::string declare_mapper_variable =
-        ((OpenMPDeclareMapperDirective *)this)->getDeclareMapperVar();
+    const std::string &declare_mapper_variable =
+        declare_mapper->getDeclareMapperVar();
     // Fortran requires :: separator between type and variable
     if (this->getBaseLang() == Lang_Fortran) {
       result += " :: ";
-    } else if (((OpenMPDeclareMapperDirective *)this)->hasTypeVarSpace()) {
+    } else if (declare_mapper->hasTypeVarSpace()) {
       result += " ";
     }
     result += declare_mapper_variable;
@@ -214,7 +227,8 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     goto default_case;
   }
   case OMPD_declare_simd: {
-    std::string proc_name = ((OpenMPDeclareSimdDirective *)this)->getProcName();
+    const std::string &proc_name =
+        static_cast<const OpenMPDeclareSimdDirective *>(this)->getProcName();
     if (proc_name != "") {
       result += "(";
       result += proc_name;
@@ -223,8 +237,8 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     break;
   }
   case OMPD_end: {
-    auto *end_directive = static_cast<OpenMPEndDirective *>(this);
-    OpenMPDirective *paired = end_directive->getPairedDirective();
+    const auto *end_directive = static_cast<const OpenMPEndDirective *>(this);
+    const OpenMPDirective *paired = end_directive->getPairedDirective();
     if (this->getBaseLang() == Lang_Fortran && paired != nullptr &&
         paired->getKind() == OMPD_do) {
       result = prefix;
@@ -240,21 +254,25 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       result += "metadirective ";
       goto default_case;
     } else if (paired != nullptr) {
-      result += paired->generatePragmaString("", "", "");
+      result += paired->toString();
+      const std::string &argument = end_directive->getEndArgument().spelling;
+      if (!argument.empty()) {
+        result += "(" + argument + ") ";
+      }
       goto default_case;
     }
     break;
   }
   case OMPD_declare_target: {
-    std::vector<std::string> *list =
-        ((OpenMPDeclareTargetDirective *)this)->getExtendedList();
-    if (list->size() > 0) {
-      std::vector<std::string>::iterator list_item;
+    const auto &list = static_cast<const OpenMPDeclareTargetDirective *>(this)
+                           ->getExtendedList();
+    if (!list.empty()) {
       result += "(";
-      for (list_item = list->begin(); list_item != list->end(); list_item++) {
-        if (list_item != list->begin())
+      for (auto list_item = list.begin(); list_item != list.end();
+           ++list_item) {
+        if (list_item != list.begin())
           result += ",";
-        result += *list_item;
+        result += list_item->spelling;
       }
       result += ") ";
     }
@@ -262,7 +280,8 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     goto default_case;
   }
   case OMPD_critical: {
-    std::string name = ((OpenMPCriticalDirective *)this)->getCriticalName();
+    const std::string &name =
+        static_cast<const OpenMPCriticalDirective *>(this)->getCriticalName();
     if (name != "") {
       result += "(";
       result += name;
@@ -271,22 +290,23 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     break;
   }
   case OMPD_flush: {
-    std::vector<std::string> *list =
-        ((OpenMPFlushDirective *)this)->getFlushList();
-    if (list->size() > 0) {
-      std::vector<std::string>::iterator list_item;
+    const auto &list =
+        static_cast<const OpenMPFlushDirective *>(this)->getFlushList();
+    if (!list.empty()) {
       result += "(";
-      for (list_item = list->begin(); list_item != list->end(); list_item++) {
-        if (list_item != list->begin())
+      for (auto list_item = list.begin(); list_item != list.end();
+           ++list_item) {
+        if (list_item != list.begin())
           result += ",";
-        result += *list_item;
+        result += list_item->spelling;
       }
       result += ") ";
     }
     break;
   }
   case OMPD_depobj: {
-    std::string depobj = ((OpenMPDepobjDirective *)this)->getDepobj();
+    const std::string &depobj =
+        static_cast<const OpenMPDepobjDirective *>(this)->getDepobj();
     result += "(";
     result += depobj;
     result += ") ";
@@ -296,19 +316,11 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
   default_case:;
   };
 
-  std::vector<OpenMPClause *> *clauses = this->getClausesInOriginalOrder();
-  if (this->getKind() == OMPD_end && clauses->empty()) {
-    auto *end_dir = static_cast<OpenMPEndDirective *>(this);
-    OpenMPDirective *paired = end_dir->getPairedDirective();
-    if (paired != nullptr &&
-        (paired->getKind() == OMPD_do || paired->getKind() == OMPD_do_simd)) {
-      clauses = paired->getClausesInOriginalOrder();
-    }
-  }
+  const std::vector<OpenMPClause *> *clauses =
+      &this->getClausesInOriginalOrder();
   if (clauses->size() != 0) {
     bool first_clause = true;
-    std::vector<OpenMPClause *>::iterator iter;
-    for (iter = clauses->begin(); iter != clauses->end(); iter++) {
+    for (auto iter = clauses->begin(); iter != clauses->end(); ++iter) {
       if (this->getKind() == OMPD_declare_induction &&
           (*iter)->getKind() == OMPC_induction) {
         continue;
@@ -342,12 +354,45 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       result.pop_back();
     }
   }
-  result += ending_symbol;
-
   return result;
 };
 
-std::string OpenMPDirective::toString() {
+std::string OpenMPDirective::generateContextTraitString() const {
+  std::string result = toString();
+  if (!result.empty() && result.back() == ' ') {
+    result.pop_back();
+  }
+
+  const auto &clauses = getClausesInOriginalOrder();
+  if (clauses.empty()) {
+    return result;
+  }
+
+  result += "(";
+  bool first = true;
+  for (OpenMPClause *clause : clauses) {
+    if (clause == nullptr) {
+      continue;
+    }
+    std::string clause_text = clause->toString();
+    if (!clause_text.empty() && clause_text.back() == ' ') {
+      clause_text.pop_back();
+    }
+    if (clause_text.empty()) {
+      continue;
+    }
+    if (!first) {
+      result +=
+          clause->getPrecedingSeparator() == OMPC_CLAUSE_SEP_comma ? ", " : " ";
+    }
+    result += clause_text;
+    first = false;
+  }
+  result += ")";
+  return result;
+}
+
+std::string OpenMPDirective::toString() const {
   switch (this->getKind()) {
   case OMPD_ompx: {
     const std::string &payload = this->getImplementationDefinedPayload();
@@ -380,36 +425,18 @@ std::string OpenMPDirective::toString() {
     break;
   }
 
-  std::string result = getDirectiveSpelling(this->getKind());
-  if (result.empty()) {
-    printf("The directive enum is not supported yet.\n");
-  }
-
-  return result;
+  return getDirectiveSpelling(this->getKind());
 };
 
 std::string OpenMPClause::expressionToString() {
 
   std::string result;
-  std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    // For init/adjust_args clauses with exactly 2 expressions, use ":"
-    // separator
-    if ((this->getKind() == OMPC_init || this->getKind() == OMPC_adjust_args) &&
-        expr->size() == 2) {
-      result = std::string((*expr)[0]) + ": " + std::string((*expr)[1]);
-    } else {
-      for (size_t idx = 0; idx < expr->size(); ++idx) {
-        if (idx > 0) {
-          OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space;
-          if (idx < expression_separators.size()) {
-            sep = expression_separators[idx];
-          }
-          result += (sep == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
-        }
-        result += std::string((*expr)[idx]);
-      }
+  for (size_t idx = 0; idx < expressions.size(); ++idx) {
+    if (idx > 0) {
+      result +=
+          (expressions[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
     }
+    result += expressions[idx].fragment.spelling;
   }
 
   return result;
@@ -418,9 +445,6 @@ std::string OpenMPClause::expressionToString() {
 std::string OpenMPClause::toString() {
 
   std::string result = getClauseSpelling(this->getKind());
-  if (result.empty()) {
-    printf("The clause enum is not supported yet.\n");
-  }
 
   std::string clause_string = "(";
   if (this->hasDirectiveNameModifier()) {
@@ -492,8 +516,7 @@ std::string OpenMPAtomicDefaultMemOrderClause::toString() {
     parameter_string = "relaxed";
     break;
   default:
-    std::cout << "The parameter of tomic_default_mem_order clause is not "
-                 "supported.\n";
+    break;
   };
 
   if (parameter_string.size() > 0) {
@@ -573,8 +596,9 @@ std::string OpenMPDependClause::toString() {
         clause_string += ", ";
       }
       clause_string += iteratorToString(
-          iterator_defs[i].qualifier, iterator_defs[i].var,
-          iterator_defs[i].begin, iterator_defs[i].end, iterator_defs[i].step);
+          iterator_defs[i].qualifier.spelling,
+          iterator_defs[i].variable.spelling, iterator_defs[i].begin.spelling,
+          iterator_defs[i].end.spelling, iterator_defs[i].step.spelling);
     }
     clause_string += " )";
   }
@@ -640,14 +664,14 @@ std::string OpenMPDoacrossClause::toString() {
   }
 
   if (type == OMPC_DOACROSS_TYPE_source && this->hasSourceExpression()) {
-    result += " " + this->getSourceExpression().text;
+    result += " " + this->getSourceExpression().fragment.spelling;
   } else if (type == OMPC_DOACROSS_TYPE_sink) {
     const auto &args = this->getSinkArgs();
     for (size_t idx = 0; idx < args.size(); ++idx) {
       if (idx > 0) {
         result += (args[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
       }
-      result += args[idx].text;
+      result += args[idx].fragment.spelling;
     }
   } else {
     // Fallback to legacy expression list if present
@@ -714,11 +738,12 @@ std::string OpenMPAffinityClause::toString() {
       if (i > 0) {
         clause_string += ", ";
       }
-      clause_string += iteratorToString(iterators_definition_class[i].qualifier,
-                                        iterators_definition_class[i].var,
-                                        iterators_definition_class[i].begin,
-                                        iterators_definition_class[i].end,
-                                        iterators_definition_class[i].step);
+      clause_string +=
+          iteratorToString(iterators_definition_class[i].qualifier.spelling,
+                           iterators_definition_class[i].variable.spelling,
+                           iterators_definition_class[i].begin.spelling,
+                           iterators_definition_class[i].end.spelling,
+                           iterators_definition_class[i].step.spelling);
     };
     clause_string += " )";
     break;
@@ -757,8 +782,9 @@ std::string OpenMPToClause::toString() {
         clause_string += ", ";
       }
       clause_string += iteratorToString(
-          iterator_defs[i].qualifier, iterator_defs[i].var,
-          iterator_defs[i].begin, iterator_defs[i].end, iterator_defs[i].step);
+          iterator_defs[i].qualifier.spelling,
+          iterator_defs[i].variable.spelling, iterator_defs[i].begin.spelling,
+          iterator_defs[i].end.spelling, iterator_defs[i].step.spelling);
     }
     clause_string += ")";
     break;
@@ -807,8 +833,9 @@ std::string OpenMPFromClause::toString() {
         clause_string += ", ";
       }
       clause_string += iteratorToString(
-          iterator_defs[i].qualifier, iterator_defs[i].var,
-          iterator_defs[i].begin, iterator_defs[i].end, iterator_defs[i].step);
+          iterator_defs[i].qualifier.spelling,
+          iterator_defs[i].variable.spelling, iterator_defs[i].begin.spelling,
+          iterator_defs[i].end.spelling, iterator_defs[i].step.spelling);
     }
     clause_string += ")";
     break;
@@ -869,26 +896,9 @@ std::string OpenMPDefaultmapClause::toString() {
     break;
   default:;
   }
-  if (category != OMPC_DEFAULTMAP_CATEGORY_unspecified) {
-    clause_string += ": ";
-  };
-  switch (category) {
-  case OMPC_DEFAULTMAP_CATEGORY_scalar:
-    clause_string += "scalar";
-    break;
-  case OMPC_DEFAULTMAP_CATEGORY_aggregate:
-    clause_string += "aggregate";
-    break;
-  case OMPC_DEFAULTMAP_CATEGORY_pointer:
-    clause_string += "pointer";
-    break;
-  case OMPC_DEFAULTMAP_CATEGORY_all:
-    clause_string += "all";
-    break;
-  case OMPC_DEFAULTMAP_CATEGORY_allocatable:
-    clause_string += "allocatable";
-    break;
-  default:;
+  const std::string category_spelling = getVariableCategorySpelling(category);
+  if (!category_spelling.empty()) {
+    clause_string += ": " + category_spelling;
   }
   clause_string += this->expressionToString();
   clause_string += ") ";
@@ -947,7 +957,7 @@ std::string OpenMPDeviceTypeClause::toString() {
     parameter_string = "any";
     break;
   default:
-    std::cout << "The parameter of device_type clause is not supported.\n";
+    break;
   };
 
   if (parameter_string.size() > 0) {
@@ -1082,8 +1092,9 @@ std::string OpenMPMapClause::toString() {
         clause_string += ", ";
       }
       clause_string += iteratorToString(
-          iterator_defs[i].qualifier, iterator_defs[i].var,
-          iterator_defs[i].begin, iterator_defs[i].end, iterator_defs[i].step);
+          iterator_defs[i].qualifier.spelling,
+          iterator_defs[i].variable.spelling, iterator_defs[i].begin.spelling,
+          iterator_defs[i].end.spelling, iterator_defs[i].step.spelling);
     }
     clause_string += ")";
     has_content = true;
@@ -1174,13 +1185,42 @@ std::string OpenMPMapClause::toString() {
     clause_string += " : ";
   };
   const auto &items = this->getItems();
+  const auto &dist_data = this->getDistDataPolicies();
   if (!items.empty()) {
     for (size_t idx = 0; idx < items.size(); ++idx) {
       if (idx > 0) {
         clause_string +=
             (items[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
       }
-      clause_string += items[idx].text;
+      clause_string += items[idx].fragment.spelling;
+      if (idx < dist_data.size() && !dist_data[idx].empty()) {
+        clause_string += " dist_data(";
+        for (size_t policy_index = 0; policy_index < dist_data[idx].size();
+             ++policy_index) {
+          if (policy_index > 0) {
+            clause_string += ", ";
+          }
+          const OpenMPMapClause::DistDataPolicy &policy =
+              dist_data[idx][policy_index];
+          switch (policy.kind) {
+          case OpenMPMapClause::DIST_DATA_duplicate:
+            clause_string += "duplicate";
+            break;
+          case OpenMPMapClause::DIST_DATA_block:
+            clause_string += "block";
+            break;
+          case OpenMPMapClause::DIST_DATA_cyclic:
+            clause_string += "cyclic";
+            break;
+          case OpenMPMapClause::DIST_DATA_unknown:
+            break;
+          }
+          if (!policy.argument.spelling.empty()) {
+            clause_string += "(" + policy.argument.spelling + ")";
+          }
+        }
+        clause_string += ")";
+      }
     }
   } else {
     clause_string += this->expressionToString();
@@ -1268,7 +1308,7 @@ std::string OpenMPReductionClause::toString() {
       clause_string +=
           (operands[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
     }
-    clause_string += operands[idx].text;
+    clause_string += operands[idx].fragment.spelling;
   }
   clause_string += ")";
   if (clause_string.size() > 2) {
@@ -1535,77 +1575,32 @@ std::string OpenMPIfClause::toString() {
 };
 
 std::string OpenMPFirstprivateClause::toString() {
-  std::string result = "";
+  std::string result;
   if (expressions.empty()) {
-    return "";
+    return result;
   }
-
-  auto appendChunkPrefix = [&](std::string &chunk, bool is_saved,
-                               bool has_modifier,
-                               OpenMPDirectiveKind modifier_kind) {
-    chunk = "firstprivate(";
-    bool emitted_modifier = false;
-    if (has_modifier) {
-      std::string modifier = getDirectiveNameModifierSpelling(modifier_kind);
-      if (!modifier.empty()) {
-        chunk += modifier;
-        emitted_modifier = true;
-      }
-    }
-    if (is_saved) {
-      if (emitted_modifier) {
-        chunk += ", ";
-      }
-      chunk += "saved";
+  result = "firstprivate(";
+  bool emitted_modifier = false;
+  if (hasDirectiveNameModifier()) {
+    const std::string modifier =
+        getDirectiveNameModifierSpelling(getDirectiveNameModifier());
+    if (!modifier.empty()) {
+      result += modifier;
       emitted_modifier = true;
     }
-    if (emitted_modifier) {
-      chunk += ": ";
-    }
-  };
-
-  bool current_chunk_saved = saved_statuses.empty() ? false : saved_statuses[0];
-  bool current_chunk_has_modifier = expressionHasDirectiveNameModifier(0);
-  OpenMPDirectiveKind current_chunk_modifier =
-      getExpressionDirectiveNameModifier(0);
-  std::string current_chunk_str;
-  appendChunkPrefix(current_chunk_str, current_chunk_saved,
-                    current_chunk_has_modifier, current_chunk_modifier);
-
-  for (size_t i = 0; i < expressions.size(); ++i) {
-    bool is_saved = (i < saved_statuses.size()) ? saved_statuses[i] : false;
-    bool has_modifier = expressionHasDirectiveNameModifier(i);
-    OpenMPDirectiveKind modifier = getExpressionDirectiveNameModifier(i);
-
-    if (i > 0) {
-      if (is_saved != current_chunk_saved ||
-          has_modifier != current_chunk_has_modifier ||
-          (has_modifier && modifier != current_chunk_modifier)) {
-        // Close current chunk
-        current_chunk_str += ")";
-        result += current_chunk_str + " ";
-
-        // Start new chunk
-        current_chunk_saved = is_saved;
-        current_chunk_has_modifier = has_modifier;
-        current_chunk_modifier = modifier;
-        appendChunkPrefix(current_chunk_str, current_chunk_saved,
-                          current_chunk_has_modifier, current_chunk_modifier);
-      } else {
-        // Append separator
-        if (i < expression_separators.size() &&
-            expression_separators[i] == OMPC_CLAUSE_SEP_comma) {
-          current_chunk_str += ", ";
-        } else {
-          current_chunk_str += " ";
-        }
-      }
-    }
-    current_chunk_str += expressions[i];
   }
-  current_chunk_str += ")";
-  result += current_chunk_str + " ";
-
+  if (isSaved()) {
+    if (emitted_modifier) {
+      result += ", ";
+    }
+    result += "saved";
+    emitted_modifier = true;
+  }
+  if (emitted_modifier) {
+    result += ": ";
+  }
+  result += expressionToString();
+  result += ") ";
   return result;
 }
 
@@ -1627,8 +1622,8 @@ std::string OpenMPInitializerClause::toString() {
 std::string OpenMPApplyClause::toString() {
   std::string result = "apply(";
   bool need_colon = false;
-  if (!label.empty()) {
-    result += label;
+  if (!label.spelling.empty()) {
+    result += label.spelling;
     need_colon = true;
   }
   if (!transforms.empty()) {
@@ -1650,8 +1645,8 @@ std::string OpenMPApplyClause::toString() {
         break;
       case OMPC_APPLY_TRANSFORM_unroll_partial:
         result += "unroll partial";
-        if (!t.argument.empty()) {
-          result += "(" + t.argument + ")";
+        if (!t.argument.spelling.empty()) {
+          result += "(" + t.argument.spelling + ")";
         }
         break;
       case OMPC_APPLY_TRANSFORM_unroll_full:
@@ -1667,7 +1662,7 @@ std::string OpenMPApplyClause::toString() {
         result += "nothing";
         break;
       case OMPC_APPLY_TRANSFORM_tile_sizes:
-        result += "tile sizes(" + t.argument + ")";
+        result += "tile sizes(" + t.argument.spelling + ")";
         break;
       case OMPC_APPLY_TRANSFORM_apply:
         if (t.nested_apply) {
@@ -1682,7 +1677,7 @@ std::string OpenMPApplyClause::toString() {
         break;
       case OMPC_APPLY_TRANSFORM_unknown:
       default:
-        result += t.argument;
+        result += t.argument.spelling;
         break;
       }
     }
@@ -1702,21 +1697,21 @@ std::string OpenMPInductionClause::specificationToString() const {
     }
     switch (item.kind) {
     case ItemStep:
-      result += "step(" + step_expression + ")";
+      result += "step(" + step_expression.spelling + ")";
       break;
     case ItemBinding:
       if (item.index < bindings.size()) {
         const auto &binding = bindings[item.index];
-        if (!binding.label.empty()) {
-          result += binding.label + ": " + binding.expression;
+        if (!binding.label.spelling.empty()) {
+          result += binding.label.spelling + ": " + binding.expression.spelling;
         } else {
-          result += binding.expression;
+          result += binding.expression.spelling;
         }
       }
       break;
     case ItemPassthrough:
       if (item.index < passthrough_items.size()) {
-        result += passthrough_items[item.index];
+        result += passthrough_items[item.index].spelling;
       }
       break;
     }
@@ -1770,7 +1765,7 @@ std::string OpenMPAllocateClause::toString() {
     parameters.push_back(this->getUserDefinedAllocator());
   }
   for (const auto &extra : this->getExtraAllocatorParameters()) {
-    parameters.push_back(extra);
+    parameters.push_back(extra.spelling);
   }
   for (size_t i = 0; i < parameters.size(); ++i) {
     if (i > 0) {
@@ -1838,10 +1833,8 @@ std::string OpenMPVariantClause::toString() {
 
   std::string result;
   std::string parameter_string;
-  std::string beginning_symbol;
-  std::string ending_symbol;
   std::pair<std::string, std::string> *parameter_pair_string = NULL;
-  OpenMPDirective *variant_directive = NULL;
+  OpenMPDirective *variant_directive = nullptr;
   OpenMPClauseKind clause_kind = this->getKind();
   switch (clause_kind) {
   case OMPC_when:
@@ -1854,19 +1847,24 @@ std::string OpenMPVariantClause::toString() {
     result = "otherwise";
     break;
   default:
-    std::cout << "The variant clause is not supported.\n";
+    break;
   };
-  result += " (";
 
   // For otherwise clause, skip context selectors and just output the directive
   if (clause_kind == OMPC_otherwise) {
-    variant_directive = ((OpenMPOtherwiseClause *)this)->getVariantDirective();
-    if (variant_directive != NULL) {
-      result += variant_directive->generatePragmaString("", "", "");
+    variant_directive =
+        static_cast<OpenMPOtherwiseClause *>(this)->getVariantDirective();
+    if (variant_directive == nullptr) {
+      // Section 3.3 omits parentheses when every optional argument is absent.
+      return result + " ";
     }
+    result += " (";
+    result += variant_directive->generatePragmaString("");
     result += ") ";
     return result;
   }
+
+  result += " (";
 
   // Builders for each selector category
   auto buildUserSelector = [&]() -> std::string {
@@ -1875,11 +1873,11 @@ std::string OpenMPVariantClause::toString() {
     if (!expr) {
       return s;
     }
-    if (!expr->score.empty()) {
-      s = "user = {condition(score(" + expr->score + "): " + expr->expression +
-          ")}";
-    } else if (!expr->expression.empty()) {
-      s = "user = {condition(" + expr->expression + ")}";
+    if (!expr->score.spelling.empty()) {
+      s = "user = {condition(score(" + expr->score.spelling +
+          "): " + expr->expression.spelling + ")}";
+    } else if (!expr->expression.spelling.empty()) {
+      s = "user = {condition(" + expr->expression.spelling + ")}";
     }
     return s;
   };
@@ -1893,22 +1891,11 @@ std::string OpenMPVariantClause::toString() {
     s = "construct = {";
     bool first = true;
     for (auto &entry : *parameter_pair_directives) {
-      if (entry.first != "") {
-        beginning_symbol = "score(" + entry.first + "): ";
-        ending_symbol = ")";
-      } else if (entry.second->getAllClauses()->size() != 0) {
-        beginning_symbol = "(";
-        ending_symbol = ")";
-      } else {
-        beginning_symbol = "";
-        ending_symbol = "";
-      };
       if (!first) {
         s += ", ";
       }
       first = false;
-      s += entry.second->generatePragmaString("", beginning_symbol,
-                                              ending_symbol);
+      s += entry.directive->generateContextTraitString();
     }
     s += "}";
     return s;
@@ -1918,9 +1905,8 @@ std::string OpenMPVariantClause::toString() {
     std::vector<std::string> parts;
     std::string local;
     // kind
-    std::pair<std::string, OpenMPClauseContextKind> *context_kind =
-        this->getContextKind();
-    switch (context_kind->second) {
+    auto *context_kind = this->getContextKind(use_target_device);
+    switch (context_kind->kind) {
     case OMPC_CONTEXT_KIND_host:
       local = "host";
       break;
@@ -1942,38 +1928,38 @@ std::string OpenMPVariantClause::toString() {
     case OMPC_CONTEXT_KIND_unknown:
       break;
     default:
-      std::cout << "The context kind is not supported.\n";
+      break;
     };
-    if (context_kind->first.size() > 0) {
-      parts.push_back("kind(score(" + context_kind->first + "): " + local +
-                      ")");
+    if (!context_kind->score.spelling.empty()) {
+      parts.push_back("kind(score(" + context_kind->score.spelling +
+                      "): " + local + ")");
     } else if (!local.empty()) {
       parts.push_back("kind(" + local + ")");
     }
     // arch
     parameter_pair_string = nullptr;
-    auto *arch = this->getArchExpression();
-    if (arch && !arch->score.empty()) {
-      parts.push_back("arch(score(" + arch->score + "): " + arch->expression +
-                      ")");
-    } else if (arch && !arch->expression.empty()) {
-      parts.push_back("arch(" + arch->expression + ")");
+    auto *arch = this->getArchExpression(use_target_device);
+    if (arch && !arch->score.spelling.empty()) {
+      parts.push_back("arch(score(" + arch->score.spelling +
+                      "): " + arch->expression.spelling + ")");
+    } else if (arch && !arch->expression.spelling.empty()) {
+      parts.push_back("arch(" + arch->expression.spelling + ")");
     }
     // isa
-    auto *isa = this->getIsaExpression();
-    if (isa && !isa->score.empty()) {
-      parts.push_back("isa(score(" + isa->score + "): " + isa->expression +
-                      ")");
-    } else if (isa && !isa->expression.empty()) {
-      parts.push_back("isa(" + isa->expression + ")");
+    auto *isa = this->getIsaExpression(use_target_device);
+    if (isa && !isa->score.spelling.empty()) {
+      parts.push_back("isa(score(" + isa->score.spelling +
+                      "): " + isa->expression.spelling + ")");
+    } else if (isa && !isa->expression.spelling.empty()) {
+      parts.push_back("isa(" + isa->expression.spelling + ")");
     }
     // device_num
-    auto *devnum = this->getDeviceNumExpression();
-    if (devnum && !devnum->score.empty()) {
-      parts.push_back("device_num(score(" + devnum->score +
-                      "): " + devnum->expression + ")");
-    } else if (devnum && !devnum->expression.empty()) {
-      parts.push_back("device_num(" + devnum->expression + ")");
+    auto *devnum = this->getDeviceNumExpression(use_target_device);
+    if (devnum && !devnum->score.spelling.empty()) {
+      parts.push_back("device_num(score(" + devnum->score.spelling +
+                      "): " + devnum->expression.spelling + ")");
+    } else if (devnum && !devnum->expression.spelling.empty()) {
+      parts.push_back("device_num(" + devnum->expression.spelling + ")");
     }
     if (parts.empty()) {
       return std::string();
@@ -1991,9 +1977,8 @@ std::string OpenMPVariantClause::toString() {
 
   auto buildImplementationSelector = [&]() -> std::string {
     std::string vendor_string;
-    std::pair<std::string, OpenMPClauseContextVendor> *context_vendor =
-        this->getImplementationKind();
-    switch (context_vendor->second) {
+    auto *context_vendor = this->getImplementationKind();
+    switch (context_vendor->vendor) {
     case OMPC_CONTEXT_VENDOR_amd:
       vendor_string = "amd";
       break;
@@ -2036,11 +2021,11 @@ std::string OpenMPVariantClause::toString() {
     case OMPC_CONTEXT_VENDOR_unspecified:
       break;
     default:
-      std::cout << "The context vendor is not supported.\n";
+      break;
     };
     std::vector<std::string> parts;
-    if (context_vendor->first.size() > 0) {
-      parts.push_back("vendor(score(" + context_vendor->first +
+    if (!context_vendor->score.spelling.empty()) {
+      parts.push_back("vendor(score(" + context_vendor->score.spelling +
                       "): " + vendor_string + ")");
     } else if (!vendor_string.empty()) {
       parts.push_back("vendor(" + vendor_string + ")");
@@ -2048,18 +2033,18 @@ std::string OpenMPVariantClause::toString() {
 
     // user-defined implementation selector
     auto *impl_expr = this->getImplementationExpression();
-    if (impl_expr &&
-        (!impl_expr->score.empty() || !impl_expr->expression.empty() ||
-         impl_expr->kind != OMPC_IMPL_EXPR_unknown)) {
-      const std::string score = impl_expr->score;
+    if (impl_expr && (!impl_expr->score.spelling.empty() ||
+                      !impl_expr->expression.spelling.empty() ||
+                      impl_expr->kind != OMPC_IMPL_EXPR_unknown)) {
+      const std::string &score = impl_expr->score.spelling;
       switch (impl_expr->kind) {
       case OMPC_IMPL_EXPR_requires:
-        if (!impl_expr->expression.empty()) {
+        if (!impl_expr->expression.spelling.empty()) {
           std::string entry = "requires(";
           if (!score.empty()) {
             entry += "score(" + score + "): ";
           }
-          entry += impl_expr->expression;
+          entry += impl_expr->expression.spelling;
           entry += ")";
           parts.push_back(entry);
         }
@@ -2067,12 +2052,13 @@ std::string OpenMPVariantClause::toString() {
       case OMPC_IMPL_EXPR_user:
       case OMPC_IMPL_EXPR_unknown:
       default:
-        if (!impl_expr->expression.empty()) {
+        if (!impl_expr->expression.spelling.empty()) {
           std::string entry;
           if (!score.empty()) {
-            entry = "user(score(" + score + "): " + impl_expr->expression + ")";
+            entry = "user(score(" + score +
+                    "): " + impl_expr->expression.spelling + ")";
           } else {
-            entry = "user(" + impl_expr->expression + ")";
+            entry = "user(" + impl_expr->expression.spelling + ")";
           }
           parts.push_back(entry);
         }
@@ -2082,11 +2068,11 @@ std::string OpenMPVariantClause::toString() {
 
     // extension
     auto *ext_expr = this->getExtensionExpression();
-    if (ext_expr && ext_expr->score.size() > 0) {
-      parts.push_back("extension(score(" + ext_expr->score +
-                      "): " + ext_expr->expression + ")");
-    } else if (ext_expr && ext_expr->expression.size() > 0) {
-      parts.push_back("extension(" + ext_expr->expression + ")");
+    if (ext_expr && !ext_expr->score.spelling.empty()) {
+      parts.push_back("extension(score(" + ext_expr->score.spelling +
+                      "): " + ext_expr->expression.spelling + ")");
+    } else if (ext_expr && !ext_expr->expression.spelling.empty()) {
+      parts.push_back("extension(" + ext_expr->expression.spelling + ")");
     }
 
     if (parts.empty()) {
@@ -2180,15 +2166,20 @@ std::string OpenMPDefaultClause::toString() {
     parameter_string = "none";
     break;
   case OMPC_DEFAULT_variant:
-    parameter_string =
-        this->getVariantDirective()->generatePragmaString("", "", "");
+    parameter_string = this->getVariantDirective()->generatePragmaString("");
     break;
   default:
-    std::cout << "The parameter of default clause is not supported.\n";
+    break;
   };
 
   if (parameter_string.size() > 0) {
-    result += parameter_string + ") ";
+    result += parameter_string;
+    const std::string category =
+        getVariableCategorySpelling(this->getCategory());
+    if (!category.empty()) {
+      result += ": " + category;
+    }
+    result += ") ";
   } else {
     return std::string();
   }
@@ -2216,7 +2207,7 @@ std::string OpenMPScanClause::toString() {
       if (idx > 0) {
         result += (ops[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
       }
-      result += ops[idx].text;
+      result += ops[idx].fragment.spelling;
     }
   } else {
     std::string fallback = this->expressionToString();
@@ -2254,7 +2245,7 @@ std::string OpenMPOrderClause::toString() {
     parameter_string = "concurrent";
     break;
   default:
-    std::cout << "The parameter of order clause is not supported.\n";
+    break;
   };
 
   if (parameter_string.size() > 0) {
@@ -2270,7 +2261,7 @@ std::string OpenMPOrderClause::toString() {
       if (idx > 0) {
         result += (ops[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
       }
-      result += ops[idx].text;
+      result += ops[idx].fragment.spelling;
     }
   }
   result += ") ";
@@ -2294,7 +2285,7 @@ std::string OpenMPBindClause::toString() {
     parameter_string = "thread";
     break;
   default:
-    std::cout << "The parameter of bind clause is not supported.\n";
+    break;
   };
 
   if (parameter_string.size() > 0) {
@@ -2325,7 +2316,7 @@ std::string OpenMPProcBindClause::toString() {
     parameter_string = "spread";
     break;
   default:
-    std::cout << "The parameter of proc_bind clause is not supported.\n";
+    break;
   };
 
   if (parameter_string.size() > 0) {

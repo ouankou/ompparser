@@ -32,15 +32,17 @@ jobs:
       - run: |
           sudo apt-get update
           sudo apt-get install -y cmake bison flex clang-format gcc-${{ matrix.version }} g++-${{ matrix.version }} gfortran-${{ matrix.version }}
-      - run: cmake -E rm -rf $BUILD_DIR
-      - run: cmake -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-      - run: cmake --build $BUILD_DIR -- -j
+      - run: cmake -E rm -rf "$BUILD_DIR"
+      - run: cmake -S . -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - run: cmake --build "$BUILD_DIR" -- -j
+      - name: Run API and invariant tests
+        run: cd "$BUILD_DIR" && ctest -R "^(parser_api_invariants|builtin_location_fields)$" --output-on-failure
       - name: Run built-in tests
-        run: cd $BUILD_DIR && ctest -R "^builtin_" --output-on-failure
+        run: cd "$BUILD_DIR" && ctest -R "^builtin_" --output-on-failure
       - name: Run OpenMP VV tests
-        run: cd $BUILD_DIR && ctest -R "^openmp_vv_" --output-on-failure
+        run: cd "$BUILD_DIR" && ctest -R "^openmp_vv_" --output-on-failure
       - name: Run OpenMP Examples tests
-        run: cd $BUILD_DIR && ctest -R "^openmp_examples_" --output-on-failure
+        run: cd "$BUILD_DIR" && ctest -R "^openmp_examples_" --output-on-failure
 
   build-clang:
     name: Build & Test (Clang)
@@ -64,15 +66,17 @@ jobs:
       - run: |
           sudo apt-get update
           sudo apt-get install -y cmake bison flex clang-${{ matrix.version }} clang-format-${{ matrix.version }} flang-${{ matrix.version }}
-      - run: cmake -E rm -rf $BUILD_DIR
-      - run: cmake -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-      - run: cmake --build $BUILD_DIR -- -j
+      - run: cmake -E rm -rf "$BUILD_DIR"
+      - run: cmake -S . -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - run: cmake --build "$BUILD_DIR" -- -j
+      - name: Run API and invariant tests
+        run: cd "$BUILD_DIR" && ctest -R "^(parser_api_invariants|builtin_location_fields)$" --output-on-failure
       - name: Run built-in tests
-        run: cd $BUILD_DIR && ctest -R "^builtin_" --output-on-failure
+        run: cd "$BUILD_DIR" && ctest -R "^builtin_" --output-on-failure
       - name: Run OpenMP VV tests
-        run: cd $BUILD_DIR && ctest -R "^openmp_vv_" --output-on-failure
+        run: cd "$BUILD_DIR" && ctest -R "^openmp_vv_" --output-on-failure
       - name: Run OpenMP Examples tests
-        run: cd $BUILD_DIR && ctest -R "^openmp_examples_" --output-on-failure
+        run: cd "$BUILD_DIR" && ctest -R "^openmp_examples_" --output-on-failure
 
   build-wasm:
     name: Build & Test (WASM)
@@ -89,10 +93,29 @@ jobs:
       - name: Run WASM builtin tests
         run: node wasm/tests/run_wasm_builtin_tests.js --js build-wasm/wasm/ompparser.js --wasm build-wasm/wasm/ompparser.wasm
 
+  sanitizers:
+    name: ASan & UBSan
+    runs-on: ubuntu-26.04
+    env:
+      CC: clang-22
+      CXX: clang++-22
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates gnupg wget
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor --yes -o /usr/share/keyrings/llvm-snapshot.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg] http://apt.llvm.org/resolute/ llvm-toolchain-resolute-22 main" | sudo tee /etc/apt/sources.list.d/llvm-toolchain-resolute-22.list
+          sudo apt-get update
+          sudo apt-get install -y cmake bison flex clang-22
+      - run: cmake -S . -B build-sanitized -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DOMPPARSER_ENABLE_SANITIZERS=ON
+      - run: cmake --build build-sanitized --target test_parser_api test_locations -- -j
+      - run: ctest --test-dir build-sanitized --output-on-failure -R '^(parser_api_invariants|builtin_location_fields)$'
+
   build-pages:
     name: Build Pages
     runs-on: ubuntu-26.04
-    needs: [build-gcc, build-clang, build-wasm]
+    needs: [build-gcc, build-clang, build-wasm, sanitizers]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read

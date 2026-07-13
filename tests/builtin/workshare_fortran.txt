@@ -22,11 +22,10 @@ PASS: !$omp end workshare
 !$omp end workshare nowait
 PASS: !$omp end workshare nowait
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp workshare allocate(omp_default_mem_alloc:a,b,c)
 
+EXPECT: invalid
 !$omp end workshare allocate(omp_default_mem_alloc:a,b,c)
 
 

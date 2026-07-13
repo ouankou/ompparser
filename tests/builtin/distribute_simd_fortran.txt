@@ -73,31 +73,40 @@ PASS: !$omp simd order (concurrent)
 !$omp end simd 
 PASS: !$omp end simd
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp distribute simd lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 !$omp distribute simd collapse
 
+EXPECT: invalid
 !$omp distribute simd dist_schedule(user,2)
 
+EXPECT: invalid
 !$omp distribute simd nontemporal
 
+EXPECT: invalid
 !$omp distribute simd order
 
+EXPECT: invalid
 !$omp distribute simd if(parallel:,b,c)
 
+EXPECT: invalid
 !$omp distribute simd safelen
 
+EXPECT: invalid
 !$omp distribute simd simdlen
 
+EXPECT: invalid
 !$omp distribute simd linear
 
+EXPECT: invalid
 !$omp distribute simd aligned
 
+EXPECT: invalid
 !$omp distribute simd private(conditional:a,b,c)
 
+EXPECT: invalid
 !$omp end simd order(concurrent)
 
 

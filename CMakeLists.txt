@@ -1,5 +1,5 @@
 #******************************************************************************************************************#
-# Copyright (c) 2018-2025, High Performance Computing Architecture and System
+# Copyright (c) 2018-2026, High Performance Computing Architecture and System
 # research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
 # and Lawrence Livermore National Security, LLC.
 #
@@ -26,11 +26,13 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build (Debug or Release)" FORCE)
 endif()
 
-set(OMPPARSER_VERSION_MAJOR 0)
-set(OMPPARSER_VERSION_MINOR 2)
+set(OMPPARSER_VERSION_MAJOR 1)
+set(OMPPARSER_VERSION_MINOR 0)
 set(OMPPARSER_VERSION ${OMPPARSER_VERSION_MAJOR}.${OMPPARSER_VERSION_MINOR})
 
 option(OMPPARSER_ENABLE_WASM "Build the WebAssembly module." OFF)
+option(OMPPARSER_ENABLE_SANITIZERS
+       "Enable AddressSanitizer and UndefinedBehaviorSanitizer." OFF)
 if(EMSCRIPTEN)
   set(OMPPARSER_ENABLE_WASM ON CACHE BOOL "Build the WebAssembly module." FORCE)
 endif()
@@ -38,8 +40,17 @@ if(OMPPARSER_ENABLE_WASM AND NOT EMSCRIPTEN)
   message(FATAL_ERROR "OMPPARSER_ENABLE_WASM requires the Emscripten toolchain.")
 endif()
 
-find_package(BISON)
-find_package(FLEX)
+if(OMPPARSER_ENABLE_SANITIZERS)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    message(FATAL_ERROR
+            "OMPPARSER_ENABLE_SANITIZERS requires a Clang or GCC toolchain.")
+  endif()
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+endif()
+
+find_package(BISON REQUIRED)
+find_package(FLEX REQUIRED)
 
 configure_file(src/ompparser_config.h.cmake "ompparser_config.h" @ONLY)
 
@@ -48,12 +59,19 @@ set(OMPPARSER_SOURCE_FILES
     src/omplexer.ll
     src/ompparser.yy
     src/OpenMPIR.h
+    src/OpenMPParser.h
+    src/OpenMPParser.cpp
+    src/OpenMPSchema.h
+    src/OpenMPSchema.def
+    src/OpenMPSchema.cpp
     src/OpenMPIRToDOT.cpp
     src/OpenMPIRToString.cpp
     src/OpenMPIR.cpp)
 
 # OpenMPIR source files
 set(OMPIR_SOURCE_FILES
+    src/OpenMPParser.cpp
+    src/OpenMPSchema.cpp
     src/OpenMPIRToDOT.cpp
     src/OpenMPIRToString.cpp
     src/OpenMPIR.cpp)
@@ -90,7 +108,7 @@ endif()
 if(OMPPARSER_BUILD_TESTING)
   add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS tester omp_roundtrip test_locations
+    DEPENDS tester omp_roundtrip test_locations test_parser_api
     COMMENT "Running all tests...")
 endif()
 
@@ -100,6 +118,9 @@ set(ompparser_targets ompparser)
 install(FILES
         ${CMAKE_CURRENT_BINARY_DIR}/ompparser_config.h
         src/OpenMPIR.h
+        src/OpenMPParser.h
+        src/OpenMPSchema.h
+        src/OpenMPSchema.def
         src/OpenMPKinds.h
         src/OpenMPKinds.def
         DESTINATION include)

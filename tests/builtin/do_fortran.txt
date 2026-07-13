@@ -70,23 +70,28 @@ PASS: !$omp end do
 !$omp end do nowait
 PASS: !$omp end do nowait
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp do lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 !$omp do collapse
 
 !$omp do nowait(dsfasf)
+PASS: !$omp do nowait(dsfasf)
 
+EXPECT: invalid
 !$omp do order
 
+EXPECT: invalid
 !$omp do schedule(use,user:runtime,2)
 
+EXPECT: invalid
 !$omp do schedule(simd,simd:runtime,2)
 
 !$omp do nowait
+PASS: !$omp do nowait
 
+EXPECT: invalid
 !$omp end do order(concurrent)
 
 

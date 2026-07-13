@@ -37,15 +37,16 @@ PASS: #pragma omp loop bind (parallel)
 #pragma omp loop bind(thread)
 PASS: #pragma omp loop bind (thread)
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 #pragma omp loop lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 #pragma omp loop collapse
 
+EXPECT: invalid
 #pragma omp loop order
 
+EXPECT: invalid
 #pragma omp loop schedule(task,max:a,b,c)
 
 

@@ -82,37 +82,49 @@ PASS: !$omp do simd simdlen(tol)
 !$omp do simd nontemporal(private)
 PASS: !$omp do simd nontemporal(private)
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp do simd lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 !$omp do simd collapse
 
+EXPECT: invalid
 !$omp do simd nowait(dsfasf)
 
+EXPECT: invalid
 !$omp do simd order
 
+EXPECT: invalid
 !$omp do simd schedule(use,user:runtime,2)
 
+EXPECT: invalid
 !$omp do simd schedule(simd,simd:runtime,2)
 
+EXPECT: invalid
 !$omp do simd nontemporal
 
+EXPECT: invalid
 !$omp do simd if(parallel:,b,c)
 
+EXPECT: invalid
 !$omp do simd safelen
 
+EXPECT: invalid
 !$omp do simd simdlen
 
+EXPECT: invalid
 !$omp do simd linear
 
+EXPECT: invalid
 !$omp do simd aligned
 
+EXPECT: invalid
 !$omp do simd private(conditional:a,b,c)
 
+EXPECT: invalid
 !$omp do simd nowait
 
+EXPECT: invalid
 !$omp end do simd order(concurrent)
 
 

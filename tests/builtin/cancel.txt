@@ -25,9 +25,8 @@ PASS: #pragma omp cancel for if (a)
 #pragma omp cancel taskgroup if(a)
 PASS: #pragma omp cancel taskgroup if (a)
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 #pragma omp cancel simd if(a)
 
+EXPECT: invalid
 #pragma omp cancel for if(simd: a)

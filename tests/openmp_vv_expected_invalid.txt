@@ -1,0 +1,7 @@
+# Relative OpenMPVV snapshot path followed by one-based pragma ordinals that
+# must be rejected. Keep this separate from the generated snapshot files.
+#
+# OpenMP 6.0 section 15.8 does not list shared as a target clause. The two
+# target directives in this upstream taskgraph test therefore exercise the
+# negative oracle; the intervening task directive remains valid.
+6.0/taskgraph/test_taskgraph_target.c:4,6

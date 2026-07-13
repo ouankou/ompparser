@@ -43,15 +43,16 @@ PASS: !$omp distribute dist_schedule (static)
 !$omp end distribute
 PASS: !$omp end distribute
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp distribute lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 !$omp distribute collapse
 
+EXPECT: invalid
 !$omp distribute dist_schedule(user,2)
 
+EXPECT: invalid
 !$omp end distribute private(a,b,c)
 
 

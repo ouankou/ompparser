@@ -1,6 +1,6 @@
 # ompparser: A Standalone and Unified OpenMP Parser
 
-ompparser is a standalone OpenMP parser for C/C++ and Fortran. It can be used as an independent tool or embedded into compiler pipelines. The Flex/Bison grammar parses OpenMP directives and builds an intermediate representation (IR) that supports normalization and round-trip unparsing. The implementation tracks OpenMP 6.0 constructs and is released under the BSD-3-Clause license.
+ompparser is a standalone OpenMP parser for C/C++ and Fortran. It can be used as an independent tool or embedded into compiler pipelines. The Flex/Bison grammar parses OpenMP directives into a source-faithful, typed intermediate representation (IR). The implementation tracks OpenMP 6.0 and its published errata and is released under the BSD-3-Clause license.
 
 ## Build and Usage
 1. clone the repo and configure a build directory
@@ -18,41 +18,47 @@ ompparser is a standalone OpenMP parser for C/C++ and Fortran. It can be used as
        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
        cmake --build build --target check
 
-## omparser API
+## ompparser API
 
-```
-enum OpenMPBaseLang {
-    Lang_C,
-    Lang_Cplusplus,
-    Lang_Fortran,
-    Lang_unknown
-};
+```cpp
+#include <OpenMPParser.h>
 
-class OpenMPClause : public SourceLocation {
- ...
+ompparser::ParseOptions options;
+options.language = ompparser::BaseLanguage::CXX;
+
+ompparser::ParseResult parsed = ompparser::parseDirective(
+    "#pragma omp parallel private(value)", options);
+if (!parsed.success()) {
+  for (const ompparser::Diagnostic &diagnostic : parsed.diagnostics) {
+    // Report diagnostic.code, diagnostic.range, and diagnostic.message.
+  }
+  return;
 }
- 
-class OpenMPDirective : public SourceLocation  {
- ...
-}
 
-extern OpenMPDirective *parseOpenMP(const char *,
-                                    OpenMPExprParseCallback,
-                                    void *);
-
+ompparser::UnparseResult text = ompparser::unparse(*parsed.directive);
+ompparser::DotResult dot = ompparser::toDot(*parsed.directive);
 ```
+
+`ParseResult` owns the directive. Syntax errors, schema violations, invalid AST invariants, and unsupported extensions are returned as structured diagnostics; they are not printed to standard error. Unknown extensions are rejected by default and must be enabled explicitly with `ExtensionPolicy::AllowRegistered`.
+
+Host-language expressions, variables, locators, types, and declarators are stored as `HostFragment` records with their original spelling, role, source range, and optional semantic node. An embedding compiler implements both `HostLanguageHooks::parse` and `HostLanguageHooks::validate` to attach semantic nodes and enforce contextual base-language rules. `context_checks_complete` is true only after both hook stages run on a successfully constructed OpenMP AST.
+
+The 1.0 API intentionally preserves each source clause occurrence. It does not merge clauses, deduplicate list items, rewrite operators, or repair malformed ASTs during unparsing. Consumers that used the pre-1.0 raw `parseOpenMP` entry point or depended on normalization should migrate to `parseDirective`, inspect diagnostics, and perform any policy-specific canonicalization in a separate pass.
 
 ## Features and Limitation
 1. OpenMP 6.0 standard support for both C/C++ and Fortran, including parsing and unparsing
 1. Flex lexer rules and Bison grammars for OpenMP 6.0 syntax
 1. Intermediate representation of OpenMP constructs
-1. Interface to parse OpenMP constructs and emit the OpenMP IR
-1. Syntax checking in grammar, parsing, IR construction, and post-parsing
-1. Clause normalization, e.g., combining multiple shared clauses into one shared clause
-1. Limited semantics checking when a construct uses C/C++/Fortran identifiers or expressions
+1. Structured parse, validation, unparse, and in-memory DOT APIs
+1. Syntax, typed-schema, extension-policy, and AST-invariant checking
+1. Source-faithful clause occurrences and host-language fragment spellings
+1. Reentrant per-call Flex/Bison scanner contexts and thread-safe parsing
+1. Optional host-frontend hooks for C, C++, and Fortran semantic nodes
 1. Testing driver and test cases for OpenMP constructs
-1. DOT graph output of OpenMP constructs
+1. Side-effect-free DOT graph rendering, plus a compatibility file writer
 1. Conversion between perfectly-nested OpenMP constructs and combined constructs (ongoing work)
+
+For an AddressSanitizer and UndefinedBehaviorSanitizer build, configure with `-DOMPPARSER_ENABLE_SANITIZERS=ON` using Clang or GCC.
 
 ## Contribution
 Submit contribution as github pull request to this repository. We require all new contributions must be made with the similar license. 

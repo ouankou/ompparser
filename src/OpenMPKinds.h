@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2025, High Performance Computing Architecture and System
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
  * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
  * and Lawrence Livermore National Security, LLC.
  *
@@ -95,11 +95,16 @@ enum OpenMPInitClauseKind {
 };
 
 enum OpenMPAdjustArgsModifier {
+  OMPC_ADJUST_ARGS_need_device_addr,
   OMPC_ADJUST_ARGS_need_device_ptr,
+  OMPC_ADJUST_ARGS_nothing,
   OMPC_ADJUST_ARGS_unknown
 };
 
-enum OpenMPAppendArgsModifier { OMPC_APPEND_ARGS_unknown };
+enum OpenMPAppendArgsModifier {
+  OMPC_APPEND_ARGS_interop,
+  OMPC_APPEND_ARGS_unknown
+};
 
 enum OpenMPIteratorKind { OMP_ITER_unknown, OMP_ITER_iterator };
 

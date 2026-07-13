@@ -13,42 +13,55 @@
 //One is starting with "omp", which is the input.
 //The other one is starting with "PASS: ", which is the result for validation.
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 #pragma omp parallel workshare private (a, b) private (a, c)
 
+EXPECT: invalid
 #pragma omp parallel workshare num_threads (3*5+4/(7+10))
 
+EXPECT: invalid
 #pragma omp parallel workshare firstprivate (x, y)
 
+EXPECT: invalid
 #pragma omp parallel workshare shared (a, b, c[1:10])
 
+EXPECT: invalid
 #pragma omp parallel workshare copyin (a[foo(goo(x)):20],a,y)
 
+EXPECT: invalid
 #pragma omp parallel workshare default (shared)
 
+EXPECT: invalid
 #pragma omp parallel workshare default (none)
 
+EXPECT: invalid
 #pragma omp parallel workshare if (a) if (parallel : b) default (firstprivate)
 
+EXPECT: invalid
 #pragma omp parallel workshare proc_bind (master)
 
+EXPECT: invalid
 #pragma omp parallel workshare proc_bind (close) default (private)
 
+EXPECT: invalid
 #pragma omp parallel workshare proc_bind (spread)
 
+EXPECT: invalid
 #pragma omp parallel workshare reduction (inscan, + : a, foo(x)) reduction (abc : x, y, z) reduction (task, user_defined_value : x, y, z) reduction (inscan, max : a, foo(x))
 
+EXPECT: invalid
 #pragma omp parallel workshare allocate (omp_high_bw_mem_alloc : m, n[1:5]) allocate (no, allo, cator) allocate (user_defined_test : m, n[1:5])
 
+EXPECT: invalid
 #pragma omp parallel workshare private (a[foo(x, goo(x, y)):100], b[1:30], c) num_threads (3*5+4/(7+10)) allocate (omp_user_defined_mem_alloc : m, n[1:5]) allocate (no, allo, cator)
 
 EXPECT: invalid
-#pragma omp parallel workshare private (a, b, c) private (a, b, e) firstprivate (foo(x), y), shared (a, b, c[1:10]) // invalid test without paired validation.
+#pragma omp parallel workshare private (a, b, c) private (a, b, e) firstprivate (foo(x), y), shared (a, b, c[1:10])
 
+EXPECT: invalid
 #pragma omp parallel workshare private (a[foo(x, goo(x, y)):100], b[1:30], c) firstprivate (foo(x), y), shared (a, b, c[1:10]) num_threads (4)
 
+EXPECT: invalid
 #pragma omp parallel workshare reduction (tasktest : x11, y, z) allocate (user_defined_test : m, n[1:5]) allocate (omp_high_bw_mem_alloc : m, n[1:5]) reduction (inscan, max : a, foo(x))
 
 

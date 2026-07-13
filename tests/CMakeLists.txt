@@ -25,10 +25,21 @@ add_executable(test_locations
 add_dependencies(test_locations ompparser)
 target_link_libraries(test_locations ompparser)
 
+add_executable(test_parser_api
+    test_parser_api.cpp)
+add_dependencies(test_parser_api ompparser)
+target_link_libraries(test_parser_api ompparser)
+
 add_test(NAME builtin_location_fields
          COMMAND ${CMAKE_COMMAND} -E env
                  "${OMPPARSER_TEST_LD_LIBRARY_PATH}"
                  $<TARGET_FILE:test_locations>
+         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+add_test(NAME parser_api_invariants
+         COMMAND ${CMAKE_COMMAND} -E env
+                 "${OMPPARSER_TEST_LD_LIBRARY_PATH}"
+                 $<TARGET_FILE:test_parser_api>
          WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 # Register built-in .txt test files as CTest tests
@@ -40,12 +51,19 @@ foreach(TEST_FILE IN LISTS TEST_SUITE_FILES)
   if(TEST_NAME MATCHES "_cplusplus$")
     set(TEST_LANG_ARGS "--lang=c++")
   endif()
+  if(TEST_NAME MATCHES "^(requires(_fortran)?|target_data)$")
+    list(APPEND TEST_LANG_ARGS "--allow-extensions")
+  endif()
   add_test(NAME builtin_${TEST_NAME}
            COMMAND ${CMAKE_COMMAND} -E env
                    "${OMPPARSER_TEST_LD_LIBRARY_PATH}"
                    $<TARGET_FILE:tester> ${TEST_LANG_ARGS} "${TEST_FILE}"
            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endforeach()
+
+set_tests_properties(
+  builtin_tester_expected_invalid_continuation
+  PROPERTIES PASS_REGULAR_EXPRESSION "TOTAL TESTS  : 2")
 
 # Register OpenMP VV extracted pragma files as CTest tests
 file(GLOB_RECURSE OPENMP_VV_FILES CONFIGURE_DEPENDS
@@ -65,7 +83,9 @@ foreach(TEST_FILE IN LISTS OPENMP_VV_FILES)
   add_test(NAME openmp_vv_${TEST_NAME}
            COMMAND ${CMAKE_COMMAND} -E env
                    "${OMPPARSER_TEST_LD_LIBRARY_PATH}"
-                   "${CMAKE_CURRENT_SOURCE_DIR}/test_single_pragma.sh" "${TEST_FILE}" "$<TARGET_FILE:omp_roundtrip>"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/test_single_pragma.sh"
+                   "${TEST_FILE}" "$<TARGET_FILE:omp_roundtrip>"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/openmp_vv_expected_invalid.txt"
            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endforeach()
 
@@ -91,7 +111,7 @@ foreach(TEST_FILE IN LISTS OPENMP_EXAMPLES_FILES)
            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endforeach()
 
-set(executable_targets tester omp_roundtrip test_locations)
+set(executable_targets tester omp_roundtrip test_locations test_parser_api)
 
 set_target_properties(${executable_targets} PROPERTIES
                       BUILD_RPATH "$ORIGIN/..")

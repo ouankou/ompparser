@@ -5,7 +5,7 @@
 # This script validates that a pragma file can be successfully parsed.
 # Handles both single-pragma and multi-pragma files.
 #
-# Usage: ./test_single_pragma.sh <pragma_file> <ompp_binary>
+# Usage: ./test_single_pragma.sh <pragma_file> <ompp_binary> [expectations_file]
 #
 # Exit codes:
 #   0: All pragmas parsed successfully
@@ -63,6 +63,7 @@ fi
 
 PRAGMA_FILE="$1"
 OMPP_BIN="$2"
+EXPECTATIONS_FILE="${3:-}"
 
 if [ ! -f "$PRAGMA_FILE" ]; then
     echo "Error: Pragma file not found: $PRAGMA_FILE"
@@ -82,17 +83,19 @@ case "${PRAGMA_FILE##*.}" in
         ;;
 esac
 
+expected_invalid_ordinals=""
+if [ -n "$EXPECTATIONS_FILE" ]; then
+    if [ ! -f "$EXPECTATIONS_FILE" ]; then
+        echo "Error: expectations file not found: $EXPECTATIONS_FILE"
+        exit 1
+    fi
+    relative_path="${PRAGMA_FILE#*openmp_vv/}"
+    expected_invalid_ordinals=$(awk -F: -v path="$relative_path" \
+        '$1 == path { print $2 }' "$EXPECTATIONS_FILE")
+fi
+
 # Run ompp on the file (handles multi-pragma files automatically)
 OUTPUT=$("$OMPP_BIN" --no-normalize "$PRAGMA_FILE" 2>&1)
-
-# Count NULL outputs (indicates parse failures)
-NULL_COUNT=$(echo "$OUTPUT" | grep -c "^NULL$" || true)
-
-if [ "$NULL_COUNT" -gt 0 ]; then
-    echo "Parse failed: $NULL_COUNT pragma(s) returned NULL"
-    echo "$OUTPUT"
-    exit 1
-fi
 
 # Check if stderr contains actual error messages
 if echo "$OUTPUT" | grep -E "^error:" > /dev/null; then
@@ -107,6 +110,49 @@ if [ $is_fortran -eq 1 ]; then
 else
     mapfile -t original_pragmas < <(grep -E '^[[:space:]]*#pragma[[:space:]]+omp' "$PRAGMA_FILE" || true)
 fi
+
+# omp_roundtrip emits exactly one result line per input pragma after its two
+# summary lines. Validate explicit negative expectations before filtering them
+# out of the fidelity comparison.
+mapfile -t result_lines < <(printf '%s\n' "$OUTPUT" | tail -n "${#original_pragmas[@]}")
+if [ "${#result_lines[@]}" -ne "${#original_pragmas[@]}" ]; then
+    echo "Mismatch: expected ${#original_pragmas[@]} parser results, got ${#result_lines[@]}"
+    echo "$OUTPUT"
+    exit 1
+fi
+
+declare -A expected_invalid=()
+if [ -n "$expected_invalid_ordinals" ]; then
+    IFS=',' read -ra ordinals <<< "$expected_invalid_ordinals"
+    for ordinal in "${ordinals[@]}"; do
+        if ! [[ "$ordinal" =~ ^[1-9][0-9]*$ ]] ||
+           [ "$ordinal" -gt "${#original_pragmas[@]}" ]; then
+            echo "Invalid expected pragma ordinal: $ordinal"
+            exit 1
+        fi
+        expected_invalid["$ordinal"]=1
+    done
+fi
+
+valid_original_pragmas=()
+for ((index = 0; index < ${#original_pragmas[@]}; ++index)); do
+    ordinal=$((index + 1))
+    result_line="${result_lines[$index]}"
+    if [ -n "${expected_invalid[$ordinal]:-}" ]; then
+        if [ "$result_line" != "NULL" ]; then
+            echo "Expected invalid pragma $ordinal was accepted: ${original_pragmas[$index]}"
+            exit 1
+        fi
+    else
+        if [ "$result_line" = "NULL" ]; then
+            echo "Unexpected parse failure at pragma $ordinal: ${original_pragmas[$index]}"
+            echo "$OUTPUT"
+            exit 1
+        fi
+        valid_original_pragmas+=("${original_pragmas[$index]}")
+    fi
+done
+original_pragmas=("${valid_original_pragmas[@]}")
 
 # Extract round-tripped pragmas from ompp output
 mapfile -t roundtrip_pragmas < <(echo "$OUTPUT" | grep -E '^#pragma omp|^[!cC*]\$ompx?' || true)

@@ -25,13 +25,13 @@ PASS: !$omp cancellation point do
 !$omp cancellation point taskgroup
 PASS: !$omp cancellation point taskgroup
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp cancellation point simd
 
+EXPECT: invalid
 !$omp cancellation point for private(j,d)
 
+EXPECT: invalid
 !$omp cancellation point for
 
 

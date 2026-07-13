@@ -35,13 +35,13 @@ PASS: #pragma omp single allocate (omp_allocator_handle_t: a, b, c)
 PASS: #pragma omp single allocate (omp_default_mem_alloc: a, b, c)
 
 
-// invalid test without paired validation.
 EXPECT: invalid
-
 #pragma omp single lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 #pragma omp single nowait(dsfasf)
 
+EXPECT: invalid
 #pragma omp single copyprivate(conditional:a,b,c)
 
 

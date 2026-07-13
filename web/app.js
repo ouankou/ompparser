@@ -154,12 +154,17 @@
 
     const inputText = inputEditor.getValue();
     const { mode, hint } = resolveLanguageSelection();
-    const output = wasmModule.parseAndUnparse(inputText, mode, hint);
+    const result = wasmModule.parseAndUnparse(inputText, mode, hint);
+    const diagnostics = Array.from(result.diagnostics || []);
 
-    outputEditor.setValue(output || "");
+    outputEditor.setValue(result.text || "");
+    for (const diagnostic of diagnostics) {
+      appendLog(
+        `error: ${diagnostic.line}:${diagnostic.column}: ${diagnostic.message}`
+      );
+    }
 
-    const hasError = logState.lines.some((line) => line.includes("error:"));
-    if (hasError)
+    if (diagnostics.length !== 0)
       setActiveTab("log");
   });
 

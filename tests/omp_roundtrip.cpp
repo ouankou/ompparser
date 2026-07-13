@@ -7,16 +7,16 @@
  */
 
 #include <OpenMPIR.h>
+#include <OpenMPParser.h>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <regex>
 
 void output(std::vector<OpenMPDirective *> *);
-void savePragmaList(std::vector<OpenMPDirective *> *, const char *);
 int openFile(std::ifstream &, const char *);
-extern std::unique_ptr<std::vector<std::string>> preProcessCManaged(
-    std::ifstream &);
+extern std::unique_ptr<std::vector<std::string>>
+preProcessCManaged(std::ifstream &);
 
 void output(std::vector<OpenMPDirective *> *omp_ast_list) {
 
@@ -29,25 +29,6 @@ void output(std::vector<OpenMPDirective *> *omp_ast_list) {
       };
     };
   };
-}
-
-void savePragmaList(std::vector<OpenMPDirective *> *omp_ast_list,
-                    const char *filename) {
-
-  std::string output_filename = std::string(filename) + ".pragmas";
-  std::ofstream output_file(output_filename.c_str(), std::ofstream::trunc);
-
-  if (omp_ast_list != NULL) {
-    for (unsigned int i = 0; i < omp_ast_list->size(); i++) {
-      if (omp_ast_list->at(i) != NULL) {
-        output_file << omp_ast_list->at(i)->generatePragmaString() << std::endl;
-      } else {
-        output_file << "NULL" << std::endl;
-      };
-    };
-  };
-
-  output_file.close();
 }
 
 int openFile(std::ifstream &file, const char *filename) {
@@ -64,7 +45,6 @@ int openFile(std::ifstream &file, const char *filename) {
 
 int main(int argc, const char *argv[]) {
   const char *filename = NULL;
-  bool normalize_clauses = true; // Default: normalization enabled
   int result;
   unsigned int i;
   auto omp_ast_list = std::make_unique<std::vector<OpenMPDirective *>>();
@@ -74,7 +54,7 @@ int main(int argc, const char *argv[]) {
   // Parse command line arguments
   for (int arg_idx = 1; arg_idx < argc; arg_idx++) {
     if (strcmp(argv[arg_idx], "--no-normalize") == 0) {
-      normalize_clauses = false;
+      continue;
     } else if (filename == NULL) {
       filename = argv[arg_idx];
     }
@@ -96,9 +76,6 @@ int main(int argc, const char *argv[]) {
   std::unique_ptr<std::vector<std::string>> omp_pragmas =
       preProcessCManaged(input_file);
 
-  // Set normalization flag globally before parsing
-  setNormalizeClauses(normalize_clauses);
-
   // Detect language from file extension
   std::string filename_str(filename);
   OpenMPBaseLang default_lang = Lang_C;
@@ -108,7 +85,8 @@ int main(int argc, const char *argv[]) {
         (filename_str.length() >= 3 &&
          filename_str.substr(filename_str.length() - 3) == ".cc")) {
       default_lang = Lang_Cplusplus;
-    } else if (ext == ".f90" || ext == ".F90" || ext == ".f95" || ext == ".F95" ||
+    } else if (ext == ".f90" || ext == ".F90" || ext == ".f95" ||
+               ext == ".F95" ||
                (filename_str.length() >= 2 &&
                 (filename_str.substr(filename_str.length() - 2) == ".f" ||
                  filename_str.substr(filename_str.length() - 2) == ".F"))) {
@@ -122,14 +100,25 @@ int main(int argc, const char *argv[]) {
 
   // parse the preprocessed inputs
   for (i = 0; i < omp_pragmas->size(); i++) {
-    // Detect if this is a Fortran directive and set language accordingly
-    if (std::regex_search(omp_pragmas->at(i), fortran_regex)) {
-      setLang(Lang_Fortran);
-    } else {
-      setLang(default_lang);
-    }
+    const OpenMPBaseLang parse_lang =
+        std::regex_search(omp_pragmas->at(i), fortran_regex) ? Lang_Fortran
+                                                             : default_lang;
 
-    omp_ast = parseOpenMP(omp_pragmas->at(i).c_str(), nullptr, nullptr);
+    ompparser::ParseOptions options;
+    switch (parse_lang) {
+    case Lang_Cplusplus:
+      options.language = ompparser::BaseLanguage::CXX;
+      break;
+    case Lang_Fortran:
+      options.language = ompparser::BaseLanguage::Fortran;
+      break;
+    default:
+      options.language = ompparser::BaseLanguage::C;
+      break;
+    }
+    ompparser::ParseResult parse_result =
+        ompparser::parseDirective(omp_pragmas->at(i), options);
+    omp_ast = parse_result.directive.release();
     omp_ast_list->push_back(omp_ast);
     if (omp_ast != NULL) {
       omp_directive_list->push_back(omp_ast->toString());
@@ -142,8 +131,6 @@ int main(int argc, const char *argv[]) {
   std::cout << "TOTAL OPENMP PRAGMAS: " << omp_pragmas->size() << "\n";
 
   output(omp_ast_list.get());
-
-  savePragmaList(omp_ast_list.get(), filename);
 
   // Clean up allocated directives
   for (OpenMPDirective *directive : *omp_ast_list) {
