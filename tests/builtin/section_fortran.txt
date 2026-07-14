@@ -43,36 +43,23 @@ PASS: !$omp section
 !$omp end section
 PASS: !$omp end section
 
-<<<<<<< HEAD
-!$omp end sections nowait
-PASS: !$omp end sections nowait
- 
-=======
 !$omp end sections
 PASS: !$omp end sections
 
 !$omp end sections nowait
 PASS: !$omp end sections nowait
 
->>>>>>> 8a7a2d8e375697662a710a13e88faeb10fb59c81
-// invalid test without paired validation.
 EXPECT: invalid
-
 !$omp section lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 !$omp section nowait(dsfasf)
 
+EXPECT: invalid
 !$omp sections nowait
 
-<<<<<<< HEAD
+EXPECT: invalid
 !$omp end sections nowaite
-=======
+
+EXPECT: invalid
 !$omp end sections allocate(omp_default_mem_alloc:a,b,c)
-
-
->>>>>>> 8a7a2d8e375697662a710a13e88faeb10fb59c81
-
-
-
-
-

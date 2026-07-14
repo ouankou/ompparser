@@ -74,9 +74,12 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
   switch (this->getKind()) {
 
   case OMPD_declare_variant: {
-    result += "(" +
-              ((OpenMPDeclareVariantDirective *)this)->getVariantFuncID() +
-              ") ";
+    auto *declare_variant = (OpenMPDeclareVariantDirective *)this;
+    result += "(";
+    if (!declare_variant->getBaseFuncID().empty()) {
+      result += declare_variant->getBaseFuncID() + ":";
+    }
+    result += declare_variant->getVariantFuncID() + ") ";
     break;
   }
   case OMPD_allocate: {

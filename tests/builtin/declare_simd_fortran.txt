@@ -49,14 +49,24 @@ PASS: !$omp declare simd (a) uniform(*a, &b)
 !$omp declare simd (d) inbranch
 PASS: !$omp declare simd (d) inbranch
 
-!$omp declare simd (#ljlkfds) notinbranch
-PASS: !$omp declare simd (#ljlkfds) notinbranch
+!$omp declare simd (MiXeD_Name_42) notinbranch
+PASS: !$omp declare simd (MiXeD_Name_42) notinbranch
 
 !$omp declare simd (tol) uniform(i) linear(k) notinbranch
 PASS: !$omp declare simd (tol) uniform(i) linear (k) notinbranch
 
 // invalid test without paired validation.
 EXPECT: invalid
+
+!$omp declare simd ()
+
+!$omp declare simd (#ljlkfds) notinbranch
+
+!$omp declare simd (1name)
+
+!$omp declare simd (a+b)
+
+!$omp declare simd (a%b)
 
 !$omp declare simd safelen
 
@@ -69,7 +79,6 @@ EXPECT: invalid
 !$omp declare simd notinbranch(v)
 
 !$omp declare simd inbranch(dfa:23)
-
 
 
 

@@ -9,6 +9,7 @@
 #include "OpenMPIR.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <stdarg.h>
@@ -38,7 +39,12 @@ const void *openmpParseExpressionNode(OpenMPDirectiveKind directive_kind,
                                       OpenMPClauseKind clause_kind,
                                       OpenMPExprParseMode parse_mode,
                                       const char *expression) {
-  if (gOpenMPExprParseCallback == nullptr || expression == nullptr) {
+  if (expression == nullptr) {
+    std::cerr << "OMPPARSER_INVARIANT[expression-callback]: expression is "
+                 "null\n";
+    std::abort();
+  }
+  if (gOpenMPExprParseCallback == nullptr) {
     return nullptr;
   }
   OpenMPExprParseMode mode =
@@ -745,18 +751,60 @@ void OpenMPApplyClause::addTransformation(OpenMPApplyTransformKind kind,
   t.kind = kind;
   t.argument = trimWhitespace(argument);
   t.separator = sep;
+  switch (kind) {
+  case OMPC_APPLY_TRANSFORM_unroll_partial:
+  case OMPC_APPLY_TRANSFORM_tile_sizes:
+    if (t.argument.empty()) {
+      fprintf(stderr, "OMP_PARSER_INVARIANT[apply]: transformation requires an "
+                      "expression argument\n");
+      std::abort();
+    }
+    addAuxiliaryLangExpr(t.argument);
+    break;
+  case OMPC_APPLY_TRANSFORM_unknown:
+    if (t.argument.empty()) {
+      fprintf(stderr,
+              "OMP_PARSER_INVARIANT[apply]: named transformation is empty\n");
+      std::abort();
+    }
+    break;
+  case OMPC_APPLY_TRANSFORM_unroll:
+  case OMPC_APPLY_TRANSFORM_unroll_full:
+  case OMPC_APPLY_TRANSFORM_reverse:
+  case OMPC_APPLY_TRANSFORM_interchange:
+  case OMPC_APPLY_TRANSFORM_nothing:
+    if (!t.argument.empty()) {
+      fprintf(stderr,
+              "OMP_PARSER_INVARIANT[apply]: argumentless transformation "
+              "carries an expression\n");
+      std::abort();
+    }
+    break;
+  case OMPC_APPLY_TRANSFORM_apply:
+  default:
+    fprintf(stderr,
+            "OMP_PARSER_INVARIANT[apply]: invalid direct transformation "
+            "kind\n");
+    std::abort();
+  }
   transforms.push_back(std::move(t));
 }
 
 void OpenMPApplyClause::addNestedApply(OpenMPApplyClause *nested,
                                        OpenMPClauseSeparator sep) {
   if (nested == nullptr) {
-    return;
+    fprintf(stderr,
+            "OMP_PARSER_INVARIANT[apply]: nested apply transformation is "
+            "null\n");
+    std::abort();
   }
   ApplyTransform t;
   t.kind = OMPC_APPLY_TRANSFORM_apply;
   t.nested_apply.reset(nested);
   t.separator = sep;
+  auxiliaryExpressionNodes.insert(auxiliaryExpressionNodes.end(),
+                                  nested->auxiliaryExpressionNodes.begin(),
+                                  nested->auxiliaryExpressionNodes.end());
   transforms.push_back(std::move(t));
 }
 
@@ -896,11 +944,13 @@ void OpenMPInductionClause::addStepExpression(const char *expression) {
 
   if (step_expression.empty()) {
     step_expression = std::move(normalized);
+    addAuxiliaryLangExpr(step_expression);
     sequence.push_back({ItemStep, 0});
     return;
   }
 
   passthrough_items.push_back(std::move(normalized));
+  addAuxiliaryLangExpr(passthrough_items.back());
   sequence.push_back({ItemPassthrough, passthrough_items.size() - 1});
 }
 
@@ -917,6 +967,7 @@ void OpenMPInductionClause::addBinding(const char *label,
   binding.expression =
       normalizeClauseExpression(OMPC_induction, cleaned.c_str());
   bindings.push_back(std::move(binding));
+  addAuxiliaryLangExpr(bindings.back().expression);
   sequence.push_back({ItemBinding, bindings.size() - 1});
 }
 
@@ -927,6 +978,7 @@ void OpenMPInductionClause::addPassthroughItem(const char *expression) {
   std::string cleaned = trimWhitespace(std::string(expression));
   passthrough_items.push_back(
       normalizeClauseExpression(OMPC_induction, cleaned.c_str()));
+  addAuxiliaryLangExpr(passthrough_items.back());
   sequence.push_back({ItemPassthrough, passthrough_items.size() - 1});
 }
 
@@ -1104,26 +1156,91 @@ void OpenMPUsesAllocatorsClause::addUsesAllocatorsAllocatorSequence(
 
 void OpenMPInitClause::addInteropType(OpenMPInitClauseKind value) {
   if (value == OMPC_INIT_KIND_unknown) {
-    return;
+    fprintf(stderr,
+            "OMP_PARSER_INVARIANT[init]: unknown interop type modifier\n");
+    std::abort();
   }
   for (OpenMPInitClauseKind existing : interop_types) {
     if (existing == value) {
-      return;
+      fprintf(stderr,
+              "OMP_PARSER_INVARIANT[init]: duplicate interop type modifier\n");
+      std::abort();
     }
   }
   interop_types.push_back(value);
+  modifier_sequence.push_back({ModifierInteropType, interop_types.size() - 1});
 }
 
 void OpenMPInitClause::addInteropType(const std::string &raw_type) {
-  if (raw_type.empty()) {
-    return;
+  const std::string trimmed_type = trimWhitespace(raw_type);
+  if (trimmed_type.empty()) {
+    fprintf(stderr, "OMP_PARSER_INVARIANT[init]: empty interop type name\n");
+    std::abort();
   }
   for (const std::string &existing : raw_interop_types) {
-    if (existing == raw_type) {
-      return;
+    if (existing == trimmed_type) {
+      fprintf(stderr,
+              "OMP_PARSER_INVARIANT[init]: duplicate interop type name\n");
+      std::abort();
     }
   }
-  raw_interop_types.push_back(raw_type);
+  raw_interop_types.push_back(trimmed_type);
+  modifier_sequence.push_back(
+      {ModifierRawInteropType, raw_interop_types.size() - 1});
+}
+
+void OpenMPInitClause::setDirectiveNameModifier(OpenMPDirectiveKind value) {
+  if (has_directive_name_modifier ||
+      (value != OMPD_depobj && value != OMPD_interop)) {
+    fprintf(stderr,
+            "OMP_PARSER_INVARIANT[init]: invalid or duplicate directive-name "
+            "modifier\n");
+    std::abort();
+  }
+  has_directive_name_modifier = true;
+  directive_name_modifier = value;
+  modifier_sequence.push_back({ModifierDirectiveName, 0});
+}
+
+void OpenMPInitClause::setPreferType(const std::string &spec) {
+  const std::string trimmed_spec = trimWhitespace(spec);
+  if (has_prefer_type || trimmed_spec.empty()) {
+    fprintf(stderr,
+            "OMP_PARSER_INVARIANT[init]: empty or duplicate prefer_type "
+            "modifier\n");
+    std::abort();
+  }
+  has_prefer_type = true;
+  prefer_type_spec = trimmed_spec;
+  addAuxiliaryLangExpr(prefer_type_spec);
+  modifier_sequence.push_back({ModifierPreferType, 0});
+}
+
+void OpenMPInitClause::setDepinfo(OpenMPDependClauseType type,
+                                  const std::string &locator) {
+  const std::string trimmed_locator = trimWhitespace(locator);
+  if (has_depinfo || type == OMPC_DEPENDENCE_TYPE_unknown ||
+      trimmed_locator.empty()) {
+    fprintf(stderr, "OMP_PARSER_INVARIANT[init]: invalid or duplicate depinfo "
+                    "modifier\n");
+    std::abort();
+  }
+  has_depinfo = true;
+  depinfo_type = type;
+  depinfo_locator = trimmed_locator;
+  addAuxiliaryLangExpr(depinfo_locator);
+  modifier_sequence.push_back({ModifierDepinfo, 0});
+}
+
+void OpenMPInitClause::setOperand(const std::string &value) {
+  const std::string trimmed_operand = trimWhitespace(value);
+  if (!operand.empty() || trimmed_operand.empty()) {
+    fprintf(stderr, "OMP_PARSER_INVARIANT[init]: empty or duplicate operand\n");
+    std::abort();
+  }
+  operand = normalizeClauseExpression(OMPC_init, trimmed_operand.c_str());
+  addLangExpr(operand.c_str(), OMPC_CLAUSE_SEP_space, 0, 0,
+              OMP_EXPR_PARSE_expression);
 }
 
 std::string OpenMPInitClause::toString() {
@@ -1141,66 +1258,56 @@ std::string OpenMPInitClause::toString() {
     emitted_modifier = true;
   };
 
-  if (has_directive_name_modifier) {
-    switch (directive_name_modifier) {
-    case OMPD_depobj:
-      appendModifier("depobj");
+  for (const ModifierRef &modifier : modifier_sequence) {
+    switch (modifier.kind) {
+    case ModifierDirectiveName:
+      appendModifier(directive_name_modifier == OMPD_depobj ? "depobj"
+                                                            : "interop");
       break;
-    case OMPD_interop:
-      appendModifier("interop");
+    case ModifierPreferType:
+      appendModifier("prefer_type(" + prefer_type_spec + ")");
+      break;
+    case ModifierDepinfo: {
+      std::string keyword;
+      switch (depinfo_type) {
+      case OMPC_DEPENDENCE_TYPE_in:
+        keyword = "in";
+        break;
+      case OMPC_DEPENDENCE_TYPE_out:
+        keyword = "out";
+        break;
+      case OMPC_DEPENDENCE_TYPE_inout:
+        keyword = "inout";
+        break;
+      case OMPC_DEPENDENCE_TYPE_inoutset:
+        keyword = "inoutset";
+        break;
+      case OMPC_DEPENDENCE_TYPE_mutexinoutset:
+        keyword = "mutexinoutset";
+        break;
+      default:
+        std::abort();
+      }
+      appendModifier(keyword + "(" + depinfo_locator + ")");
+      break;
+    }
+    case ModifierInteropType:
+      if (modifier.index >= interop_types.size()) {
+        std::abort();
+      }
+      appendModifier(interop_types[modifier.index] == OMPC_INIT_KIND_target
+                         ? "target"
+                         : "targetsync");
+      break;
+    case ModifierRawInteropType:
+      if (modifier.index >= raw_interop_types.size()) {
+        std::abort();
+      }
+      appendModifier(raw_interop_types[modifier.index]);
       break;
     default:
-      break;
+      std::abort();
     }
-  }
-
-  if (has_prefer_type) {
-    appendModifier("prefer_type(" + prefer_type_spec + ")");
-  }
-
-  if (has_depinfo) {
-    std::string depinfo_keyword;
-    switch (depinfo_type) {
-    case OMPC_DEPENDENCE_TYPE_in:
-      depinfo_keyword = "in";
-      break;
-    case OMPC_DEPENDENCE_TYPE_out:
-      depinfo_keyword = "out";
-      break;
-    case OMPC_DEPENDENCE_TYPE_inout:
-      depinfo_keyword = "inout";
-      break;
-    case OMPC_DEPENDENCE_TYPE_inoutset:
-      depinfo_keyword = "inoutset";
-      break;
-    case OMPC_DEPENDENCE_TYPE_mutexinoutset:
-      depinfo_keyword = "mutexinoutset";
-      break;
-    default:
-      break;
-    }
-    if (!depinfo_keyword.empty()) {
-      appendModifier(depinfo_keyword + "(" + depinfo_locator + ")");
-    }
-  }
-
-  for (OpenMPInitClauseKind kind : interop_types) {
-    switch (kind) {
-    case OMPC_INIT_KIND_target:
-      appendModifier("target");
-      break;
-    case OMPC_INIT_KIND_targetsync:
-      appendModifier("targetsync");
-      break;
-    case OMPC_INIT_KIND_unknown:
-    default:
-      break;
-    }
-  }
-
-  // Emit raw/unknown interop types
-  for (const std::string &raw_type : raw_interop_types) {
-    appendModifier(raw_type);
   }
 
   if (emitted_modifier) {

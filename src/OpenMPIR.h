@@ -15,6 +15,7 @@
 
 #include "OpenMPKinds.h"
 #include <cassert>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <stdio.h>
@@ -178,9 +179,6 @@ public:
   }
   const std::vector<const void *> &getAuxiliaryExpressionNodes() const {
     return auxiliaryExpressionNodes;
-  }
-  const void *getExpressionNode(size_t index) const {
-    return index < expressionNodes.size() ? expressionNodes[index] : nullptr;
   }
   const std::vector<OpenMPClauseSeparator> &getExpressionSeparators() const {
     return expression_separators;
@@ -477,76 +475,175 @@ public:
 // declare variant directive
 class OpenMPDeclareVariantDirective : public OpenMPDirective {
 protected:
+  std::string base_func_id;
   std::string variant_func_id;
+  const void *base_func_node = nullptr;
+  const void *variant_func_node = nullptr;
 
 public:
   OpenMPDeclareVariantDirective() : OpenMPDirective(OMPD_declare_variant) {};
   void setVariantFuncID(const char *_variant_func_id) {
-    variant_func_id = std::string(_variant_func_id);
+    if (_variant_func_id == nullptr) {
+      std::cerr << "OpenMP declare variant has a null function identity\n";
+      std::abort();
+    }
+    auto trim = [](const std::string &value) {
+      const std::string whitespace = " \t\r\n";
+      const std::size_t first = value.find_first_not_of(whitespace);
+      if (first == std::string::npos)
+        return std::string();
+      const std::size_t last = value.find_last_not_of(whitespace);
+      return value.substr(first, last - first + 1);
+    };
+
+    base_func_id.clear();
+    base_func_node = nullptr;
+    variant_func_id = trim(_variant_func_id);
+    if (variant_func_id.empty()) {
+      std::cerr << "OpenMP declare variant has an empty variant function "
+                   "identity\n";
+      std::abort();
+    }
+    variant_func_node = openmpParseExpressionNode(
+        OMPD_declare_variant, OMPC_unknown, OMP_EXPR_PARSE_expression,
+        variant_func_id.c_str());
   };
+  void setBaseVariantFuncIDs(const char *_base_func_id,
+                             const char *_variant_func_id) {
+    if (_base_func_id == nullptr || _variant_func_id == nullptr) {
+      std::cerr << "OpenMP declare variant has a null base or variant "
+                   "function identity\n";
+      std::abort();
+    }
+    auto trim = [](const std::string &value) {
+      const std::string whitespace = " \t\r\n";
+      const std::size_t first = value.find_first_not_of(whitespace);
+      if (first == std::string::npos)
+        return std::string();
+      const std::size_t last = value.find_last_not_of(whitespace);
+      return value.substr(first, last - first + 1);
+    };
+    base_func_id = trim(_base_func_id);
+    variant_func_id = trim(_variant_func_id);
+    if (base_func_id.empty() || variant_func_id.empty()) {
+      std::cerr << "OpenMP declare variant has an empty base or variant "
+                   "function identity\n";
+      std::abort();
+    }
+    base_func_node = openmpParseExpressionNode(
+        OMPD_declare_variant, OMPC_unknown, OMP_EXPR_PARSE_expression,
+        base_func_id.c_str());
+    variant_func_node = openmpParseExpressionNode(
+        OMPD_declare_variant, OMPC_unknown, OMP_EXPR_PARSE_expression,
+        variant_func_id.c_str());
+  }
+  std::string getBaseFuncID() const { return base_func_id; };
   std::string getVariantFuncID() { return variant_func_id; };
+  const void *getBaseFuncNode() const { return base_func_node; }
+  const void *getVariantFuncNode() const { return variant_func_node; }
 };
 
 // allocate directive
 class OpenMPAllocateDirective : public OpenMPDirective {
 protected:
   std::vector<std::string> allocate_list;
+  std::vector<const void *> allocate_nodes;
 
 public:
   OpenMPAllocateDirective() : OpenMPDirective(OMPD_allocate) {};
   void addAllocateList(const char *_allocate_list) {
-    if (_allocate_list != nullptr) {
-      allocate_list.emplace_back(_allocate_list);
+    if (_allocate_list == nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[allocate-list]: list item is null\n";
+      std::abort();
     }
+    allocate_list.emplace_back(_allocate_list);
+    allocate_nodes.push_back(openmpParseExpressionNode(
+        OMPD_allocate, OMPC_unknown, OMP_EXPR_PARSE_variable_list,
+        allocate_list.back().c_str()));
   };
   const std::vector<std::string> &getAllocateList() const {
     return allocate_list;
   };
+  const std::vector<const void *> &getAllocateNodes() const {
+    return allocate_nodes;
+  }
 };
 
 // threadprivate directive
 class OpenMPThreadprivateDirective : public OpenMPDirective {
 protected:
   std::vector<std::string> threadprivate_list;
+  std::vector<const void *> threadprivate_nodes;
 
 public:
   OpenMPThreadprivateDirective() : OpenMPDirective(OMPD_threadprivate) {};
   void addThreadprivateList(const char *_threadprivate_list) {
-    if (_threadprivate_list != nullptr) {
-      threadprivate_list.emplace_back(_threadprivate_list);
+    if (_threadprivate_list == nullptr) {
+      std::cerr
+          << "OMPPARSER_INVARIANT[threadprivate-list]: list item is null\n";
+      std::abort();
     }
+    threadprivate_list.emplace_back(_threadprivate_list);
+    threadprivate_nodes.push_back(openmpParseExpressionNode(
+        OMPD_threadprivate, OMPC_unknown, OMP_EXPR_PARSE_variable_list,
+        threadprivate_list.back().c_str()));
   };
   const std::vector<std::string> &getThreadprivateList() const {
     return threadprivate_list;
   };
+  const std::vector<const void *> &getThreadprivateNodes() const {
+    return threadprivate_nodes;
+  }
 };
 
 // groupprivate directive
 class OpenMPGroupprivateDirective : public OpenMPDirective {
 protected:
   std::vector<std::string> groupprivate_list;
+  std::vector<const void *> groupprivate_nodes;
 
 public:
   OpenMPGroupprivateDirective() : OpenMPDirective(OMPD_groupprivate) {};
   void addGroupprivateList(const char *_groupprivate_list) {
-    if (_groupprivate_list != nullptr) {
-      groupprivate_list.emplace_back(_groupprivate_list);
+    if (_groupprivate_list == nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[groupprivate-list]: list item is "
+                   "null\n";
+      std::abort();
     }
+    groupprivate_list.emplace_back(_groupprivate_list);
+    groupprivate_nodes.push_back(openmpParseExpressionNode(
+        OMPD_groupprivate, OMPC_unknown, OMP_EXPR_PARSE_variable_list,
+        groupprivate_list.back().c_str()));
   };
   const std::vector<std::string> &getGroupprivateList() const {
     return groupprivate_list;
   };
+  const std::vector<const void *> &getGroupprivateNodes() const {
+    return groupprivate_nodes;
+  }
 };
 
 // declare simd directive
 class OpenMPDeclareSimdDirective : public OpenMPDirective {
 protected:
   std::string proc_name;
+  const void *proc_name_node = nullptr;
 
 public:
   OpenMPDeclareSimdDirective() : OpenMPDirective(OMPD_declare_simd) {};
-  void addProcName(std::string _proc_name) { proc_name = _proc_name; }
+  void addProcName(std::string _proc_name) {
+    if (!proc_name.empty() || _proc_name.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[declare-simd-procedure]: procedure "
+                   "name is empty or was assigned more than once\n";
+      std::abort();
+    }
+    proc_name = _proc_name;
+    proc_name_node =
+        openmpParseExpressionNode(OMPD_declare_simd, OMPC_unknown,
+                                  OMP_EXPR_PARSE_expression, proc_name.c_str());
+  }
   std::string getProcName() { return proc_name; }
+  const void *getProcNameNode() const { return proc_name_node; }
 };
 
 // declare reduction directive
@@ -737,13 +834,13 @@ public:
     std::string expression;
   };
 
-private:
   enum ItemKind { ItemStep, ItemBinding, ItemPassthrough };
   struct ItemRef {
     ItemKind kind;
     size_t index;
   };
 
+private:
   std::string step_expression;
   std::vector<Binding> bindings;
   std::vector<std::string> passthrough_items;
@@ -760,11 +857,25 @@ public:
   const std::vector<std::string> &getPassthroughItems() const {
     return passthrough_items;
   }
+  const std::vector<ItemRef> &getSequence() const { return sequence; }
   std::string specificationToString() const;
   std::string toString();
 };
 
 class OpenMPInitClause : public OpenMPClause {
+public:
+  enum ModifierKind {
+    ModifierDirectiveName,
+    ModifierPreferType,
+    ModifierDepinfo,
+    ModifierInteropType,
+    ModifierRawInteropType
+  };
+  struct ModifierRef {
+    ModifierKind kind;
+    size_t index;
+  };
+
 private:
   std::vector<OpenMPInitClauseKind> interop_types;
   std::vector<std::string> raw_interop_types; // For unknown/vendor types
@@ -776,6 +887,7 @@ private:
   OpenMPDependClauseType depinfo_type = OMPC_DEPENDENCE_TYPE_unknown;
   std::string depinfo_locator;
   std::string operand;
+  std::vector<ModifierRef> modifier_sequence;
 
 public:
   OpenMPInitClause() : OpenMPClause(OMPC_init) {}
@@ -789,32 +901,26 @@ public:
     return raw_interop_types;
   }
 
-  void setDirectiveNameModifier(OpenMPDirectiveKind value) {
-    has_directive_name_modifier = true;
-    directive_name_modifier = value;
-  }
+  void setDirectiveNameModifier(OpenMPDirectiveKind value);
   bool hasDirectiveNameModifier() const { return has_directive_name_modifier; }
   OpenMPDirectiveKind getDirectiveNameModifier() const {
     return directive_name_modifier;
   }
 
-  void setPreferType(const std::string &spec) {
-    has_prefer_type = true;
-    prefer_type_spec = spec;
-  }
+  void setPreferType(const std::string &spec);
   bool hasPreferType() const { return has_prefer_type; }
   const std::string &getPreferTypeSpec() const { return prefer_type_spec; }
 
-  void setDepinfo(OpenMPDependClauseType type, const std::string &locator) {
-    has_depinfo = true;
-    depinfo_type = type;
-    depinfo_locator = locator;
-  }
+  void setDepinfo(OpenMPDependClauseType type, const std::string &locator);
   bool hasDepinfo() const { return has_depinfo; }
   OpenMPDependClauseType getDepinfoType() const { return depinfo_type; }
   const std::string &getDepinfoLocator() const { return depinfo_locator; }
 
-  void setOperand(const std::string &value) { operand = value; }
+  const std::vector<ModifierRef> &getModifierSequence() const {
+    return modifier_sequence;
+  }
+
+  void setOperand(const std::string &value);
   const std::string &getOperand() const { return operand; }
   std::string toString() override;
 };
@@ -2088,26 +2194,47 @@ public:
 class OpenMPDeclareTargetDirective : public OpenMPDirective {
 protected:
   std::vector<std::string> extended_list;
+  std::vector<const void *> extended_list_nodes;
 
 public:
   OpenMPDeclareTargetDirective() : OpenMPDirective(OMPD_declare_target) {};
   void addExtendedList(const char *_extended_list) {
-    extended_list.push_back(std::string(_extended_list));
+    if (_extended_list == nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[declare-target-list]: list item is "
+                   "null\n";
+      std::abort();
+    }
+    extended_list.emplace_back(_extended_list);
+    extended_list_nodes.push_back(openmpParseExpressionNode(
+        OMPD_declare_target, OMPC_unknown, OMP_EXPR_PARSE_array_section,
+        extended_list.back().c_str()));
   };
   std::vector<std::string> *getExtendedList() { return &extended_list; };
+  const std::vector<const void *> &getExtendedListNodes() const {
+    return extended_list_nodes;
+  }
 };
 
 // flush directive
 class OpenMPFlushDirective : public OpenMPDirective {
 protected:
   std::vector<std::string> flush_list;
+  std::vector<const void *> flush_nodes;
 
 public:
   OpenMPFlushDirective() : OpenMPDirective(OMPD_flush) {};
   void addFlushList(const char *_flush_list) {
-    flush_list.push_back(std::string(_flush_list));
+    if (_flush_list == nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[flush-list]: list item is null\n";
+      std::abort();
+    }
+    flush_list.emplace_back(_flush_list);
+    flush_nodes.push_back(openmpParseExpressionNode(
+        OMPD_flush, OMPC_unknown, OMP_EXPR_PARSE_variable_list,
+        flush_list.back().c_str()));
   };
   std::vector<std::string> *getFlushList() { return &flush_list; };
+  const std::vector<const void *> &getFlushNodes() const { return flush_nodes; }
 };
 
 // critical directive

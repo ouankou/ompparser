@@ -109,6 +109,7 @@ extern int openmp_lex();
 #include <array>
 #include <cstdio>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -125,6 +126,7 @@ static inline int emit_expr_string_no_unput();
 
 static const char *ompparserinput = nullptr;
 static std::string current_string;
+static std::string original_input_string;
 static int parenthesis_local_count = 0;
 static int parenthesis_global_count = 1;
 static int bracket_count;
@@ -147,6 +149,8 @@ static std::vector<std::unique_ptr<char[]>> lexeme_storage;
 struct LexerLocationState {
   int line = 1;
   int column = 1;
+  std::size_t offset = 0;
+  std::size_t token_begin_offset = 0;
   int last_token_line = 0;
   int last_token_column = 0;
   bool tracking_enabled = false;
@@ -162,6 +166,8 @@ static std::size_t lexer_position_history_size = 0;
 static inline void reset_lexer_location_state() {
   lexer_location_state.line = 1;
   lexer_location_state.column = 1;
+  lexer_location_state.offset = 0;
+  lexer_location_state.token_begin_offset = 0;
   lexer_location_state.last_token_line = 0;
   lexer_location_state.last_token_column = 0;
   lexer_position_history_begin = 0;
@@ -210,6 +216,7 @@ static inline bool pop_lexer_position_history(std::pair<int, int> *position) {
 }
 
 static inline void advance_lexer_position(char ch) {
+  lexer_location_state.offset++;
   if (ch == '\n') {
     lexer_location_state.line++;
     lexer_location_state.column = 1;
@@ -222,6 +229,14 @@ static inline void rewind_lexer_position_for_unput(char ch) {
   if (!lexer_location_state.tracking_enabled) {
     return;
   }
+
+  if (lexer_location_state.offset == 0) {
+    std::fprintf(stderr,
+                 "REX_OMPPARSER_INVARIANT[lexer-offset]: cannot rewind "
+                 "before the start of the directive\n");
+    std::abort();
+  }
+  lexer_location_state.offset--;
 
   std::pair<int, int> previous_position;
   if (pop_lexer_position_history(&previous_position)) {
@@ -250,6 +265,7 @@ static inline void update_token_location(const char *text, size_t length) {
 
   const int first_line = lexer_location_state.line;
   const int first_column = lexer_location_state.column;
+  lexer_location_state.token_begin_offset = lexer_location_state.offset;
 
   int last_line = first_line;
   int last_column = first_column;
@@ -286,6 +302,45 @@ static inline int tracked_yyinput();
 static inline void tracked_unput(int ch);
 
 #define YY_USER_ACTION update_token_location(yytext, static_cast<size_t>(yyleng));
+
+#define TRACKED_YYLESS(count)                                                   \
+  do {                                                                          \
+    const int tracked_count = (count);                                          \
+    if (tracked_count < 0 || tracked_count > yyleng) {                          \
+      std::fprintf(stderr,                                                      \
+                   "REX_OMPPARSER_INVARIANT[lexer-offset]: invalid yyless "    \
+                   "length\n");                                                \
+      std::abort();                                                             \
+    }                                                                           \
+    for (int tracked_index = yyleng; tracked_index > tracked_count;             \
+         --tracked_index) {                                                     \
+      rewind_lexer_position_for_unput(yytext[tracked_index - 1]);               \
+    }                                                                           \
+    yyless(tracked_count);                                                      \
+  } while (0)
+
+static std::string original_token_text(std::size_t length) {
+  const std::size_t begin = lexer_location_state.token_begin_offset;
+  if (begin > original_input_string.size() ||
+      length > original_input_string.size() - begin) {
+    std::fprintf(stderr,
+                 "REX_OMPPARSER_INVARIANT[lexer-source]: token range exceeds "
+                 "the original directive\n");
+    std::abort();
+  }
+  return original_input_string.substr(begin, length);
+}
+
+static char original_token_char(std::size_t index = 0) {
+  const std::string token = original_token_text(static_cast<std::size_t>(yyleng));
+  if (index >= token.size()) {
+    std::fprintf(stderr,
+                 "REX_OMPPARSER_INVARIANT[lexer-source]: token character "
+                 "index is out of range\n");
+    std::abort();
+  }
+  return token[index];
+}
 
 static const char *store_lexeme(const std::string &text) {
   auto buffer = std::make_unique<char[]>(text.size() + 1);
@@ -349,15 +404,18 @@ static inline void prepare_expression_capture() {
 
 static inline void prepare_expression_capture(char initial_char) {
   clear_expression_buffer();
-  current_string.push_back(initial_char);
-  if (initial_char == '"') {
+  const char source_char = original_token_char();
+  current_string.push_back(source_char);
+  if (source_char == '"') {
     inside_quotes = true;
   }
+  (void)initial_char;
 }
 
 static inline void prepare_expression_capture_str(const char* initial_str) {
   clear_expression_buffer();
-  current_string = initial_str;
+  current_string = original_token_text(static_cast<std::size_t>(yyleng));
+  (void)initial_str;
 }
 
 static inline bool is_firstprivate_blank(char ch) {
@@ -493,7 +551,7 @@ static bool firstprivate_modifier_list_follows_current_token() {
              std::isspace(static_cast<unsigned char>(yytext[keep_len - 1]))) {    \
         keep_len--;                                                               \
       }                                                                           \
-      yyless(keep_len);                                                           \
+      TRACKED_YYLESS(keep_len);                                                   \
     }                                                                             \
   } while (0)
 
@@ -541,7 +599,7 @@ id_char         [a-zA-Z0-9_]
 [!c*]$omp       { ; }
 #pragma         { ; }
 omp/{blank}     { ; }
-paralleldo      { compact_parallel_do = true; yyless(8); return PARALLEL; }
+paralleldo      { compact_parallel_do = true; TRACKED_YYLESS(8); return PARALLEL; }
 parallel        { compact_parallel_do = false; return PARALLEL; }
 metadirective   { return METADIRECTIVE; }
 task            { return TASK; }
@@ -588,7 +646,7 @@ safelen         { yy_push_state(SAFELEN_STATE); return SAFELEN; }
 nontemporal     { yy_push_state(NONTEMPORAL_STATE); return NONTEMPORAL; }
 aligned         { yy_push_state(ALIGNED_STATE); return ALIGNED; }
 align           { return ALIGN; }
-declare_target  { declare_target_underscore = true; yyless(7); return DECLARE; }
+declare_target  { declare_target_underscore = true; TRACKED_YYLESS(7); return DECLARE; }
 "_target"       { return TARGET; }
 declare         { declare_target_underscore = false; return DECLARE; }
 uniform         { return UNIFORM; }
@@ -657,7 +715,7 @@ induction/"("          {
                   return INDUCTION;
                 }
 
-enddo           { compact_enddo = true; yyless(3); return END; }
+enddo           { compact_enddo = true; TRACKED_YYLESS(3); return END; }
 end             { compact_enddo = false; return END; }
 score           { return SCORE; }
 condition       { yy_push_state(CONDITION_STATE); return CONDITION; }
@@ -793,8 +851,8 @@ init_complete             { return INIT_COMPLETE; }
 safesync                  { return SAFESYNC; }
 device_safesync           { return DEVICE_SAFESYNC; }
 target_data/{blank}       { return TARGET_DATA_COMPOSITE; }  /* OpenMP 6.0 task-generating construct */
-target_enter_data/{blank} { yyless(7); return TARGET; }
-target_exit_data/{blank}  { yyless(7); return TARGET; }
+target_enter_data/{blank} { TRACKED_YYLESS(7); return TARGET; }
+target_exit_data/{blank}  { TRACKED_YYLESS(7); return TARGET; }
 target{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
 data{id_char}+            { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
 device{id_char}+          { yy_push_state(EXPR_STATE); prepare_expression_capture_str(yytext); }
@@ -845,7 +903,7 @@ cgroup                    { return CGROUP; }
 <RAW_EXPR_STATE>"]"                        { bracket_count--; current_string.push_back(']'); }
 <RAW_EXPR_STATE>"\""                       { inside_quotes = !inside_quotes; current_string.push_back('"'); }
 <RAW_EXPR_STATE>{newline}+                 { current_string.push_back('\n'); }
-<RAW_EXPR_STATE>.                          { current_string.push_back(yytext[0]); }
+<RAW_EXPR_STATE>.                          { current_string.push_back(original_token_char()); }
 
 "("             { return '('; }
 ")"             { return ')'; }
@@ -888,7 +946,8 @@ cgroup                    { return CGROUP; }
                                                      std::isspace(static_cast<unsigned char>(yytext[len - 1]))) {
                                                 len--;
                                               }
-                                              std::string allocator(yytext, len);
+                                              std::string allocator =
+                                                  original_token_text(len);
                                               openmp_lval.stype =
                                                   store_lexeme(allocator);
                                               return ALLOCATOR_IDENTIFIER;
@@ -919,13 +978,15 @@ cgroup                    { return CGROUP; }
                                               }
                                             }
 <ALLOCATOR_CALL_STATE>{blank}+ {
-                                              current_string.append(yytext, yyleng);
+                                              current_string += original_token_text(
+                                                  static_cast<std::size_t>(yyleng));
                                             }
 <ALLOCATOR_CALL_STATE>{newline}+ {
-                                              current_string.append(yytext, yyleng);
+                                              current_string += original_token_text(
+                                                  static_cast<std::size_t>(yyleng));
                                             }
 <ALLOCATOR_CALL_STATE>. {
-                                              current_string.push_back(yytext[0]);
+                                              current_string.push_back(original_token_char());
                                             }
 
 <IF_STATE>parallel{blank}*/:                { return PARALLEL; }
@@ -1159,8 +1220,8 @@ cgroup                    { return CGROUP; }
                                             }
 <APPLY_STATE>":"                            { return ':'; }
 <APPLY_STATE>","                            { return ','; }
-<APPLY_STATE>unrollpartial                  { yyless(6); return UNROLL; }
-<APPLY_STATE>unrollfull                     { yyless(6); return UNROLL; }
+<APPLY_STATE>unrollpartial                  { TRACKED_YYLESS(6); return UNROLL; }
+<APPLY_STATE>unrollfull                     { TRACKED_YYLESS(6); return UNROLL; }
 <APPLY_STATE>unroll                         { return UNROLL; }
 <APPLY_STATE>partial                        { return PARTIAL; }
 <APPLY_STATE>full                           { return FULL; }
@@ -1188,6 +1249,7 @@ cgroup                    { return CGROUP; }
                                               if (induction_step_waiting) {
                                                 // After step(, we need to capture expression
                                                 induction_step_waiting = false;
+                                                prepare_expression_capture();
                                                 yy_push_state(EXPR_STATE);
                                                 return '(';
                                               }
@@ -1303,7 +1365,7 @@ cgroup                    { return CGROUP; }
 <MAPPER_STATE>.                             { yy_push_state(ID_EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <TYPE_STR_STATE>"::"                        { current_string.append("::"); }
-<TYPE_STR_STATE>.                           { current_char = yytext[0];
+<TYPE_STR_STATE>.                           { current_char = original_token_char();
                                             switch (current_char) {
                                                 case '(': {
                                                     parenthesis_local_count++;
@@ -1503,7 +1565,7 @@ cgroup                    { return CGROUP; }
 <DEPEND_EXPR_STATE>{blank}                  { yy_pop_state(); return emit_expr_string_no_unput(); }
 <DEPEND_EXPR_STATE>"="                      { yy_pop_state(); return emit_expr_string_and_unput('='); }
 <DEPEND_EXPR_STATE>":"                      { yy_pop_state(); return emit_expr_string_and_unput(':'); }
-<DEPEND_EXPR_STATE>.                        { current_string.push_back(yytext[0]); }
+<DEPEND_EXPR_STATE>.                        { current_string.push_back(original_token_char()); }
 
 <AFFINITY_STATE>"("                         { return '('; }
 <AFFINITY_STATE>")"                         { yy_pop_state(); return ')'; }
@@ -1519,7 +1581,7 @@ cgroup                    { return CGROUP; }
 <AFFINITY_EXPR_STATE>","                    { yy_pop_state(); return emit_expr_string_and_unput(','); }
 <AFFINITY_EXPR_STATE>"="                    { yy_pop_state(); return emit_expr_string_and_unput('='); }
 <AFFINITY_EXPR_STATE>":"                    { yy_pop_state(); return emit_expr_string_and_unput(':'); }
-<AFFINITY_EXPR_STATE>.                      { current_string.push_back(yytext[0]); }
+<AFFINITY_EXPR_STATE>.                      { current_string.push_back(original_token_char()); }
 
 <AFFINITY_ITERATOR_STATE>"("                { return '('; }
 <AFFINITY_ITERATOR_STATE>"="                { return '='; }
@@ -1604,7 +1666,7 @@ cgroup                    { return CGROUP; }
 <TO_ITER_EXPR_STATE>{blank}                 { yy_pop_state(); return emit_expr_string_no_unput(); }
 <TO_ITER_EXPR_STATE>"="                     { yy_pop_state(); return emit_expr_string_and_unput('='); }
 <TO_ITER_EXPR_STATE>":"                     { yy_pop_state(); return emit_expr_string_and_unput(':'); }
-<TO_ITER_EXPR_STATE>.                       { current_string.push_back(yytext[0]); }
+<TO_ITER_EXPR_STATE>.                       { current_string.push_back(original_token_char()); }
 
 <FROM_STATE>"("                             {
                                               if (!b_within_variable_list) {
@@ -1684,7 +1746,7 @@ cgroup                    { return CGROUP; }
 
 <ALLOC_EXPR_STATE>"("                        { uses_allocators_paren_depth++; return '('; }
 <ALLOC_EXPR_STATE>")"                        { yy_pop_state(); return emit_expr_string_and_unput(')'); }
-<ALLOC_EXPR_STATE>.                          { current_string.push_back(yytext[0]); }
+<ALLOC_EXPR_STATE>.                          { current_string.push_back(original_token_char()); }
 
 
 <DEVICE_TYPE_STATE>host                      { return HOST; }
@@ -1761,7 +1823,7 @@ cgroup                    { return CGROUP; }
 <MAP_ITER_EXPR_STATE>{blank}                 { yy_pop_state(); return emit_expr_string_no_unput(); }
 <MAP_ITER_EXPR_STATE>"="                     { yy_pop_state(); return emit_expr_string_and_unput('='); }
 <MAP_ITER_EXPR_STATE>":"                     { yy_pop_state(); return emit_expr_string_and_unput(':'); }
-<MAP_ITER_EXPR_STATE>.                       { current_string.push_back(yytext[0]); }
+<MAP_ITER_EXPR_STATE>.                       { current_string.push_back(original_token_char()); }
 
 <TASK_REDUCTION_STATE>"("                     { return '('; }
 <TASK_REDUCTION_STATE>")"                     { yy_pop_state(); return ')'; }
@@ -1792,7 +1854,7 @@ cgroup                    { return CGROUP; }
 <UPDATE_STATE>{blank}*                        { ; }
 <UPDATE_STATE>.                               { yy_pop_state(); tracked_unput(yytext[0]); }
 
-<EXPR_STATE>.                           { current_char = yytext[0];
+<EXPR_STATE>.                           { current_char = original_token_char();
                                             switch (current_char) {
                                                 case '\n': {
                                                     break;
@@ -1836,11 +1898,13 @@ cgroup                    { return CGROUP; }
                                                         if (parenthesis_local_count == 0 && brace_count == 0 &&
                                                             bracket_count == 0 && open_paren == close_paren &&
                                                             open_brace == close_brace && open_bracket == close_bracket) {
-                                                            // A uses_allocators item returns to its clause lexer so
-                                                            // the next predefined allocator is recognized.  Other
-                                                            // comma-separated expression lists intentionally remain
-                                                            // in EXPR_STATE for the following item.
-                                                            if (yy_top_state() == USES_ALLOCATORS_STATE) {
+                                                            // Clauses with item-level grammar return to their clause
+                                                            // lexer so the next allocator or induction keyword is
+                                                            // recognized. Other comma-separated expression lists
+                                                            // intentionally remain in EXPR_STATE for the next item.
+                                                            if (yy_top_state() == USES_ALLOCATORS_STATE ||
+                                                                yy_top_state() == INDUCTION_STATE ||
+                                                                yy_top_state() == INIT_STATE) {
                                                                 yy_pop_state();
                                                             }
                                                             return emit_expr_string_and_unput(',');
@@ -1924,7 +1988,7 @@ cgroup                    { return CGROUP; }
                                                 }
                                             }
                                         }
-<ID_EXPR_STATE>.                           { current_char = yytext[0];
+<ID_EXPR_STATE>.                           { current_char = original_token_char();
                                             switch (current_char) {
                                                 case '(': {
                                                     parenthesis_local_count++;
@@ -2073,6 +2137,7 @@ extern void openmp_parse_expr() { yy_push_state(EXPR_STATE); }
 /* entry point invoked by callers to start scanning for a string */
 extern void openmp_lexer_init(const char *str) {
   ompparserinput = str;
+  original_input_string = str != nullptr ? str : "";
   lexer_location_state.tracking_enabled = true;
   reset_lexer_location_state();
   /* We have openmp_ suffix for all flex functions */
@@ -2090,7 +2155,15 @@ extern void openmp_begin_raw_expression() {
 }
 
 /* Standalone ompparser */
-void start_lexer(const char *input) {
+void start_lexer(const char *input, const char *original_input) {
+  if (input == nullptr || original_input == nullptr ||
+      std::strlen(input) != std::strlen(original_input)) {
+    std::fprintf(stderr,
+                 "REX_OMPPARSER_INVARIANT[lexer-source]: normalized and "
+                 "original directives must have equal nonnull byte ranges\n");
+    std::abort();
+  }
+  original_input_string = original_input;
   lexer_location_state.tracking_enabled = true;
   reset_lexer_location_state();
   yy_scan_string(input);
@@ -2107,4 +2180,5 @@ void end_lexer(void) {
   lexer_location_state.tracking_enabled = false;
   yy_delete_buffer(YY_CURRENT_BUFFER);
   lexeme_storage.clear();
+  original_input_string.clear();
 }

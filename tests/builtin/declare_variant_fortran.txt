@@ -1,0 +1,5 @@
+!$omp declare variant(base_name:impl_name)
+PASS: !$omp declare variant (base_name:impl_name)
+
+!$omp declare variant(impl_adjacent)
+PASS: !$omp declare variant (impl_adjacent)

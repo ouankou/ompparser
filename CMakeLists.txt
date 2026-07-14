@@ -91,6 +91,7 @@ if(OMPPARSER_BUILD_TESTING)
   add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
     DEPENDS tester omp_roundtrip test_locations
+            test_directive_expression_callbacks
     COMMENT "Running all tests...")
 endif()
 

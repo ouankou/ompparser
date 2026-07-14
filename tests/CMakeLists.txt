@@ -25,10 +25,21 @@ add_executable(test_locations
 add_dependencies(test_locations ompparser)
 target_link_libraries(test_locations ompparser)
 
+add_executable(test_directive_expression_callbacks
+    test_directive_expression_callbacks.cpp)
+add_dependencies(test_directive_expression_callbacks ompparser)
+target_link_libraries(test_directive_expression_callbacks ompparser)
+
 add_test(NAME builtin_location_fields
          COMMAND ${CMAKE_COMMAND} -E env
                  "${OMPPARSER_TEST_LD_LIBRARY_PATH}"
                  $<TARGET_FILE:test_locations>
+         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+add_test(NAME directive_expression_callbacks
+         COMMAND ${CMAKE_COMMAND} -E env
+                 "${OMPPARSER_TEST_LD_LIBRARY_PATH}"
+                 $<TARGET_FILE:test_directive_expression_callbacks>
          WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 # Register built-in .txt test files as CTest tests
@@ -91,7 +102,8 @@ foreach(TEST_FILE IN LISTS OPENMP_EXAMPLES_FILES)
            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endforeach()
 
-set(executable_targets tester omp_roundtrip test_locations)
+set(executable_targets tester omp_roundtrip test_locations
+    test_directive_expression_callbacks)
 
 set_target_properties(${executable_targets} PROPERTIES
                       BUILD_RPATH "$ORIGIN/..")

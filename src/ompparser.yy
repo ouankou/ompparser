@@ -35,7 +35,7 @@ extern int openmp_lex();
 extern void openmp_lexer_init(const char *str);
 
 /* Standalone ompparser */
-extern void start_lexer(const char* input);
+extern void start_lexer(const char* input, const char* original_input);
 extern void end_lexer(void);
 extern "C" void openmp_reset_lexer_flags();
 extern "C" bool openmp_consume_compact_parallel_do();
@@ -157,9 +157,31 @@ static int openmp_error(const char *);
 OpenMPExprParseCallback exprParse = nullptr;
 void *exprParseUserData = nullptr;
 
-bool b_within_variable_list =
-    false; // a flag to indicate if the program is now processing a list of
-           // variables
+static bool isFortranProcedureName(const char *spelling) {
+  if (spelling == nullptr) {
+    return false;
+  }
+  const std::size_t length = std::strlen(spelling);
+  if (length == 0 || length > 63) {
+    return false;
+  }
+  auto is_ascii_letter = [](unsigned char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+  };
+  if (!is_ascii_letter(static_cast<unsigned char>(spelling[0]))) {
+    return false;
+  }
+  for (std::size_t index = 1; index < length; ++index) {
+    const unsigned char c = static_cast<unsigned char>(spelling[index]);
+    if (!is_ascii_letter(c) && (c < '0' || c > '9') && c != '_') {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool b_within_variable_list = false; // a flag to indicate if the program is now
+                                     // processing a list of variables
 
 /* used for language setting and detecting*/
 OpenMPBaseLang user_set_lang = Lang_unknown;
@@ -1087,6 +1109,7 @@ end_declare_variant_directive : END DECLARE VARIANT {
                    ;
 
 variant_func_id : '(' EXPR_STRING { ((OpenMPDeclareVariantDirective*)current_directive)->setVariantFuncID($2); } ')'
+                | '(' EXPR_STRING ':' EXPR_STRING { ((OpenMPDeclareVariantDirective*)current_directive)->setBaseVariantFuncIDs($2, $4); } ')'
                 ;
 
 declare_variant_clause_optseq : /* empty */
@@ -4389,37 +4412,40 @@ for_simd_directive : FOR SIMD {
                    ;
 do_simd_directive : DO SIMD {
                                current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_do_simd);
-                             }
-                             do_simd_clause_optseq
-                  ;
+}
+do_simd_clause_optseq;
 do_simd_paired_directive : DO SIMD {
-                                     current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_do_simd);
-                                   }
-                                   do_simd_paried_clause_optseq
-                         ;
-parallel_for_simd_directive : PARALLEL FOR SIMD { 
-                                current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_parallel_for_simd);
-                            }
-                            parallel_for_simd_clause_optseq
-                            ;
-parallel_do_simd_directive : PARALLEL DO SIMD { 
-                                current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_parallel_do_simd);
-                           }
-                           parallel_for_simd_clause_optseq
-                           ;
+  current_directive = makeDirectiveAt<OpenMPDirective>(
+      @1.first_line, @1.first_column, OMPD_do_simd);
+}
+do_simd_paried_clause_optseq;
+parallel_for_simd_directive : PARALLEL FOR SIMD {
+  current_directive = makeDirectiveAt<OpenMPDirective>(
+      @1.first_line, @1.first_column, OMPD_parallel_for_simd);
+}
+parallel_for_simd_clause_optseq;
+parallel_do_simd_directive : PARALLEL DO SIMD {
+  current_directive = makeDirectiveAt<OpenMPDirective>(
+      @1.first_line, @1.first_column, OMPD_parallel_do_simd);
+}
+parallel_for_simd_clause_optseq;
 declare_simd_directive : DECLARE SIMD {
-                          current_directive = makeDirectiveAt<OpenMPDeclareSimdDirective>(@1.first_line, @1.first_column);
-                        }
-                       declare_simd_clause_optseq
-                       ;
+  current_directive = makeDirectiveAt<OpenMPDeclareSimdDirective>(
+      @1.first_line, @1.first_column);
+}
+declare_simd_clause_optseq;
 declare_simd_fortran_directive : DECLARE SIMD {
-                                    current_directive = makeDirectiveAt<OpenMPDeclareSimdDirective>(@1.first_line, @1.first_column);
-                               } '(' proc_name ')'
-                               declare_simd_clause_optseq
-                               ;
-proc_name : /* empty */
-          | EXPR_STRING { ((OpenMPDeclareSimdDirective*)current_directive)->addProcName($1); }
-          ;
+  current_directive = makeDirectiveAt<OpenMPDeclareSimdDirective>(
+      @1.first_line, @1.first_column);
+}
+'(' proc_name ')' declare_simd_clause_optseq;
+proc_name : EXPR_STRING {
+  if (!isFortranProcedureName($1)) {
+    yyerror("declare simd procedure name is not a Fortran identifier");
+    YYABORT;
+  }
+  ((OpenMPDeclareSimdDirective *)current_directive)->addProcName($1);
+};
 distribute_directive : DISTRIBUTE {
                         current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_distribute);
                      }
@@ -6415,7 +6441,9 @@ OpenMPDirective* parseOpenMP(const char* _input,
             base_lang = Lang_Fortran;
             auto_lang = Lang_Fortran;
             input_string = std::string(input);
-            std::transform(input_string.begin(), input_string.end(), input_string.begin(), ::tolower);
+            std::transform(
+                input_string.begin(), input_string.end(), input_string.begin(),
+                [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
             input = input_string.c_str();
         }
     } else {
@@ -6426,11 +6454,14 @@ OpenMPDirective* parseOpenMP(const char* _input,
            stale auto-detection state from previous parses. */
         auto_lang = user_set_lang;
         if (std::regex_search(prefix_check, fortran_regex)) {
-            /* Input appears to be Fortran-style (e.g. starts with !$OMP or !C$OMP)
-               Normalize to lowercase so the lexer rules that expect lowercase
-               "omp" match correctly, then check for language mismatch. */
+            /* Input appears to be Fortran-style (e.g. starts with !$OMP or
+               !C$OMP). Normalize a control copy so the lexer rules that expect
+               lowercase OpenMP keywords match. The lexer retains the original
+               byte stream and uses it for every captured user expression. */
             input_string = std::string(input);
-            std::transform(input_string.begin(), input_string.end(), input_string.begin(), ::tolower);
+            std::transform(
+                input_string.begin(), input_string.end(), input_string.begin(),
+                [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
             input = input_string.c_str();
             if (user_set_lang != Lang_Fortran){
                 yyerror("The language is set to C/C++, but the input is Fortran.");
@@ -6446,7 +6477,7 @@ OpenMPDirective* parseOpenMP(const char* _input,
     openmpSetExprParseCallback(exprParse, exprParseUserData);
     openmpSetExprParseMode(OMP_EXPR_PARSE_none);
     openmp_reset_lexer_flags();
-    start_lexer(input);
+    start_lexer(input, _input);
     const int parse_result = yyparse();
     end_lexer();
     if (parse_result != 0 || current_directive == nullptr) {
