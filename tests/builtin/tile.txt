@@ -16,3 +16,5 @@
 #pragma omp tile sizes(1,2,3)
 PASS: #pragma omp tile sizes(1, 2, 3)
 
+#pragma omp tile sizes((int)(1u << 1), (2 + 1))
+PASS: #pragma omp tile sizes((int)(1u<<1), (2+1))

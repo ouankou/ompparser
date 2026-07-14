@@ -14,6 +14,7 @@
 %x AFFINITY_ITERATOR_STATE
 %x AFFINITY_STATE
 %x ALIGNED_STATE
+%x ALLOCATE_EXPR_STATE
 %x ALLOCATE_STATE
 %x ALLOCATOR_CALL_STATE
 %x ALLOCATOR_STATE
@@ -75,6 +76,7 @@
 %x NUM_THREADS_STATE
 %x ORDERED_STATE
 %x ORDER_STATE
+%x PARTIAL_STATE
 %x PRIVATE_STATE
 %x PROC_BIND_STATE
 %x REDUCTION_STATE
@@ -116,6 +118,8 @@ extern int openmp_lex();
 #include <utility>
 #include <vector>
 
+extern void openmpSetExprParseMode(OpenMPExprParseMode mode);
+
 /* Moved from Makefile.am to the source file to work with --with-pch Liao
    12/10/2009 */
 #define YY_NO_POP_STATE
@@ -138,13 +142,25 @@ static char current_char;
 static bool compact_parallel_do = false;
 static bool declare_target_underscore = false;
 static bool compact_enddo = false;
+static bool implementation_selector_parenthesis_pending = false;
 
 static std::vector<int> apply_paren_depth;
 static int induction_spec_paren_depth = 0;
 static bool induction_step_waiting = false;  // True when expecting expression after step(
 static int if_paren_depth = 0;
 static int uses_allocators_paren_depth = 0;
+static int allocate_modifier_token = 0;
 static std::vector<std::unique_ptr<char[]>> lexeme_storage;
+
+struct AllocateExpressionCaptureState {
+  std::vector<char> delimiters;
+  char quote = '\0';
+  bool escaped = false;
+  int ternary_depth = 0;
+};
+
+static AllocateExpressionCaptureState allocate_expression_capture;
+static AllocateExpressionCaptureState allocate_modifier_capture;
 
 struct LexerLocationState {
   int line = 1;
@@ -353,16 +369,26 @@ static const char *store_lexeme(const std::string &text) {
 static inline void push_apply_state();
 static inline void pop_apply_state();
 static inline int &current_apply_paren_depth();
+static inline void begin_allocate_expression_capture(char initial_char);
+static inline int consume_allocate_expression_char(char ch);
+static inline void begin_allocate_modifier_capture(int modifier_token);
+static inline int consume_allocate_modifier_char(char ch);
+[[noreturn]] static void fail_allocate_capture(const char *kind,
+                                               const char *detail);
 
 extern "C" void openmp_reset_lexer_flags() {
   compact_parallel_do = false;
   declare_target_underscore = false;
   compact_enddo = false;
+  implementation_selector_parenthesis_pending = false;
   apply_paren_depth.clear();
   induction_spec_paren_depth = 0;
   induction_step_waiting = false;
   if_paren_depth = 0;
   uses_allocators_paren_depth = 0;
+  allocate_modifier_token = 0;
+  allocate_expression_capture = {};
+  allocate_modifier_capture = {};
 }
 
 extern "C" bool openmp_consume_compact_parallel_do() {
@@ -592,6 +618,7 @@ blank           [ ]
 newline         [\n]
 comment         [\/\/].*
 id_char         [a-zA-Z0-9_]
+identifier      [a-zA-Z_][a-zA-Z0-9_]*
 
 %%
 
@@ -638,6 +665,7 @@ schedule        { yy_push_state(SCHEDULE_STATE); return SCHEDULE; }
 collapse        { yy_push_state(COLLAPSE_STATE); return COLLAPSE; }
 ordered/{blank}*\( { yy_push_state(ORDERED_STATE); return ORDERED; }
 ordered         { return ORDERED; }
+partial/{blank}*\( { yy_push_state(PARTIAL_STATE); return PARTIAL; }
 partial         { return PARTIAL; }
 nowait          { return NOWAIT; }
 full            { return FULL; }
@@ -734,6 +762,7 @@ gpu             { return GPU; }
 fpga            { return FPGA; }
 isa             { yy_push_state(ISA_STATE); return ISA; }
 arch            { yy_push_state(ARCH_STATE); return ARCH; }
+uid             { return UID; }
 vendor          { yy_push_state(VENDOR_STATE); return VENDOR; }
 extension       { yy_push_state(EXTENSION_STATE); return EXTENSION; }
 
@@ -929,64 +958,75 @@ cgroup                    { return CGROUP; }
 <ALLOCATE_STATE>omp_pteam_mem_alloc/{blank}*:         { return PTEAM_MEM_ALLOC; }
 <ALLOCATE_STATE>omp_thread_mem_alloc/{blank}*:        { return THREAD_MEM_ALLOC; }
 <ALLOCATE_STATE>allocator{blank}*\( {
-                                              prepare_expression_capture_str(yytext);
-                                              parenthesis_local_count = 1;
-                                              parenthesis_global_count = 1;
+                                              begin_allocate_modifier_capture(
+                                                  ALLOCATOR_MODIFIER);
                                               yy_push_state(ALLOCATOR_CALL_STATE);
                                             }
 <ALLOCATE_STATE>align{blank}*\( {
-                                              prepare_expression_capture_str(yytext);
-                                              parenthesis_local_count = 1;
-                                              parenthesis_global_count = 1;
+                                              begin_allocate_modifier_capture(
+                                                  ALIGN_MODIFIER);
                                               yy_push_state(ALLOCATOR_CALL_STATE);
-                                            }
-<ALLOCATE_STATE>[A-Za-z_][A-Za-z0-9_]*{blank}*/":" {
-                                              size_t len = yyleng;
-                                              while (len > 0 &&
-                                                     std::isspace(static_cast<unsigned char>(yytext[len - 1]))) {
-                                                len--;
-                                              }
-                                              std::string allocator =
-                                                  original_token_text(len);
-                                              openmp_lval.stype =
-                                                  store_lexeme(allocator);
-                                              return ALLOCATOR_IDENTIFIER;
                                             }
 <ALLOCATE_STATE>"("                                   { return '('; }
 <ALLOCATE_STATE>")"                                   { yy_pop_state(); return ')'; }
 <ALLOCATE_STATE>","                                   { return ','; }
 <ALLOCATE_STATE>":"                                   { return ':'; }
 <ALLOCATE_STATE>{blank}*                              { ; }
-<ALLOCATE_STATE>.                                     { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
-
-<ALLOCATOR_CALL_STATE>"(" {
-                                              parenthesis_local_count++;
-                                              parenthesis_global_count++;
-                                              current_string.push_back('(');
+<ALLOCATE_STATE>.                                     {
+                                              begin_allocate_expression_capture(
+                                                  original_token_char());
+                                              yy_push_state(ALLOCATE_EXPR_STATE);
                                             }
-<ALLOCATOR_CALL_STATE>")" {
-                                              current_string.push_back(')');
-                                              parenthesis_local_count--;
-                                              parenthesis_global_count--;
-                                              if (parenthesis_global_count == 0) {
-                                                std::string allocator_expr = current_string;
-                                                clear_expression_buffer();
-                                                yy_pop_state();
-                                                openmp_lval.stype =
-                                                    store_lexeme(allocator_expr);
-                                                return ALLOCATOR_IDENTIFIER;
+
+<ALLOCATE_EXPR_STATE>"::" {
+                                              if (allocate_expression_capture.escaped) {
+                                                allocate_expression_capture.escaped = false;
+                                              }
+                                              current_string +=
+                                                  original_token_text(2);
+                                            }
+<ALLOCATE_EXPR_STATE>{newline} {
+                                              int token =
+                                                  consume_allocate_expression_char(
+                                                      original_token_char());
+                                              if (token != 0) {
+                                                return token;
                                               }
                                             }
-<ALLOCATOR_CALL_STATE>{blank}+ {
-                                              current_string += original_token_text(
-                                                  static_cast<std::size_t>(yyleng));
+<ALLOCATE_EXPR_STATE>. {
+                                              int token =
+                                                  consume_allocate_expression_char(
+                                                      original_token_char());
+                                              if (token != 0) {
+                                                return token;
+                                              }
                                             }
-<ALLOCATOR_CALL_STATE>{newline}+ {
-                                              current_string += original_token_text(
-                                                  static_cast<std::size_t>(yyleng));
+<ALLOCATE_EXPR_STATE><<EOF>> {
+                                              fail_allocate_capture(
+                                                  "expression",
+                                                  "input ended before the allocate clause was closed");
+                                            }
+
+<ALLOCATOR_CALL_STATE>{newline} {
+                                              int token =
+                                                  consume_allocate_modifier_char(
+                                                      original_token_char());
+                                              if (token != 0) {
+                                                return token;
+                                              }
                                             }
 <ALLOCATOR_CALL_STATE>. {
-                                              current_string.push_back(original_token_char());
+                                              int token =
+                                                  consume_allocate_modifier_char(
+                                                      original_token_char());
+                                              if (token != 0) {
+                                                return token;
+                                              }
+                                            }
+<ALLOCATOR_CALL_STATE><<EOF>> {
+                                              fail_allocate_capture(
+                                                  "modifier",
+                                                  "input ended before the modifier was closed");
                                             }
 
 <IF_STATE>parallel{blank}*/:                { return PARALLEL; }
@@ -1179,11 +1219,16 @@ cgroup                    { return CGROUP; }
 <COLLAPSE_STATE>{blank}*                    { ; }
 <COLLAPSE_STATE>.                           { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
-<SIZES_STATE>"("                            { return '('; }
+<SIZES_STATE>"("                            { yy_push_state(EXPR_STATE); return '('; }
 <SIZES_STATE>")"                            { yy_pop_state(); return ')'; }
 <SIZES_STATE>","                            { return ','; }
 <SIZES_STATE>{blank}*                       { ; }
 <SIZES_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+
+<PARTIAL_STATE>"("                          { yy_push_state(EXPR_STATE); return '('; }
+<PARTIAL_STATE>")"                          { yy_pop_state(); return ')'; }
+<PARTIAL_STATE>{blank}*                     { ; }
+<PARTIAL_STATE>.                            { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <LOOPRANGE_STATE>"("                        { return '('; }
 <LOOPRANGE_STATE>")"                        { yy_pop_state(); return ')'; }
@@ -1423,7 +1468,7 @@ cgroup                    { return CGROUP; }
 <WHEN_STATE>"="                             { return '='; }
 <WHEN_STATE>"{"                             { yy_push_state(INITIAL); return '{'; } /* now parsrsing enters to pass a full construct, directive, condition, etc */
 <WHEN_STATE>"}"                             { return '}'; }
-<WHEN_STATE>","                             { ; }
+<WHEN_STATE>","                             { return ','; }
 <WHEN_STATE>user                            { return USER; }
 <WHEN_STATE>construct                       { return CONSTRUCT; }
 <WHEN_STATE>device                          { return DEVICE; }
@@ -1432,17 +1477,41 @@ cgroup                    { return CGROUP; }
 <WHEN_STATE>{blank}*                        { ; }
 <WHEN_STATE>.                               { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
-<IMPLEMENTATION_STATE>"("                            { return '('; }
-<IMPLEMENTATION_STATE>","                            { return ','; }
+<IMPLEMENTATION_STATE>"("                            {
+                                                  if (implementation_selector_parenthesis_pending) {
+                                                    implementation_selector_parenthesis_pending = false;
+                                                    yy_push_state(EXTENSION_STATE);
+                                                  }
+                                                  return '(';
+                                                }
+<IMPLEMENTATION_STATE>","                            {
+                                                  implementation_selector_parenthesis_pending = false;
+                                                  return ',';
+                                                }
 <IMPLEMENTATION_STATE>")"                            { return ')'; }
 <IMPLEMENTATION_STATE>"="                            { return '='; }
 <IMPLEMENTATION_STATE>"{"                            { brace_count++; return '{'; }
-<IMPLEMENTATION_STATE>"}"                            { yy_pop_state(); return '}'; }
+<IMPLEMENTATION_STATE>"}"                            {
+                                                  implementation_selector_parenthesis_pending = false;
+                                                  yy_pop_state();
+                                                  return '}';
+                                                }
 <IMPLEMENTATION_STATE>vendor/{blank}*\(              { yy_push_state(VENDOR_STATE); return VENDOR; }
 <IMPLEMENTATION_STATE>extension/{blank}*\(           { yy_push_state(EXTENSION_STATE); return EXTENSION; }
-<IMPLEMENTATION_STATE>requires/{blank}*\(            { return REQUIRES; }
+<IMPLEMENTATION_STATE>requires/{blank}*\(            { yy_push_state(EXTENSION_STATE); return REQUIRES; }
+<IMPLEMENTATION_STATE>atomic_default_mem_order/{blank}*\( {
+                                                  yy_push_state(ATOMIC_DEFAULT_MEM_ORDER_STATE);
+                                                  return ATOMIC_DEFAULT_MEM_ORDER;
+                                                }
 <IMPLEMENTATION_STATE>{blank}*                       { ; }
-<IMPLEMENTATION_STATE>.                              { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
+<IMPLEMENTATION_STATE>{identifier}                   {
+                                                  implementation_selector_parenthesis_pending = true;
+                                                  openmp_lval.stype = store_lexeme(
+                                                      original_token_text(
+                                                          static_cast<std::size_t>(yyleng)));
+                                                  return EXPR_STRING;
+                                                }
+<IMPLEMENTATION_STATE>.                              { return -1; }
 
 <MATCH_STATE>"("                            { return '('; }
 <MATCH_STATE>":"                            { yy_push_state(INITIAL); return ':'; }
@@ -1488,24 +1557,27 @@ cgroup                    { return CGROUP; }
 <VENDOR_STATE>"("                           { return '('; }
 <VENDOR_STATE>")"                           { yy_pop_state(); return ')'; }
 <VENDOR_STATE>{blank}*                      { ; }
-<VENDOR_STATE>amd/{blank}*\)                { return AMD; }
-<VENDOR_STATE>arm/{blank}*\)                { return ARM; }
-<VENDOR_STATE>bas/{blank}*\)                { return BSC; }
-<VENDOR_STATE>cray/{blank}*\)               { return CRAY; }
-<VENDOR_STATE>fujitsu/{blank}*\)            { return FUJITSU; }
-<VENDOR_STATE>gnu/{blank}*\)                { return GNU; }
-<VENDOR_STATE>ibm/{blank}*\)                { return IBM; }
-<VENDOR_STATE>intel/{blank}*\)              { return INTEL; }
-<VENDOR_STATE>llvm/{blank}*\)               { return LLVM; }
-<VENDOR_STATE>nvidia/{blank}*\)             { return NVIDIA; }
-<VENDOR_STATE>pgi/{blank}*\)                { return PGI; }
-<VENDOR_STATE>ti/{blank}*\)                 { return TI; }
-<VENDOR_STATE>unknown/{blank}*\)            { return UNKNOWN; }
+<VENDOR_STATE>","                           { return ','; }
+<VENDOR_STATE>amd                           { return AMD; }
+<VENDOR_STATE>arm                           { return ARM; }
+<VENDOR_STATE>bsc                           { return BSC; }
+<VENDOR_STATE>cray                          { return CRAY; }
+<VENDOR_STATE>fujitsu                       { return FUJITSU; }
+<VENDOR_STATE>gnu                           { return GNU; }
+<VENDOR_STATE>ibm                           { return IBM; }
+<VENDOR_STATE>intel                         { return INTEL; }
+<VENDOR_STATE>llvm                          { return LLVM; }
+<VENDOR_STATE>nvidia                        { return NVIDIA; }
+<VENDOR_STATE>pgi                           { return PGI; }
+<VENDOR_STATE>ti                            { return TI; }
+<VENDOR_STATE>user                          { return USER; }
+<VENDOR_STATE>unknown                       { return UNKNOWN; }
 <VENDOR_STATE>score/{blank}*\(              { yy_push_state(SCORE_STATE); return SCORE; }
 
 <EXTENSION_STATE>"("                        { return '('; }
 <EXTENSION_STATE>")"                        { yy_pop_state(); return ')'; }
 <EXTENSION_STATE>{blank}*                   { ; }
+<EXTENSION_STATE>score/{blank}*\(           { yy_push_state(SCORE_STATE); return SCORE; }
 <EXTENSION_STATE>.                          { yy_push_state(EXPR_STATE); prepare_expression_capture(yytext[0]); }
 
 <IN_REDUCTION_STATE>"("                     { return '('; }
@@ -1598,9 +1670,12 @@ cgroup                    { return CGROUP; }
 
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>seq_cst     { return SEQ_CST; }
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>acq_rel     { return ACQ_REL; }
+<ATOMIC_DEFAULT_MEM_ORDER_STATE>acquire     { return ACQUIRE; }
+<ATOMIC_DEFAULT_MEM_ORDER_STATE>release     { return RELEASE; }
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>relaxed     { return RELAXED; }
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>"("         { return '('; }
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>")"         { yy_pop_state(); return ')'; }
+<ATOMIC_DEFAULT_MEM_ORDER_STATE>score/{blank}*\( { yy_push_state(SCORE_STATE); return SCORE; }
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>{blank}*    { ; }
 
 <DEVICE_STATE>ancestor/{blank}*:            { return ANCESTOR; }
@@ -2113,6 +2188,230 @@ static inline int tracked_yyinput() {
 static inline void tracked_unput(int ch) {
   unput(ch);
   rewind_lexer_position_for_unput(static_cast<char>(ch));
+}
+
+[[noreturn]] static void fail_allocate_capture(const char *kind,
+                                               const char *detail) {
+  std::cerr << "OMPPARSER_SYNTAX[allocate-" << kind << "]: " << detail
+            << "\n";
+  std::abort();
+}
+
+static inline bool allocate_capture_is_blank() {
+  return current_string.empty() ||
+         std::all_of(current_string.begin(), current_string.end(), [](char ch) {
+           return std::isspace(static_cast<unsigned char>(ch));
+         });
+}
+
+static inline void trim_allocate_expression_blanks() {
+  const auto first = std::find_if_not(current_string.begin(),
+                                      current_string.end(), [](char ch) {
+                                        return std::isspace(
+                                            static_cast<unsigned char>(ch));
+                                      });
+  const auto last = std::find_if_not(current_string.rbegin(),
+                                     current_string.rend(), [](char ch) {
+                                       return std::isspace(
+                                           static_cast<unsigned char>(ch));
+                                     }).base();
+  if (first >= last) {
+    current_string.clear();
+    return;
+  }
+  current_string = std::string(first, last);
+}
+
+static inline bool closes_allocate_delimiter(char opening, char closing) {
+  return (opening == '(' && closing == ')') ||
+         (opening == '[' && closing == ']') ||
+         (opening == '{' && closing == '}');
+}
+
+static inline int emit_allocate_expression_and_unput(char delimiter) {
+  trim_allocate_expression_blanks();
+  if (allocate_capture_is_blank()) {
+    fail_allocate_capture("expression", "allocator or list item is empty");
+  }
+  if (allocate_expression_capture.quote != '\0' ||
+      allocate_expression_capture.escaped ||
+      !allocate_expression_capture.delimiters.empty() ||
+      allocate_expression_capture.ternary_depth != 0) {
+    fail_allocate_capture("expression",
+                          "allocator or list item is unbalanced");
+  }
+
+  openmpSetExprParseMode(OMP_EXPR_PARSE_expression);
+  openmp_lval.stype = store_lexeme(current_string);
+  current_string.clear();
+  allocate_expression_capture = {};
+  yy_pop_state();
+  tracked_unput(delimiter);
+  return EXPR_STRING;
+}
+
+static inline void begin_allocate_expression_capture(char initial_char) {
+  current_string.clear();
+  allocate_expression_capture = {};
+  if (consume_allocate_expression_char(initial_char) != 0) {
+    fail_allocate_capture("expression",
+                          "first expression character is a delimiter");
+  }
+}
+
+static inline int consume_allocate_expression_char(char ch) {
+  auto &state = allocate_expression_capture;
+  if (state.escaped) {
+    current_string.push_back(ch);
+    state.escaped = false;
+    return 0;
+  }
+  if (state.quote != '\0') {
+    current_string.push_back(ch);
+    if (ch == '\\') {
+      state.escaped = true;
+    } else if (ch == state.quote) {
+      state.quote = '\0';
+    }
+    return 0;
+  }
+
+  if (ch == '\\') {
+    current_string.push_back(ch);
+    state.escaped = true;
+    return 0;
+  }
+  if (ch == '\'' || ch == '"') {
+    current_string.push_back(ch);
+    state.quote = ch;
+    return 0;
+  }
+  if (ch == '(' || ch == '[' || ch == '{') {
+    current_string.push_back(ch);
+    state.delimiters.push_back(ch);
+    return 0;
+  }
+  if (ch == ')' || ch == ']' || ch == '}') {
+    if (state.delimiters.empty()) {
+      if (ch == ')') {
+        return emit_allocate_expression_and_unput(ch);
+      }
+      fail_allocate_capture("expression", "closing delimiter is unmatched");
+    }
+    if (!closes_allocate_delimiter(state.delimiters.back(), ch)) {
+      fail_allocate_capture("expression", "closing delimiter is mismatched");
+    }
+    state.delimiters.pop_back();
+    current_string.push_back(ch);
+    return 0;
+  }
+  if (ch == '?') {
+    ++state.ternary_depth;
+    current_string.push_back(ch);
+    return 0;
+  }
+  if (ch == ':') {
+    if (!state.delimiters.empty()) {
+      if (state.ternary_depth > 0) {
+        --state.ternary_depth;
+      }
+      current_string.push_back(ch);
+      return 0;
+    }
+    if (state.ternary_depth > 0) {
+      --state.ternary_depth;
+      current_string.push_back(ch);
+      return 0;
+    }
+    return emit_allocate_expression_and_unput(ch);
+  }
+  if (ch == ',' && state.delimiters.empty()) {
+    if (state.ternary_depth != 0) {
+      fail_allocate_capture("expression",
+                            "conditional expression has no matching colon");
+    }
+    return emit_allocate_expression_and_unput(ch);
+  }
+
+  current_string.push_back(ch);
+  return 0;
+}
+
+static inline void begin_allocate_modifier_capture(int modifier_token) {
+  if (modifier_token != ALLOCATOR_MODIFIER &&
+      modifier_token != ALIGN_MODIFIER) {
+    fail_allocate_capture("modifier", "modifier token is invalid");
+  }
+  current_string.clear();
+  allocate_modifier_capture = {};
+  allocate_modifier_capture.delimiters.push_back('(');
+  allocate_modifier_token = modifier_token;
+}
+
+static inline int consume_allocate_modifier_char(char ch) {
+  auto &state = allocate_modifier_capture;
+  if (state.delimiters.empty()) {
+    fail_allocate_capture("modifier", "modifier capture is not active");
+  }
+  if (state.escaped) {
+    current_string.push_back(ch);
+    state.escaped = false;
+    return 0;
+  }
+  if (state.quote != '\0') {
+    current_string.push_back(ch);
+    if (ch == '\\') {
+      state.escaped = true;
+    } else if (ch == state.quote) {
+      state.quote = '\0';
+    }
+    return 0;
+  }
+
+  if (ch == '\\') {
+    current_string.push_back(ch);
+    state.escaped = true;
+    return 0;
+  }
+  if (ch == '\'' || ch == '"') {
+    current_string.push_back(ch);
+    state.quote = ch;
+    return 0;
+  }
+  if (ch == '(' || ch == '[' || ch == '{') {
+    current_string.push_back(ch);
+    state.delimiters.push_back(ch);
+    return 0;
+  }
+  if (ch == ')' || ch == ']' || ch == '}') {
+    if (!closes_allocate_delimiter(state.delimiters.back(), ch)) {
+      fail_allocate_capture("modifier", "closing delimiter is mismatched");
+    }
+    if (state.delimiters.size() == 1) {
+      if (ch != ')' || allocate_capture_is_blank()) {
+        fail_allocate_capture("modifier",
+                              "modifier expression is empty or unbalanced");
+      }
+      if (allocate_modifier_token != ALLOCATOR_MODIFIER &&
+          allocate_modifier_token != ALIGN_MODIFIER) {
+        fail_allocate_capture("modifier", "modifier token is unset");
+      }
+      const int modifier_token = allocate_modifier_token;
+      allocate_modifier_token = 0;
+      state = {};
+      yy_pop_state();
+      openmpSetExprParseMode(OMP_EXPR_PARSE_expression);
+      openmp_lval.stype = store_lexeme(current_string);
+      current_string.clear();
+      return modifier_token;
+    }
+    state.delimiters.pop_back();
+    current_string.push_back(ch);
+    return 0;
+  }
+
+  current_string.push_back(ch);
+  return 0;
 }
 
 /* Implementation of inline functions that use parser tokens */

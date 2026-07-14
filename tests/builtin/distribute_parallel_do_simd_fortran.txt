@@ -13,8 +13,8 @@
 //One is starting with "omp", which is the input.
 //The other one is starting with "PASS: ", which is the result for validation.
 
-!$omp distribute parallel do simd private (a, b) private (a, c)
-PASS: !$omp distribute parallel do simd private(a, b, c)
+!$omp distribute parallel do simd private (a, b) private (d, c)
+PASS: !$omp distribute parallel do simd private(a, b, d, c)
   
 !$omp distribute parallel do simd num_threads (3*5+4/(7+10))
 PASS: !$omp distribute parallel do simd num_threads(3*5+4/(7+10))
@@ -88,39 +88,51 @@ PASS: !$omp distribute parallel do simd nontemporal(a)
 !$omp end distribute parallel do simd
 PASS: !$omp end distribute parallel do simd
 
-// invalid test without paired validation.
-EXPECT: invalid
 
 !$omp distribute parallel do simd private (a[foo(x, goo(x, y)):100], b[1:30], c) num_threads (3*5+4/(7+10)) allocate (omp_user_defined_mem_alloc : m, n[1:5]) allocate (no, allo, cator)
+PASS: !$omp distribute parallel do simd private(a[foo(x,goo(x,y)) : 100], b[1 : 30], c) num_threads(3*5+4/(7+10)) allocate (omp_user_defined_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator)
 
+EXPECT: invalid
 !$omp distribute parallel do simd private (a, b, c) private (a, b, e) firstprivate (foo(x), y), shared (a, b, c[1:10])
 
 !$omp distribute parallel do simd private (a[foo(x, goo(x, y)):100], b[1:30], c) firstprivate (foo(x), y), shared (a, b, c[1:10]) num_threads (4)
+PASS: !$omp distribute parallel do simd private(a[foo(x,goo(x,y)) : 100], b[1 : 30], c) firstprivate(foo(x), y), shared(a, b, c[1 : 10]) num_threads(4)
 
 !$omp distribute parallel do simd reduction (tasktest : x11, y, z) allocate (user_defined_test : m, n[1:5]) allocate (omp_high_bw_mem_alloc : m, n[1:5]) reduction (inscan, max : a, foo(x))
+PASS: !$omp distribute parallel do simd reduction(tasktest : x11, y, z) allocate (user_defined_test: m, n[1 : 5]) allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) reduction(inscan, max : a, foo(x))
 
+EXPECT: invalid
 !$omp distribute parallel do simd lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 !$omp distribute parallel do simd collapse
 
+EXPECT: invalid
 !$omp distribute parallel do simd nowait(dsfasf)
 
+EXPECT: invalid
 !$omp distribute parallel do simd order
 
+EXPECT: invalid
 !$omp distribute parallel do simd schedule(use,user:runtime,2)
 
+EXPECT: invalid
 !$omp distribute parallel do simd schedule(simd,simd:runtime,2)
 
+EXPECT: invalid
 !$omp distribute parallel do simd dist_schedule(user,2)
 
+EXPECT: invalid
 !$omp distribute parallel do simd nontemporal
 
+EXPECT: invalid
 !$omp distribute parallel do simd safelen
 
+EXPECT: invalid
 !$omp distribute parallel do simd simdlen
 
+EXPECT: invalid
 !$omp distribute parallel do simd nowait
 
+EXPECT: invalid
 !$omp end distribute parallel do simd nowait
-
-

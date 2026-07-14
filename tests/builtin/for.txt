@@ -61,25 +61,29 @@ PASS: #pragma omp for allocate (omp_default_mem_alloc: a, b, c)
 #pragma omp for order(concurrent)
 PASS: #pragma omp for order (concurrent)
 
-// invalid test without paired validation.
-EXPECT: invalid
 
+EXPECT: invalid
 #pragma omp for lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 #pragma omp for collapse
 
 #pragma omp for nowait(dsfasf)
+PASS: #pragma omp for nowait(dsfasf)
 
+EXPECT: invalid
 #pragma omp for order
 
+EXPECT: invalid
 #pragma omp for schedule(use,user:runtime,2)
 
+EXPECT: invalid
 #pragma omp for schedule(simd,simd:runtime,2)
 
+EXPECT: invalid
 #pragma omp for linear(uval(a,b,c):2)
 
+EXPECT: invalid
 #pragma omp for linear(ref(a,b,c):2)
-
-
 
 

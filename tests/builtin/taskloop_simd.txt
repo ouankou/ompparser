@@ -22,5 +22,5 @@ PASS: #pragma omp taskloop simd linear (var(s,f,e):2) linear (val( s, f, g) :2)
 #pragma omp taskloop simd linear(val(s,f,e):2) linear(val(u,d,j):3)  
 PASS: #pragma omp taskloop simd linear (val( s, f, e) :2) linear (val( u, d, j) :3)
 
-#pragma omp taskloop simd linear(val(s,f,e):2) linear(val(s,e,j):2)  
-PASS: #pragma omp taskloop simd linear (val( s, f, e, j) :2)
+#pragma omp taskloop simd linear(val(s,f,e):2) linear(val(v,w,k):4)
+PASS: #pragma omp taskloop simd linear (val( s, f, e) :2) linear (val( v, w, k) :4)

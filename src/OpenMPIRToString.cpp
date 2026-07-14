@@ -10,6 +10,12 @@
 #include <stdarg.h>
 
 namespace {
+[[noreturn]] void failUnparseEnum(const char *field, int value) {
+  std::cerr << "OMPPARSER_INVARIANT[unparse-enum]: unsupported " << field
+            << " value " << value << "\n";
+  std::abort();
+}
+
 std::string formatDirectiveName(const char *name) {
   std::string result;
   for (const char *ptr = name; *ptr != '\0'; ++ptr) {
@@ -31,7 +37,7 @@ std::string getDirectiveSpelling(OpenMPDirectiveKind kind) {
 #undef OPENMP_DIRECTIVE
 #undef OPENMP_DIRECTIVE_EXT
   }
-  return std::string();
+  failUnparseEnum("directive kind", kind);
 }
 
 std::string getDirectiveNameModifierSpelling(OpenMPDirectiveKind kind) {
@@ -54,7 +60,7 @@ std::string getClauseSpelling(OpenMPClauseKind kind) {
 #undef OPENMP_CLAUSE_EXT
 #undef OPENMP_CLAUSE
   }
-  return std::string();
+  failUnparseEnum("clause kind", kind);
 }
 } // namespace
 
@@ -125,8 +131,8 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     std::string id = ((OpenMPDeclareReductionDirective *)this)->getIdentifier();
     std::string combiner =
         ((OpenMPDeclareReductionDirective *)this)->getCombiner();
-    std::vector<OpenMPClause *> *combiner_clauses =
-        this->getClauses(OMPC_combiner);
+    const std::vector<OpenMPClause *> *combiner_clauses =
+        this->findClauses(OMPC_combiner);
     const bool has_combiner_clause =
         (combiner_clauses != nullptr && !combiner_clauses->empty());
 
@@ -159,7 +165,8 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       result.pop_back();
     }
     result += "(";
-    std::vector<OpenMPClause *> *ind_clauses = this->getClauses(OMPC_induction);
+    const std::vector<OpenMPClause *> *ind_clauses =
+        this->findClauses(OMPC_induction);
     if (ind_clauses != nullptr && !ind_clauses->empty()) {
       auto *ind_clause =
           dynamic_cast<OpenMPInductionClause *>(ind_clauses->at(0));
@@ -189,10 +196,16 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       case OMPD_DECLARE_MAPPER_IDENTIFIER_user: {
         std::string id =
             ((OpenMPDeclareMapperDirective *)this)->getUserDefinedIdentifier();
+        if (id.empty()) {
+          std::cerr << "OMPPARSER_INVARIANT[declare-mapper-id]: user mapper "
+                       "identifier is empty\n";
+          std::abort();
+        }
         result += id;
         break;
       }
-      default:;
+      default:
+        failUnparseEnum("declare mapper identifier", identifier);
       };
       if (this->getBaseLang() == Lang_Fortran) {
         result += ": ";
@@ -246,7 +259,9 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       result += paired->generatePragmaString("", "", "");
       goto default_case;
     }
-    break;
+    std::cerr << "OMPPARSER_INVARIANT[end-pairing]: end directive has no "
+                 "paired directive\n";
+    std::abort();
   }
   case OMPD_declare_target: {
     std::vector<std::string> *list =
@@ -312,13 +327,20 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     bool first_clause = true;
     std::vector<OpenMPClause *>::iterator iter;
     for (iter = clauses->begin(); iter != clauses->end(); iter++) {
+      if (*iter == nullptr) {
+        std::cerr << "OMPPARSER_INVARIANT[directive-clause]: directive owns a "
+                     "null clause\n";
+        std::abort();
+      }
       if (this->getKind() == OMPD_declare_induction &&
           (*iter)->getKind() == OMPC_induction) {
         continue;
       }
       std::string clause_str = (*iter)->toString();
       if (clause_str.empty()) {
-        continue;
+        std::cerr << "OMPPARSER_INVARIANT[clause-unparse]: clause "
+                  << (*iter)->getKind() << " produced empty text\n";
+        std::abort();
       }
       if (!first_clause &&
           (*iter)->getPrecedingSeparator() == OMPC_CLAUSE_SEP_comma) {
@@ -355,7 +377,9 @@ std::string OpenMPDirective::toString() {
   case OMPD_ompx: {
     const std::string &payload = this->getImplementationDefinedPayload();
     if (payload.empty()) {
-      return std::string();
+      std::cerr << "OMPPARSER_INVARIANT[ompx-payload]: implementation-defined "
+                   "directive payload is empty\n";
+      std::abort();
     }
     return payload + " ";
   }
@@ -384,10 +408,6 @@ std::string OpenMPDirective::toString() {
   }
 
   std::string result = getDirectiveSpelling(this->getKind());
-  if (result.empty()) {
-    printf("The directive enum is not supported yet.\n");
-  }
-
   return result;
 };
 
@@ -395,23 +415,30 @@ std::string OpenMPClause::expressionToString() {
 
   std::string result;
   std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    // For init/adjust_args clauses with exactly 2 expressions, use ":"
-    // separator
-    if ((this->getKind() == OMPC_init || this->getKind() == OMPC_adjust_args) &&
-        expr->size() == 2) {
-      result = std::string((*expr)[0]) + ": " + std::string((*expr)[1]);
-    } else {
-      for (size_t idx = 0; idx < expr->size(); ++idx) {
-        if (idx > 0) {
-          OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space;
-          if (idx < expression_separators.size()) {
-            sep = expression_separators[idx];
-          }
-          result += (sep == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
-        }
-        result += std::string((*expr)[idx]);
+  if (expr == nullptr || expression_separators.size() != expr->size() ||
+      expressionNodes.size() != expr->size() ||
+      locations.size() != expr->size() ||
+      owned_expressions.size() != expr->size()) {
+    std::cerr << "OMPPARSER_INVARIANT[expression-storage]: expression fields "
+                 "are not in lockstep\n";
+    std::abort();
+  }
+  // For init/adjust_args clauses with exactly 2 expressions, use ":" separator.
+  if ((this->getKind() == OMPC_init || this->getKind() == OMPC_adjust_args) &&
+      expr->size() == 2) {
+    result = std::string((*expr)[0]) + ": " + std::string((*expr)[1]);
+  } else {
+    for (size_t idx = 0; idx < expr->size(); ++idx) {
+      if ((*expr)[idx] == nullptr) {
+        std::cerr << "OMPPARSER_INVARIANT[expression-storage]: expression "
+                     "entry is null\n";
+        std::abort();
       }
+      if (idx > 0) {
+        const OpenMPClauseSeparator sep = expression_separators[idx];
+        result += (sep == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
+      }
+      result += std::string((*expr)[idx]);
     }
   }
 
@@ -421,9 +448,6 @@ std::string OpenMPClause::expressionToString() {
 std::string OpenMPClause::toString() {
 
   std::string result = getClauseSpelling(this->getKind());
-  if (result.empty()) {
-    printf("The clause enum is not supported yet.\n");
-  }
 
   std::string clause_string = "(";
   if (this->hasDirectiveNameModifier()) {
@@ -452,6 +476,11 @@ namespace {
 std::string iteratorToString(const std::string &qualifier,
                              const std::string &var, const std::string &begin,
                              const std::string &end, const std::string &step) {
+  if (var.empty() || begin.empty() || end.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[iterator-unparse]: variable, begin, or "
+                 "end field is empty\n";
+    std::abort();
+  }
   std::string result;
   if (!qualifier.empty()) {
     result += qualifier + " ";
@@ -491,20 +520,19 @@ std::string OpenMPAtomicDefaultMemOrderClause::toString() {
   case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acq_rel:
     parameter_string = "acq_rel";
     break;
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acquire:
+    parameter_string = "acquire";
+    break;
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_release:
+    parameter_string = "release";
+    break;
   case OMPC_ATOMIC_DEFAULT_MEM_ORDER_relaxed:
     parameter_string = "relaxed";
     break;
   default:
-    std::cout << "The parameter of tomic_default_mem_order clause is not "
-                 "supported.\n";
+    failUnparseEnum("atomic_default_mem_order kind", kind);
   };
-
-  if (parameter_string.size() > 0) {
-    result += parameter_string + ") ";
-  } else {
-    return std::string();
-  }
-
+  result += parameter_string + ") ";
   return result;
 };
 
@@ -538,6 +566,12 @@ std::string OpenMPInReductionClause::toString() {
   case OMPC_IN_REDUCTION_IDENTIFIER_logor:
     clause_string += "||";
     break;
+  case OMPC_IN_REDUCTION_IDENTIFIER_eqv:
+    clause_string += ".eqv.";
+    break;
+  case OMPC_IN_REDUCTION_IDENTIFIER_neqv:
+    clause_string += ".neqv.";
+    break;
   case OMPC_IN_REDUCTION_IDENTIFIER_min:
     clause_string += "min";
     break;
@@ -547,7 +581,8 @@ std::string OpenMPInReductionClause::toString() {
   case OMPC_IN_REDUCTION_IDENTIFIER_user:
     clause_string += this->getUserDefinedIdentifier();
     break;
-  default:;
+  default:
+    failUnparseEnum("in_reduction identifier", identifier);
   }
   if (clause_string.size() > 1) {
     clause_string += " : ";
@@ -610,7 +645,8 @@ std::string OpenMPDependClause::toString() {
   case OMPC_DEPENDENCE_TYPE_sink:
     clause_string += "sink";
     break;
-  default:;
+  default:
+    failUnparseEnum("depend type", type);
   }
 
   if (clause_string.size() > 1 && type != OMPC_DEPENDENCE_TYPE_source) {
@@ -628,7 +664,7 @@ std::string OpenMPDependClause::toString() {
 };
 
 std::string OpenMPDoacrossClause::toString() {
-  std::string result = "doacross (";
+  std::string result = "doacross(";
 
   OpenMPDoacrossClauseType type = this->getType();
   switch (type) {
@@ -639,24 +675,27 @@ std::string OpenMPDoacrossClause::toString() {
     result += "sink:";
     break;
   default:
-    result += "unknown:";
+    std::cerr << "OMPPARSER_INVARIANT[doacross-kind]: unsupported doacross "
+                 "kind\n";
+    std::abort();
   }
 
-  if (type == OMPC_DOACROSS_TYPE_source && this->hasSourceExpression()) {
-    result += " " + this->getSourceExpression().text;
+  if (type == OMPC_DOACROSS_TYPE_source) {
+    if (this->hasSourceExpression()) {
+      result += " " + this->getSourceExpression().text;
+    }
   } else if (type == OMPC_DOACROSS_TYPE_sink) {
     const auto &args = this->getSinkArgs();
+    if (args.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[doacross-sink]: sink has no typed "
+                   "arguments\n";
+      std::abort();
+    }
     for (size_t idx = 0; idx < args.size(); ++idx) {
       if (idx > 0) {
         result += (args[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
       }
       result += args[idx].text;
-    }
-  } else {
-    // Fallback to legacy expression list if present
-    std::string expr_string = this->expressionToString();
-    if (!expr_string.empty()) {
-      result += " " + expr_string;
     }
   }
 
@@ -694,7 +733,8 @@ std::string OpenMPDepobjUpdateClause::toString() {
   case OMPC_DEPOBJ_UPDATE_DEPENDENCE_TYPE_sink:
     clause_string += "sink";
     break;
-  default:;
+  default:
+    failUnparseEnum("depobj update type", type);
   }
   clause_string += ") ";
   if (clause_string.size() > 3) {
@@ -725,7 +765,10 @@ std::string OpenMPAffinityClause::toString() {
     };
     clause_string += " )";
     break;
-  default:;
+  case OMPC_AFFINITY_MODIFIER_unspecified:
+    break;
+  default:
+    failUnparseEnum("affinity modifier", modifier);
   }
   if (clause_string.size() > 1) {
     clause_string += " : ";
@@ -768,7 +811,10 @@ std::string OpenMPToClause::toString() {
   case OMPC_TO_present:
     clause_string += "present";
     break;
-  default:;
+  case OMPC_TO_unspecified:
+    break;
+  default:
+    failUnparseEnum("to clause modifier", to_kind);
   }
   if (clause_string.size() > 1) {
     clause_string += " : ";
@@ -818,7 +864,10 @@ std::string OpenMPFromClause::toString() {
   case OMPC_FROM_present:
     clause_string += "present";
     break;
-  default:;
+  case OMPC_FROM_unspecified:
+    break;
+  default:
+    failUnparseEnum("from clause modifier", from_kind);
   }
   if (clause_string.size() > 1) {
     clause_string += " : ";
@@ -870,7 +919,8 @@ std::string OpenMPDefaultmapClause::toString() {
   case OMPC_DEFAULTMAP_BEHAVIOR_present:
     clause_string += "present";
     break;
-  default:;
+  default:
+    failUnparseEnum("defaultmap behavior", behavior);
   }
   if (category != OMPC_DEFAULTMAP_CATEGORY_unspecified) {
     clause_string += ": ";
@@ -891,7 +941,10 @@ std::string OpenMPDefaultmapClause::toString() {
   case OMPC_DEFAULTMAP_CATEGORY_allocatable:
     clause_string += "allocatable";
     break;
-  default:;
+  case OMPC_DEFAULTMAP_CATEGORY_unspecified:
+    break;
+  default:
+    failUnparseEnum("defaultmap category", category);
   }
   clause_string += this->expressionToString();
   clause_string += ") ";
@@ -917,7 +970,10 @@ std::string OpenMPDeviceClause::toString() {
   case OMPC_DEVICE_MODIFIER_device_num:
     clause_string += "device_num";
     break;
-  default:;
+  case OMPC_DEVICE_MODIFIER_unspecified:
+    break;
+  default:
+    failUnparseEnum("device modifier", modifier);
   }
   if (clause_string.size() > 1) {
     clause_string += " : ";
@@ -950,15 +1006,9 @@ std::string OpenMPDeviceTypeClause::toString() {
     parameter_string = "any";
     break;
   default:
-    std::cout << "The parameter of device_type clause is not supported.\n";
+    failUnparseEnum("device_type kind", device_type_kind);
   };
-
-  if (parameter_string.size() > 0) {
-    result += parameter_string + ") ";
-  } else {
-    return std::string();
-  }
-
+  result += parameter_string + ") ";
   return result;
 }
 
@@ -992,6 +1042,12 @@ std::string OpenMPTaskReductionClause::toString() {
   case OMPC_TASK_REDUCTION_IDENTIFIER_logor:
     clause_string += "||";
     break;
+  case OMPC_TASK_REDUCTION_IDENTIFIER_eqv:
+    clause_string += ".eqv.";
+    break;
+  case OMPC_TASK_REDUCTION_IDENTIFIER_neqv:
+    clause_string += ".neqv.";
+    break;
   case OMPC_TASK_REDUCTION_IDENTIFIER_min:
     clause_string += "min";
     break;
@@ -1001,7 +1057,8 @@ std::string OpenMPTaskReductionClause::toString() {
   case OMPC_TASK_REDUCTION_IDENTIFIER_user:
     clause_string += this->getUserDefinedIdentifier();
     break;
-  default:;
+  default:
+    failUnparseEnum("task_reduction identifier", identifier);
   }
   if (clause_string.size() > 1) {
     clause_string += " : ";
@@ -1041,7 +1098,10 @@ std::string OpenMPMapClause::toString() {
     clause_string += "ref_ptr_ptee";
     has_content = true;
     break;
-  default:;
+  case OMPC_MAP_REF_MODIFIER_unspecified:
+    break;
+  default:
+    failUnparseEnum("map reference modifier", ref_modifier);
   }
 
   // Helper to append modifier text with separator
@@ -1092,7 +1152,10 @@ std::string OpenMPMapClause::toString() {
     has_content = true;
     break;
   }
-  default:;
+  case OMPC_MAP_MODIFIER_unspecified:
+    break;
+  default:
+    failUnparseEnum("first map modifier", modifier1);
   }
   switch (modifier2) {
   case OMPC_MAP_MODIFIER_always:
@@ -1116,7 +1179,10 @@ std::string OpenMPMapClause::toString() {
     clause_string += ")";
     has_content = true;
     break;
-  default:;
+  case OMPC_MAP_MODIFIER_unspecified:
+    break;
+  default:
+    failUnparseEnum("second map modifier", modifier2);
   }
   switch (modifier3) {
   case OMPC_MAP_MODIFIER_always:
@@ -1140,7 +1206,10 @@ std::string OpenMPMapClause::toString() {
     clause_string += ")";
     has_content = true;
     break;
-  default:;
+  case OMPC_MAP_MODIFIER_unspecified:
+    break;
+  default:
+    failUnparseEnum("third map modifier", modifier3);
   }
 
   switch (type) {
@@ -1171,22 +1240,30 @@ std::string OpenMPMapClause::toString() {
   case OMPC_MAP_TYPE_self:
     append_modifier("self");
     break;
-  default:;
+  case OMPC_MAP_TYPE_unspecified:
+    break;
+  default:
+    failUnparseEnum("map type", type);
   }
   if (clause_string.size() > 1) {
     clause_string += " : ";
   };
   const auto &items = this->getItems();
-  if (!items.empty()) {
-    for (size_t idx = 0; idx < items.size(); ++idx) {
-      if (idx > 0) {
-        clause_string +=
-            (items[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
-      }
-      clause_string += items[idx].text;
+  if (items.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[map-items]: map clause has no typed "
+                 "items\n";
+    std::abort();
+  }
+  for (size_t idx = 0; idx < items.size(); ++idx) {
+    if (items[idx].text.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[map-items]: map item is empty\n";
+      std::abort();
     }
-  } else {
-    clause_string += this->expressionToString();
+    if (idx > 0) {
+      clause_string +=
+          (items[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
+    }
+    clause_string += items[idx].text;
   }
   clause_string += ")";
   if (clause_string.size() > 2) {
@@ -1220,7 +1297,10 @@ std::string OpenMPReductionClause::toString() {
     case OMPC_REDUCTION_MODIFIER_task:
       clause_string += "task";
       break;
-    default:;
+    case OMPC_REDUCTION_MODIFIER_unspecified:
+      break;
+    default:
+      failUnparseEnum("reduction modifier", modifier);
     }
   }
   if (clause_string.size() > 1) {
@@ -1251,6 +1331,12 @@ std::string OpenMPReductionClause::toString() {
   case OMPC_REDUCTION_IDENTIFIER_logor:
     clause_string += "||";
     break;
+  case OMPC_REDUCTION_IDENTIFIER_eqv:
+    clause_string += ".eqv.";
+    break;
+  case OMPC_REDUCTION_IDENTIFIER_neqv:
+    clause_string += ".neqv.";
+    break;
   case OMPC_REDUCTION_IDENTIFIER_min:
     clause_string += "min";
     break;
@@ -1260,7 +1346,8 @@ std::string OpenMPReductionClause::toString() {
   case OMPC_REDUCTION_IDENTIFIER_user:
     clause_string += this->getUserDefinedIdentifier();
     break;
-  default:;
+  default:
+    failUnparseEnum("reduction identifier", identifier);
   }
   if (clause_string.size() > 1) {
     clause_string += " : ";
@@ -1295,7 +1382,10 @@ std::string OpenMPLastprivateClause::toString() {
   case OMPC_LASTPRIVATE_MODIFIER_conditional:
     clause_string += "conditional";
     break;
-  default:;
+  case OMPC_LASTPRIVATE_MODIFIER_unspecified:
+    break;
+  default:
+    failUnparseEnum("lastprivate modifier", modifier);
   }
   if (clause_string.size() > 1) {
     clause_string += ": ";
@@ -1332,7 +1422,8 @@ std::string OpenMPLinearClause::toString() {
     case OMPC_LINEAR_MODIFIER_uval:
       clause_string += "uval";
       break;
-    default:;
+    default:
+      failUnparseEnum("linear modifier", modifier);
     }
     clause_string += "( ";
     clause_string += this->expressionToString();
@@ -1356,7 +1447,8 @@ std::string OpenMPLinearClause::toString() {
       case OMPC_LINEAR_MODIFIER_uval:
         clause_string += "uval";
         break;
-      default:;
+      default:
+        failUnparseEnum("linear modifier", modifier);
       }
     }
     if (has_step) {
@@ -1398,7 +1490,8 @@ std::string OpenMPDistScheduleClause::toString() {
   case OMPC_DIST_SCHEDULE_KIND_static:
     clause_string += "static";
     break;
-  default:;
+  default:
+    failUnparseEnum("dist_schedule kind", kind);
   }
   if (this->getChunkSize() != "") {
     clause_string += ", ";
@@ -1426,7 +1519,10 @@ std::string OpenMPScheduleClause::toString() {
   case OMPC_SCHEDULE_MODIFIER_simd:
     clause_string += "simd";
     break;
-  default:;
+  case OMPC_SCHEDULE_MODIFIER_unspecified:
+    break;
+  default:
+    failUnparseEnum("first schedule modifier", modifier1);
   }
   switch (modifier2) {
   case OMPC_SCHEDULE_MODIFIER_monotonic:
@@ -1438,7 +1534,10 @@ std::string OpenMPScheduleClause::toString() {
   case OMPC_SCHEDULE_MODIFIER_simd:
     clause_string += ",simd";
     break;
-  default:;
+  case OMPC_SCHEDULE_MODIFIER_unspecified:
+    break;
+  default:
+    failUnparseEnum("second schedule modifier", modifier2);
   }
   if (clause_string.size() > 1) {
     clause_string += ":";
@@ -1459,7 +1558,16 @@ std::string OpenMPScheduleClause::toString() {
   case OMPC_SCHEDULE_KIND_runtime:
     clause_string += "runtime";
     break;
-  default:;
+  case OMPC_SCHEDULE_KIND_user:
+    if (this->getUserDefinedKind().empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[schedule-kind]: user schedule kind is "
+                   "empty\n";
+      std::abort();
+    }
+    clause_string += this->getUserDefinedKind();
+    break;
+  default:
+    failUnparseEnum("schedule kind", kind);
   }
   if (this->getChunkSize() != "") {
     clause_string += ", ";
@@ -1523,7 +1631,17 @@ std::string OpenMPIfClause::toString() {
   case OMPC_IF_MODIFIER_target_update:
     clause_string += "target update";
     break;
-  default:;
+  case OMPC_IF_MODIFIER_user:
+    if (this->getUserDefinedModifier().empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[if-modifier]: user modifier is empty\n";
+      std::abort();
+    }
+    clause_string += this->getUserDefinedModifier();
+    break;
+  case OMPC_IF_MODIFIER_unspecified:
+    break;
+  default:
+    failUnparseEnum("if modifier", modifier);
   }
   if (clause_string.size() > 1) {
     clause_string += ": ";
@@ -1540,7 +1658,9 @@ std::string OpenMPIfClause::toString() {
 std::string OpenMPFirstprivateClause::toString() {
   std::string result = "";
   if (expressions.empty()) {
-    return "";
+    std::cerr << "OMPPARSER_INVARIANT[firstprivate-expression]: clause has no "
+                 "expressions\n";
+    std::abort();
   }
 
   auto appendChunkPrefix = [&](std::string &chunk, bool is_saved,
@@ -1673,20 +1793,30 @@ std::string OpenMPApplyClause::toString() {
         result += "tile sizes(" + t.argument + ")";
         break;
       case OMPC_APPLY_TRANSFORM_apply:
-        if (t.nested_apply) {
+        if (!t.nested_apply) {
+          std::cerr << "OMPPARSER_INVARIANT[apply-transform]: nested apply is "
+                       "null\n";
+          std::abort();
+        }
+        {
           std::string nested = t.nested_apply->toString();
           if (!nested.empty() && nested.back() == ' ') {
             nested.pop_back();
           }
           result += nested;
-        } else {
-          result += "apply";
         }
+        break;
+      case OMPC_APPLY_TRANSFORM_user:
+        if (t.argument.empty()) {
+          std::cerr << "OMPPARSER_INVARIANT[apply-transform]: user transform "
+                       "is empty\n";
+          std::abort();
+        }
+        result += t.argument;
         break;
       case OMPC_APPLY_TRANSFORM_unknown:
       default:
-        result += t.argument;
-        break;
+        failUnparseEnum("apply transform kind", t.kind);
       }
     }
   }
@@ -1696,6 +1826,11 @@ std::string OpenMPApplyClause::toString() {
 }
 
 std::string OpenMPInductionClause::specificationToString() const {
+  if (sequence.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[induction-sequence]: induction clause "
+                 "has no typed items\n";
+    std::abort();
+  }
   std::string result;
   bool first = true;
 
@@ -1705,23 +1840,32 @@ std::string OpenMPInductionClause::specificationToString() const {
     }
     switch (item.kind) {
     case ItemStep:
+      if (item.index != 0 || step_expression.empty()) {
+        std::cerr << "OMPPARSER_INVARIANT[induction-sequence]: invalid step "
+                     "reference\n";
+        std::abort();
+      }
       result += "step(" + step_expression + ")";
       break;
     case ItemBinding:
-      if (item.index < bindings.size()) {
-        const auto &binding = bindings[item.index];
-        if (!binding.label.empty()) {
-          result += binding.label + ": " + binding.expression;
-        } else {
-          result += binding.expression;
-        }
+      if (item.index >= bindings.size()) {
+        std::cerr << "OMPPARSER_INVARIANT[induction-sequence]: invalid binding "
+                     "reference\n";
+        std::abort();
       }
+      result +=
+          bindings[item.index].label + ": " + bindings[item.index].expression;
       break;
     case ItemPassthrough:
-      if (item.index < passthrough_items.size()) {
-        result += passthrough_items[item.index];
+      if (item.index >= passthrough_items.size()) {
+        std::cerr << "OMPPARSER_INVARIANT[induction-sequence]: invalid item "
+                     "reference\n";
+        std::abort();
       }
+      result += passthrough_items[item.index];
       break;
+    default:
+      failUnparseEnum("induction item kind", item.kind);
     }
     first = false;
   }
@@ -1767,13 +1911,47 @@ std::string OpenMPAllocateClause::toString() {
   case OMPC_ALLOCATE_ALLOCATOR_thread:
     parameters.emplace_back("omp_thread_mem_alloc");
     break;
-  default:;
-  }
-  if (this->getUserDefinedAllocator() != "") {
+  case OMPC_ALLOCATE_ALLOCATOR_user:
+    if (this->getUserDefinedAllocator().empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[allocate-allocator]: user allocator is "
+                   "empty\n";
+      std::abort();
+    }
     parameters.push_back(this->getUserDefinedAllocator());
+    break;
+  case OMPC_ALLOCATE_ALLOCATOR_unspecified:
+    break;
+  default:
+    failUnparseEnum("allocate allocator", allocator);
   }
-  for (const auto &extra : this->getExtraAllocatorParameters()) {
-    parameters.push_back(extra);
+  if (!modifier_order.empty()) {
+    if (parameters.size() > 1) {
+      std::cerr << "OMPPARSER_INVARIANT[allocate-modifiers]: allocate clause "
+                   "has multiple allocator values\n";
+      std::abort();
+    }
+    std::vector<std::string> modifiers;
+    for (ModifierKind modifier : modifier_order) {
+      switch (modifier) {
+      case ModifierKind::allocator:
+        if (parameters.size() != 1) {
+          std::cerr << "OMPPARSER_INVARIANT[allocate-allocator]: allocator "
+                       "modifier has no allocator expression\n";
+          std::abort();
+        }
+        modifiers.push_back("allocator(" + parameters.front() + ")");
+        break;
+      case ModifierKind::align:
+        if (alignment.empty()) {
+          std::cerr << "OMPPARSER_INVARIANT[allocate-align]: align modifier "
+                       "has no alignment expression\n";
+          std::abort();
+        }
+        modifiers.push_back("align(" + alignment + ")");
+        break;
+      }
+    }
+    parameters = std::move(modifiers);
   }
   for (size_t i = 0; i < parameters.size(); ++i) {
     if (i > 0) {
@@ -1823,10 +2001,16 @@ std::string OpenMPAllocatorClause::toString() {
   case OMPC_ALLOCATOR_ALLOCATOR_thread:
     clause_string += "omp_thread_mem_alloc";
     break;
-  default:;
-  }
-  if (this->getUserDefinedAllocator() != "") {
+  case OMPC_ALLOCATOR_ALLOCATOR_user:
+    if (this->getUserDefinedAllocator().empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[allocator-clause]: user allocator is "
+                   "empty\n";
+      std::abort();
+    }
     clause_string += this->getUserDefinedAllocator();
+    break;
+  default:
+    failUnparseEnum("allocator clause allocator", allocator);
   }
   clause_string += this->expressionToString();
   clause_string += ") ";
@@ -1838,14 +2022,8 @@ std::string OpenMPAllocatorClause::toString() {
 };
 
 std::string OpenMPVariantClause::toString() {
-
+  OpenMPClauseKind clause_kind = getKind();
   std::string result;
-  std::string parameter_string;
-  std::string beginning_symbol;
-  std::string ending_symbol;
-  std::pair<std::string, std::string> *parameter_pair_string = NULL;
-  OpenMPDirective *variant_directive = NULL;
-  OpenMPClauseKind clause_kind = this->getKind();
   switch (clause_kind) {
   case OMPC_when:
     result = "when";
@@ -1853,314 +2031,349 @@ std::string OpenMPVariantClause::toString() {
   case OMPC_match:
     result = "match";
     break;
-  case OMPC_otherwise:
-    result = "otherwise";
-    break;
+  case OMPC_otherwise: {
+    OpenMPDirective *directive =
+        static_cast<OpenMPOtherwiseClause *>(this)->getVariantDirective();
+    return directive == nullptr
+               ? "otherwise () "
+               : "otherwise (" + directive->generatePragmaString("", "", "") +
+                     ") ";
+  }
   default:
-    std::cout << "The variant clause is not supported.\n";
-  };
-  result += " (";
-
-  // For otherwise clause, skip context selectors and just output the directive
-  if (clause_kind == OMPC_otherwise) {
-    variant_directive = ((OpenMPOtherwiseClause *)this)->getVariantDirective();
-    if (variant_directive != NULL) {
-      result += variant_directive->generatePragmaString("", "", "");
-    }
-    result += ") ";
-    return result;
+    failUnparseEnum("variant clause kind", clause_kind);
   }
 
-  // Builders for each selector category
-  auto buildUserSelector = [&]() -> std::string {
-    std::string s;
-    auto *expr = this->getUserCondition();
-    if (!expr) {
-      return s;
-    }
-    if (!expr->score.empty()) {
-      s = "user = {condition(score(" + expr->score + "): " + expr->expression +
-          ")}";
-    } else if (!expr->expression.empty()) {
-      s = "user = {condition(" + expr->expression + ")}";
-    }
-    return s;
-  };
+  if (active_trait_set.has_value() || active_trait_selector.has_value()) {
+    std::cerr << "OMPPARSER_INVARIANT[variant-trait-set]: trait set was not "
+                 "closed before unparsing\n";
+    std::abort();
+  }
+  if (trait_sets.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[variant-trait-set]: variant clause has "
+                 "no context selector\n";
+    std::abort();
+  }
 
-  auto buildConstructSelector = [&]() -> std::string {
-    std::string s;
-    auto *parameter_pair_directives = this->getConstructDirective();
-    if (parameter_pair_directives->empty()) {
-      return s;
-    }
-    s = "construct = {";
-    bool first = true;
-    for (auto &entry : *parameter_pair_directives) {
-      if (entry.first != "") {
-        beginning_symbol = "score(" + entry.first + "): ";
-        ending_symbol = ")";
-      } else if (entry.second->getAllClauses()->size() != 0) {
-        beginning_symbol = "(";
-        ending_symbol = ")";
-      } else {
-        beginning_symbol = "";
-        ending_symbol = "";
-      };
-      if (!first) {
-        s += ", ";
-      }
-      first = false;
-      s += entry.second->generatePragmaString("", beginning_symbol,
-                                              ending_symbol);
-    }
-    s += "}";
-    return s;
-  };
-
-  auto buildDeviceSelector = [&](bool use_target_device) -> std::string {
-    std::vector<std::string> parts;
-    std::string local;
-    // kind
-    std::pair<std::string, OpenMPClauseContextKind> *context_kind =
-        this->getContextKind();
-    switch (context_kind->second) {
+  auto contextKindName = [](OpenMPClauseContextKind kind) -> const char * {
+    switch (kind) {
     case OMPC_CONTEXT_KIND_host:
-      local = "host";
-      break;
+      return "host";
     case OMPC_CONTEXT_KIND_nohost:
-      local = "nohost";
-      break;
+      return "nohost";
     case OMPC_CONTEXT_KIND_any:
-      local = "any";
-      break;
+      return "any";
     case OMPC_CONTEXT_KIND_cpu:
-      local = "cpu";
-      break;
+      return "cpu";
     case OMPC_CONTEXT_KIND_gpu:
-      local = "gpu";
-      break;
+      return "gpu";
     case OMPC_CONTEXT_KIND_fpga:
-      local = "fpga";
-      break;
+      return "fpga";
     case OMPC_CONTEXT_KIND_unknown:
-      break;
     default:
-      std::cout << "The context kind is not supported.\n";
-    };
-    if (context_kind->first.size() > 0) {
-      parts.push_back("kind(score(" + context_kind->first + "): " + local +
-                      ")");
-    } else if (!local.empty()) {
-      parts.push_back("kind(" + local + ")");
+      failUnparseEnum("context selector kind", kind);
     }
-    // arch
-    parameter_pair_string = nullptr;
-    auto *arch = this->getArchExpression();
-    if (arch && !arch->score.empty()) {
-      parts.push_back("arch(score(" + arch->score + "): " + arch->expression +
-                      ")");
-    } else if (arch && !arch->expression.empty()) {
-      parts.push_back("arch(" + arch->expression + ")");
-    }
-    // isa
-    auto *isa = this->getIsaExpression();
-    if (isa && !isa->score.empty()) {
-      parts.push_back("isa(score(" + isa->score + "): " + isa->expression +
-                      ")");
-    } else if (isa && !isa->expression.empty()) {
-      parts.push_back("isa(" + isa->expression + ")");
-    }
-    // device_num
-    auto *devnum = this->getDeviceNumExpression();
-    if (devnum && !devnum->score.empty()) {
-      parts.push_back("device_num(score(" + devnum->score +
-                      "): " + devnum->expression + ")");
-    } else if (devnum && !devnum->expression.empty()) {
-      parts.push_back("device_num(" + devnum->expression + ")");
-    }
-    if (parts.empty()) {
-      return std::string();
-    }
-    std::string selector_name = use_target_device ? "target_device" : "device";
-    std::string joined;
-    for (size_t i = 0; i < parts.size(); ++i) {
-      if (i > 0) {
-        joined += ", ";
-      }
-      joined += parts[i];
-    }
-    return selector_name + " = {" + joined + "}";
   };
-
-  auto buildImplementationSelector = [&]() -> std::string {
-    std::string vendor_string;
-    std::pair<std::string, OpenMPClauseContextVendor> *context_vendor =
-        this->getImplementationKind();
-    switch (context_vendor->second) {
+  auto vendorName = [](OpenMPClauseContextVendor vendor) -> const char * {
+    switch (vendor) {
     case OMPC_CONTEXT_VENDOR_amd:
-      vendor_string = "amd";
-      break;
+      return "amd";
     case OMPC_CONTEXT_VENDOR_arm:
-      vendor_string = "arm";
-      break;
+      return "arm";
     case OMPC_CONTEXT_VENDOR_bsc:
-      vendor_string = "bsc";
-      break;
+      return "bsc";
     case OMPC_CONTEXT_VENDOR_cray:
-      vendor_string = "cray";
-      break;
+      return "cray";
     case OMPC_CONTEXT_VENDOR_fujitsu:
-      vendor_string = "fujitsu";
-      break;
+      return "fujitsu";
     case OMPC_CONTEXT_VENDOR_gnu:
-      vendor_string = "gnu";
-      break;
+      return "gnu";
     case OMPC_CONTEXT_VENDOR_ibm:
-      vendor_string = "ibm";
-      break;
+      return "ibm";
     case OMPC_CONTEXT_VENDOR_intel:
-      vendor_string = "intel";
-      break;
+      return "intel";
     case OMPC_CONTEXT_VENDOR_llvm:
-      vendor_string = "llvm";
-      break;
+      return "llvm";
     case OMPC_CONTEXT_VENDOR_nvidia:
-      vendor_string = "nvidia";
-      break;
+      return "nvidia";
     case OMPC_CONTEXT_VENDOR_pgi:
-      vendor_string = "pgi";
-      break;
+      return "pgi";
     case OMPC_CONTEXT_VENDOR_ti:
-      vendor_string = "ti";
-      break;
+      return "ti";
+    case OMPC_CONTEXT_VENDOR_user:
+      return "user";
     case OMPC_CONTEXT_VENDOR_unknown:
-      vendor_string = "unknown";
-      break;
+      return "unknown";
     case OMPC_CONTEXT_VENDOR_unspecified:
-      break;
     default:
-      std::cout << "The context vendor is not supported.\n";
-    };
-    std::vector<std::string> parts;
-    if (context_vendor->first.size() > 0) {
-      parts.push_back("vendor(score(" + context_vendor->first +
-                      "): " + vendor_string + ")");
-    } else if (!vendor_string.empty()) {
-      parts.push_back("vendor(" + vendor_string + ")");
+      failUnparseEnum("implementation vendor", vendor);
     }
-
-    // user-defined implementation selector
-    auto *impl_expr = this->getImplementationExpression();
-    if (impl_expr &&
-        (!impl_expr->score.empty() || !impl_expr->expression.empty() ||
-         impl_expr->kind != OMPC_IMPL_EXPR_unknown)) {
-      const std::string score = impl_expr->score;
-      switch (impl_expr->kind) {
-      case OMPC_IMPL_EXPR_requires:
-        if (!impl_expr->expression.empty()) {
-          std::string entry = "requires(";
-          if (!score.empty()) {
-            entry += "score(" + score + "): ";
-          }
-          entry += impl_expr->expression;
-          entry += ")";
-          parts.push_back(entry);
-        }
-        break;
-      case OMPC_IMPL_EXPR_user:
-      case OMPC_IMPL_EXPR_unknown:
-      default:
-        if (!impl_expr->expression.empty()) {
-          std::string entry;
-          if (!score.empty()) {
-            entry = "user(score(" + score + "): " + impl_expr->expression + ")";
-          } else {
-            entry = "user(" + impl_expr->expression + ")";
-          }
-          parts.push_back(entry);
-        }
-        break;
-      }
+  };
+  auto atomicDefaultMemOrderName =
+      [](OpenMPAtomicDefaultMemOrderClauseKind kind) -> const char * {
+    switch (kind) {
+    case OMPC_ATOMIC_DEFAULT_MEM_ORDER_seq_cst:
+      return "seq_cst";
+    case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acq_rel:
+      return "acq_rel";
+    case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acquire:
+      return "acquire";
+    case OMPC_ATOMIC_DEFAULT_MEM_ORDER_release:
+      return "release";
+    case OMPC_ATOMIC_DEFAULT_MEM_ORDER_relaxed:
+      return "relaxed";
+    case OMPC_ATOMIC_DEFAULT_MEM_ORDER_unknown:
+    default:
+      failUnparseEnum("atomic_default_mem_order selector property", kind);
     }
-
-    // extension
-    auto *ext_expr = this->getExtensionExpression();
-    if (ext_expr && ext_expr->score.size() > 0) {
-      parts.push_back("extension(score(" + ext_expr->score +
-                      "): " + ext_expr->expression + ")");
-    } else if (ext_expr && ext_expr->expression.size() > 0) {
-      parts.push_back("extension(" + ext_expr->expression + ")");
-    }
-
-    if (parts.empty()) {
-      return std::string();
-    }
+  };
+  auto join = [](const std::vector<std::string> &values) {
     std::string joined;
-    for (size_t i = 0; i < parts.size(); ++i) {
-      if (i > 0) {
+    for (std::size_t i = 0; i < values.size(); ++i) {
+      if (i != 0) {
         joined += ", ";
       }
-      joined += parts[i];
+      joined += values[i];
     }
-    return "implementation = {" + joined + "}";
+    return joined;
   };
 
-  std::vector<std::string> selector_strings;
-  auto append_selector = [&](const std::string &value) {
-    if (!value.empty()) {
-      selector_strings.push_back(value);
+  std::vector<std::string> set_strings;
+  for (const TraitSetSelector &set : trait_sets) {
+    std::string set_name;
+    switch (set.kind) {
+    case OMPC_SELECTOR_user:
+      set_name = "user";
+      break;
+    case OMPC_SELECTOR_construct:
+      set_name = "construct";
+      break;
+    case OMPC_SELECTOR_device:
+      set_name = "device";
+      break;
+    case OMPC_SELECTOR_target_device:
+      set_name = "target_device";
+      break;
+    case OMPC_SELECTOR_implementation:
+      set_name = "implementation";
+      break;
+    default:
+      failUnparseEnum("context selector set kind", set.kind);
     }
-  };
-
-  const auto &selector_order = this->getSelectorOrder();
-  if (!selector_order.empty()) {
-    for (auto kind : selector_order) {
-      switch (kind) {
-      case OMPC_SELECTOR_user:
-        append_selector(buildUserSelector());
-        break;
-      case OMPC_SELECTOR_construct:
-        append_selector(buildConstructSelector());
-        break;
-      case OMPC_SELECTOR_device:
-        append_selector(buildDeviceSelector(false));
-        break;
-      case OMPC_SELECTOR_target_device:
-        append_selector(buildDeviceSelector(true));
-        break;
-      case OMPC_SELECTOR_implementation:
-        append_selector(buildImplementationSelector());
-        break;
-      default:
-        break;
+    if (set.selectors.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[variant-trait-set]: empty selector "
+                   "set\n";
+      std::abort();
+    }
+    for (const TraitSelector &selector : set.selectors) {
+      if (selector.kind != OMPC_TRAIT_kind) {
+        continue;
+      }
+      for (const TraitProperty &property : selector.properties) {
+        if (property.context_kind == OMPC_CONTEXT_KIND_any &&
+            (selector.properties.size() != 1 || set.selectors.size() != 1)) {
+          std::cerr << "OMPPARSER_INVARIANT[device-kind-property]: kind(any) "
+                       "is not exclusive in its selector set\n";
+          std::abort();
+        }
       }
     }
-  } else {
-    // Fallback to legacy ordering
-    append_selector(buildUserSelector());
-    append_selector(buildConstructSelector());
-    append_selector(buildDeviceSelector(this->getIsTargetDeviceSelector()));
-    append_selector(buildImplementationSelector());
-  }
 
-  for (size_t i = 0; i < selector_strings.size(); ++i) {
-    if (i > 0) {
-      result += ", ";
+    std::vector<std::string> selectors;
+    for (const TraitSelector &selector : set.selectors) {
+      requireSelectorPropertyCardinality(selector);
+      if (selector.score.empty() != (selector.score_node == nullptr)) {
+        // A null score node is valid only when no semantic callback was
+        // installed.  Non-null nodes, however, must never exist for an absent
+        // score.
+        if (selector.score.empty()) {
+          std::cerr << "OMPPARSER_INVARIANT[variant-score]: absent score owns "
+                       "a callback node\n";
+          std::abort();
+        }
+      }
+      std::vector<std::string> property_strings;
+      for (const TraitProperty &property : selector.properties) {
+        const bool has_expression = !property.spelling.empty();
+        const bool has_kind = property.context_kind.has_value();
+        const bool has_vendor = property.context_vendor.has_value();
+        const bool has_atomic = property.atomic_default_mem_order.has_value();
+        if (static_cast<int>(has_expression) + static_cast<int>(has_kind) +
+                static_cast<int>(has_vendor) + static_cast<int>(has_atomic) !=
+            1) {
+          std::cerr << "OMPPARSER_INVARIANT[variant-trait-property]: property "
+                       "does not own exactly one typed payload\n";
+          std::abort();
+        }
+        if (has_expression) {
+          const OpenMPExprParseMode expected_mode =
+              selector.kind == OMPC_TRAIT_condition ||
+                      selector.kind == OMPC_TRAIT_device_num
+                  ? OMP_EXPR_PARSE_expression
+                  : OMP_EXPR_PARSE_verbatim;
+          if (property.parse_mode != expected_mode) {
+            std::cerr << "OMPPARSER_INVARIANT[variant-trait-property]: "
+                         "expression parse mode diverged\n";
+            std::abort();
+          }
+          property_strings.push_back(property.spelling);
+        } else if (has_kind) {
+          if (selector.kind != OMPC_TRAIT_kind) {
+            std::cerr << "OMPPARSER_INVARIANT[device-kind-property]: property "
+                         "is attached to the wrong selector\n";
+            std::abort();
+          }
+          property_strings.push_back(contextKindName(*property.context_kind));
+        } else if (has_vendor) {
+          if (selector.kind != OMPC_TRAIT_vendor) {
+            std::cerr << "OMPPARSER_INVARIANT[vendor-property]: property is "
+                         "attached to the wrong selector\n";
+            std::abort();
+          }
+          property_strings.push_back(vendorName(*property.context_vendor));
+        } else {
+          if (selector.kind != OMPC_TRAIT_atomic_default_mem_order) {
+            std::cerr << "OMPPARSER_INVARIANT[atomic-default-mem-order-"
+                         "property]: property is attached to the wrong "
+                         "selector\n";
+            std::abort();
+          }
+          property_strings.push_back(
+              atomicDefaultMemOrderName(*property.atomic_default_mem_order));
+        }
+      }
+      const std::string properties = join(property_strings);
+      const std::string scored_properties =
+          selector.score.empty()
+              ? properties
+              : "score(" + selector.score + "): " + properties;
+      switch (selector.kind) {
+      case OMPC_TRAIT_condition:
+        if (set.kind != OMPC_SELECTOR_user || property_strings.size() != 1) {
+          std::cerr << "OMPPARSER_INVARIANT[user-selector]: condition is in "
+                       "the wrong set\n";
+          std::abort();
+        }
+        selectors.push_back("condition(" + scored_properties + ")");
+        break;
+      case OMPC_TRAIT_construct: {
+        if (set.kind != OMPC_SELECTOR_construct ||
+            selector.construct_directive == nullptr ||
+            !selector.score.empty() || !selector.properties.empty() ||
+            !selector.implementation_defined_name.empty()) {
+          std::cerr << "OMPPARSER_INVARIANT[construct-selector]: malformed "
+                       "construct selector\n";
+          std::abort();
+        }
+        const bool has_clauses =
+            !selector.construct_directive->getAllClauses()->empty();
+        selectors.push_back(selector.construct_directive->generatePragmaString(
+            "", has_clauses ? "(" : "", has_clauses ? ")" : ""));
+        break;
+      }
+      case OMPC_TRAIT_kind:
+        if ((set.kind != OMPC_SELECTOR_device &&
+             set.kind != OMPC_SELECTOR_target_device) ||
+            !selector.score.empty()) {
+          std::cerr << "OMPPARSER_INVARIANT[device-kind-selector]: malformed "
+                       "kind selector\n";
+          std::abort();
+        }
+        selectors.push_back("kind(" + properties + ")");
+        break;
+      case OMPC_TRAIT_arch:
+      case OMPC_TRAIT_isa:
+        if ((set.kind != OMPC_SELECTOR_device &&
+             set.kind != OMPC_SELECTOR_target_device) ||
+            !selector.score.empty()) {
+          std::cerr << "OMPPARSER_INVARIANT[device-selector]: malformed "
+                       "device selector\n";
+          std::abort();
+        }
+        selectors.push_back(
+            std::string(selector.kind == OMPC_TRAIT_arch ? "arch(" : "isa(") +
+            properties + ")");
+        break;
+      case OMPC_TRAIT_device_num:
+        if (set.kind != OMPC_SELECTOR_target_device ||
+            !selector.score.empty() || property_strings.size() != 1) {
+          std::cerr << "OMPPARSER_INVARIANT[target-device-selector]: malformed "
+                       "device_num selector\n";
+          std::abort();
+        }
+        selectors.push_back("device_num(" + properties + ")");
+        break;
+      case OMPC_TRAIT_uid:
+        if (set.kind != OMPC_SELECTOR_target_device ||
+            !selector.score.empty() || property_strings.size() != 1) {
+          std::cerr << "OMPPARSER_INVARIANT[target-device-selector]: "
+                       "malformed uid selector\n";
+          std::abort();
+        }
+        selectors.push_back("uid(" + properties + ")");
+        break;
+      case OMPC_TRAIT_vendor:
+        if (set.kind != OMPC_SELECTOR_implementation) {
+          std::cerr << "OMPPARSER_INVARIANT[vendor-selector]: malformed "
+                       "vendor selector\n";
+          std::abort();
+        }
+        selectors.push_back("vendor(" + scored_properties + ")");
+        break;
+      case OMPC_TRAIT_extension:
+        if (set.kind != OMPC_SELECTOR_implementation) {
+          std::cerr << "OMPPARSER_INVARIANT[extension-selector]: selector is "
+                       "in the wrong set\n";
+          std::abort();
+        }
+        selectors.push_back("extension(" + scored_properties + ")");
+        break;
+      case OMPC_TRAIT_requires:
+        if (set.kind != OMPC_SELECTOR_implementation) {
+          std::cerr << "OMPPARSER_INVARIANT[requires-selector]: selector is in "
+                       "the wrong set\n";
+          std::abort();
+        }
+        selectors.push_back("requires(" + scored_properties + ")");
+        break;
+      case OMPC_TRAIT_atomic_default_mem_order:
+        if (set.kind != OMPC_SELECTOR_implementation ||
+            property_strings.size() != 1) {
+          std::cerr << "OMPPARSER_INVARIANT[atomic-default-mem-order-"
+                       "selector]: malformed selector\n";
+          std::abort();
+        }
+        selectors.push_back("atomic_default_mem_order(" + scored_properties +
+                            ")");
+        break;
+      case OMPC_TRAIT_implementation_user:
+        if (set.kind != OMPC_SELECTOR_implementation ||
+            selector.implementation_defined_name.empty()) {
+          std::cerr << "OMPPARSER_INVARIANT[implementation-selector]: "
+                       "malformed user selector\n";
+          std::abort();
+        }
+        selectors.push_back(property_strings.empty()
+                                ? selector.implementation_defined_name
+                                : selector.implementation_defined_name + "(" +
+                                      scored_properties + ")");
+        break;
+      default:
+        failUnparseEnum("context trait selector kind", selector.kind);
+      }
     }
-    result += selector_strings[i];
+    set_strings.push_back(set_name + " = {" + join(selectors) + "}");
   }
 
+  result += " (" + join(set_strings);
   if (clause_kind == OMPC_when) {
-    std::string clause_string = " : ";
-    variant_directive = ((OpenMPWhenClause *)this)->getVariantDirective();
-    if (variant_directive != NULL) {
-      clause_string += variant_directive->generatePragmaString("");
-    };
-    result += clause_string;
+    result += " :";
+    OpenMPDirective *variant_directive =
+        static_cast<OpenMPWhenClause *>(this)->getVariantDirective();
+    if (variant_directive != nullptr) {
+      result += " " + variant_directive->generatePragmaString("");
+    }
   }
-
   result += ") ";
-
   return result;
 };
 
@@ -2183,18 +2396,22 @@ std::string OpenMPDefaultClause::toString() {
     parameter_string = "none";
     break;
   case OMPC_DEFAULT_variant:
+    if (this->getVariantDirective() == nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[default-variant]: variant directive is "
+                   "null\n";
+      std::abort();
+    }
     parameter_string =
         this->getVariantDirective()->generatePragmaString("", "", "");
     break;
   default:
-    std::cout << "The parameter of default clause is not supported.\n";
+    failUnparseEnum("default clause kind", default_kind);
   };
-
-  if (parameter_string.size() > 0) {
-    result += parameter_string + ") ";
-  } else {
-    return std::string();
+  if (parameter_string.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[default-clause]: parameter is empty\n";
+    std::abort();
   }
+  result += parameter_string + ") ";
 
   return result;
 };
@@ -2210,22 +2427,22 @@ std::string OpenMPScanClause::toString() {
     result = "exclusive(";
     break;
   default:
-    return std::string();
+    std::cerr << "OMPPARSER_INVARIANT[scan-kind]: unsupported scan clause "
+                 "kind\n";
+    std::abort();
   }
 
   const auto &ops = this->getOperands();
-  if (!ops.empty()) {
-    for (size_t idx = 0; idx < ops.size(); ++idx) {
-      if (idx > 0) {
-        result += (ops[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
-      }
-      result += ops[idx].text;
+  if (ops.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[scan-operands]: scan clause has no "
+                 "typed operands\n";
+    std::abort();
+  }
+  for (size_t idx = 0; idx < ops.size(); ++idx) {
+    if (idx > 0) {
+      result += (ops[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
     }
-  } else {
-    std::string fallback = this->expressionToString();
-    if (!fallback.empty()) {
-      result += fallback;
-    }
+    result += ops[idx].text;
   }
 
   result += ") ";
@@ -2249,6 +2466,8 @@ std::string OpenMPOrderClause::toString() {
   case OMPC_ORDER_MODIFIER_unspecified:
     // No modifier
     break;
+  default:
+    failUnparseEnum("order modifier", order_modifier);
   };
 
   OpenMPOrderClauseKind order_kind = this->getOrderClauseKind();
@@ -2257,14 +2476,9 @@ std::string OpenMPOrderClause::toString() {
     parameter_string = "concurrent";
     break;
   default:
-    std::cout << "The parameter of order clause is not supported.\n";
+    failUnparseEnum("order kind", order_kind);
   };
-
-  if (parameter_string.size() > 0) {
-    result += modifier_string + parameter_string;
-  } else {
-    return std::string();
-  }
+  result += modifier_string + parameter_string;
 
   const auto &ops = this->getOperands();
   if (!ops.empty()) {
@@ -2297,14 +2511,9 @@ std::string OpenMPBindClause::toString() {
     parameter_string = "thread";
     break;
   default:
-    std::cout << "The parameter of bind clause is not supported.\n";
+    failUnparseEnum("bind kind", bind_binding);
   };
-
-  if (parameter_string.size() > 0) {
-    result += parameter_string + ") ";
-  } else {
-    return std::string();
-  }
+  result += parameter_string + ") ";
 
   return result;
 };
@@ -2328,14 +2537,9 @@ std::string OpenMPProcBindClause::toString() {
     parameter_string = "spread";
     break;
   default:
-    std::cout << "The parameter of proc_bind clause is not supported.\n";
+    failUnparseEnum("proc_bind kind", proc_bind_kind);
   };
-
-  if (parameter_string.size() > 0) {
-    result += parameter_string + ") ";
-  } else {
-    return std::string();
-  }
+  result += parameter_string + ") ";
 
   return result;
 };
@@ -2343,10 +2547,21 @@ std::string OpenMPProcBindClause::toString() {
 std::string OpenMPUsesAllocatorsClause::toString() {
   std::vector<usesAllocatorParameter *> *usesAllocatorsAllocatorSequence =
       this->getUsesAllocatorsAllocatorSequence();
+  if (usesAllocatorsAllocatorSequence == nullptr ||
+      usesAllocatorsAllocatorSequence->empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[uses-allocators]: allocator sequence is "
+                 "empty\n";
+    std::abort();
+  }
   std::string result = "uses_allocators(";
   bool first = true;
   for (unsigned int i = 0; i < usesAllocatorsAllocatorSequence->size(); i++) {
     auto *entry = usesAllocatorsAllocatorSequence->at(i);
+    if (entry == nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[uses-allocators]: allocator entry is "
+                   "null\n";
+      std::abort();
+    }
     if (!first) {
       result += ", ";
     }
@@ -2377,6 +2592,11 @@ std::string OpenMPUsesAllocatorsClause::toString() {
       result += "omp_thread_mem_alloc";
       break;
     case OMPC_USESALLOCATORS_ALLOCATOR_user:
+      if (entry->getAllocatorUser().empty()) {
+        std::cerr << "OMPPARSER_INVARIANT[uses-allocators]: user allocator is "
+                     "empty\n";
+        std::abort();
+      }
       result += entry->getAllocatorUser();
       break;
     case OMPC_USESALLOCATORS_ALLOCATOR_unspecified: {
@@ -2387,10 +2607,16 @@ std::string OpenMPUsesAllocatorsClause::toString() {
         }
       } else if (!entry->getAllocatorUser().empty()) {
         result += entry->getAllocatorUser();
+      } else {
+        std::cerr << "OMPPARSER_INVARIANT[uses-allocators]: unspecified "
+                     "allocator has no typed payload\n";
+        std::abort();
       }
       break;
     }
-    default:;
+    default:
+      failUnparseEnum("uses_allocators allocator",
+                      entry->getUsesAllocatorsAllocator());
     }
 
     if (entry->getUsesAllocatorsAllocator() !=
@@ -2418,7 +2644,7 @@ std::string OpenMPFailClause::toString() {
     result += "relaxed";
     break;
   default:
-    result += "unknown";
+    failUnparseEnum("fail memory order", memory_order);
   }
 
   result += ") ";
@@ -2437,7 +2663,7 @@ std::string OpenMPSeverityClause::toString() {
     result += "warning";
     break;
   default:
-    result += "unknown";
+    failUnparseEnum("severity kind", severity_kind);
   }
 
   result += ") ";
@@ -2456,7 +2682,7 @@ std::string OpenMPAtClause::toString() {
     result += "execution";
     break;
   default:
-    result += "unknown";
+    failUnparseEnum("at kind", at_kind);
   }
 
   result += ") ";

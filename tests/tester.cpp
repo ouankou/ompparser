@@ -9,15 +9,78 @@
 #include <OpenMPIR.h>
 #include <algorithm>
 #include <cctype>
+#include <csignal>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <regex>
 #include <string>
+#include <sys/types.h>
+#include <sys/prctl.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 void output(OpenMPDirective *);
 std::string test(OpenMPDirective *);
 int openFile(std::ifstream &, const char *);
+
+struct DeathTestResult {
+  bool aborted = false;
+  std::string diagnostic;
+};
+
+DeathTestResult expectInvalidDirectiveDeath(const std::string &input,
+                                            OpenMPBaseLang base_lang) {
+  int diagnostic_pipe[2];
+  if (pipe(diagnostic_pipe) != 0) {
+    std::cerr << "Failed to create expected-invalid diagnostic pipe\n";
+    return {};
+  }
+
+  const pid_t child = fork();
+  if (child < 0) {
+    close(diagnostic_pipe[0]);
+    close(diagnostic_pipe[1]);
+    std::cerr << "Failed to fork expected-invalid parser process\n";
+    return {};
+  }
+
+  if (child == 0) {
+    (void)prctl(PR_SET_DUMPABLE, 0);
+    close(diagnostic_pipe[0]);
+    if (dup2(diagnostic_pipe[1], STDERR_FILENO) < 0) {
+      _exit(125);
+    }
+    close(diagnostic_pipe[1]);
+    OpenMPParseOptions options;
+    options.base_lang = base_lang;
+    auto directive = parseOpenMP(input.c_str(), options);
+    (void)directive->generatePragmaString();
+    _exit(0);
+  }
+
+  close(diagnostic_pipe[1]);
+  std::string diagnostic;
+  char buffer[512];
+  ssize_t count = 0;
+  while ((count = read(diagnostic_pipe[0], buffer, sizeof(buffer))) > 0) {
+    diagnostic.append(buffer, static_cast<std::size_t>(count));
+  }
+  close(diagnostic_pipe[0]);
+
+  int status = 0;
+  if (waitpid(child, &status, 0) != child) {
+    std::cerr << "Failed to wait for expected-invalid parser process\n";
+    return {};
+  }
+
+  const bool has_single_diagnostic =
+      diagnostic.rfind("OMPPARSER_", 0) == 0 &&
+      std::count(diagnostic.begin(), diagnostic.end(), '\n') == 1;
+  return {WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT &&
+              has_single_diagnostic,
+          diagnostic};
+}
 
 void output(OpenMPDirective *node) {
   if (!node)
@@ -160,8 +223,6 @@ int main(int argc, const char *argv[]) {
       } else {
         base_lang = default_base_lang;
       }
-      setLang(base_lang);
-
       if ((current_line.size() >= 7 &&
            current_line.compare(0, 7, "#pragma") == 0) ||
           is_fortran_directive) {
@@ -182,22 +243,33 @@ int main(int argc, const char *argv[]) {
         bool generated_output = false;
         const bool is_expected_invalid_case =
             expect_invalid_next || expect_invalid_block;
-        if (has_cached_output) {
+        if (is_expected_invalid_case) {
+          const DeathTestResult death =
+              expectInvalidDirectiveDeath(input_pragma, base_lang);
+          output_pragma.clear();
+          generated_output = false;
+          pass = death.aborted ? "true" : "false";
+          output_file << filename_string.c_str() << " | ` "
+                      << input_pragma.c_str() << " ` | ` expected hard error ` | "
+                      << pass.c_str() << "\n";
+          if (!death.aborted) {
+            std::cout << "======================================\n";
+            std::cout << "Line: " << current_pragma_line_no << "\n";
+            std::cout << "EXPECTED HARD FAILURE: " << input_pragma << "\n";
+            std::cout << "DIAGNOSTIC: " << death.diagnostic << "\n";
+            std::cout << "======================================\n";
+          }
+        } else if (has_cached_output) {
           output_pragma = search_pragma->second;
           generated_output = output_pragma.size() != 0;
-          if (is_expected_invalid_case)
-            pass = "true";
-          else
-            pass = generated_output ? "true" : "false";
+          pass = generated_output ? "true" : "false";
         } else {
-          OpenMPDirective *openMPAST =
-              parseOpenMP(input_pragma.c_str(), nullptr, nullptr);
-          output_pragma = test(openMPAST);
-          delete openMPAST;
+          OpenMPParseOptions options;
+          options.base_lang = base_lang;
+          auto openMPAST = parseOpenMP(input_pragma.c_str(), options);
+          output_pragma = test(openMPAST.get());
           generated_output = output_pragma.size() != 0;
-          if (is_expected_invalid_case)
-            pass = "true";
-          else if (!generated_output)
+          if (!generated_output)
             pass = "false";
           output_file << filename_string.c_str() << " | ` "
                       << input_pragma.c_str() << " ` | ` "
@@ -206,16 +278,12 @@ int main(int argc, const char *argv[]) {
           processed_data[input_pragma] = output_pragma;
         }
         if (is_expected_invalid_case) {
-          if (generated_output) {
-            std::cout << "======================================\n";
-            std::cout << "Line: " << current_pragma_line_no << "\n";
-            std::cout << "EXPECTED INVALID INPUT (IGNORED): " << input_pragma
-                      << "\n";
-            std::cout << "PARSER OUTPUT: " << output_pragma << "\n";
-            std::cout << "======================================\n";
+          if (pass == "true") {
+            passed_amount += 1;
+            expected_invalid_amount += 1;
+          } else {
+            failed_amount += 1;
           }
-          passed_amount += 1;
-          expected_invalid_amount += 1;
           input_pragma.clear();
           validation_string.clear();
           output_pragma.clear();

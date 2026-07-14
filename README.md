@@ -18,14 +18,21 @@ ompparser is a standalone OpenMP parser for C/C++ and Fortran. It can be used as
        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
        cmake --build build --target check
 
-## omparser API
+## ompparser API
 
-```
+```cpp
 enum OpenMPBaseLang {
     Lang_C,
     Lang_Cplusplus,
     Lang_Fortran,
     Lang_unknown
+};
+
+struct OpenMPParseOptions {
+    OpenMPBaseLang base_lang;
+    bool normalize_clauses = true;
+    OpenMPExprParseCallback expression_callback = nullptr;
+    void *expression_callback_user_data = nullptr;
 };
 
 class OpenMPClause : public SourceLocation {
@@ -36,11 +43,22 @@ class OpenMPDirective : public SourceLocation  {
  ...
 }
 
-extern OpenMPDirective *parseOpenMP(const char *,
-                                    OpenMPExprParseCallback,
-                                    void *);
+std::unique_ptr<OpenMPDirective>
+parseOpenMP(const char *directive, const OpenMPParseOptions &options);
+
+OpenMPParseOptions options;
+options.base_lang = Lang_Cplusplus;
+std::unique_ptr<OpenMPDirective> directive =
+    parseOpenMP("#pragma omp parallel", options);
 
 ```
+
+The caller owns the returned directive through `std::unique_ptr`. A successful
+call always returns a nonnull directive. The base language is mandatory because
+C and C++ cannot be inferred from directive text. Null input, an unknown or
+mismatched language, syntax errors, semantic violations, malformed IR, and
+reentrant calls emit one `OMPPARSER_*` diagnostic and abort; there is no
+error-recovery or null-result fallback API.
 
 ## Features and Limitation
 1. OpenMP 6.0 standard support for both C/C++ and Fortran, including parsing and unparsing

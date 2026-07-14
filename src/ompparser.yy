@@ -41,12 +41,16 @@ extern "C" void openmp_reset_lexer_flags();
 extern "C" bool openmp_consume_compact_parallel_do();
 extern "C" bool openmp_consume_declare_target_underscore();
 extern "C" bool openmp_consume_compact_enddo();
+extern void openmpConfigureExprParseCallback(OpenMPExprParseCallback callback,
+                                             void *user_data);
+extern void openmpResetExprParseCallback();
 
 //The directive/clause that are being parsed
 static OpenMPDirective *current_directive = nullptr;
 static OpenMPClause *current_clause = nullptr;
 static OpenMPDirective *current_parent_directive = nullptr;
 static OpenMPClause *current_parent_clause = nullptr;
+static OpenMPVariantClause *current_variant_clause = nullptr;
 static std::vector<std::unique_ptr<OpenMPDirective>> directive_storage;
 static std::vector<OpenMPApplyClause *> apply_clause_stack;
 static std::vector<OpenMPClauseSeparator> apply_clause_separator_stack;
@@ -67,6 +71,7 @@ static std::vector<const char *> depend_iterator_definition;
 static std::vector<std::vector<const char *>> depend_iterators_definition_class;
 static std::vector<const char *> map_iterator_args;
 static std::vector<const char *> tofrom_iterator_args;
+static bool parse_active = false;
 static inline bool hasMapIteratorModifier() {
   return firstParameter == OMPC_MAP_MODIFIER_iterator ||
          secondParameter == OMPC_MAP_MODIFIER_iterator ||
@@ -78,28 +83,48 @@ static inline void resetScheduleClauseLocationState() {
   schedule_clause_column = 0;
 }
 
-static inline int getScheduleClauseLine(int fallback_line) {
-  return schedule_clause_line > 0 ? schedule_clause_line : fallback_line;
+static inline void requireNoAllocateAllocator() {
+  if (current_clause != nullptr) {
+    std::cerr << "OMPPARSER_SEMANTIC[allocate-allocator]: allocate clause "
+                 "specifies more than one allocator\n";
+    std::abort();
+  }
 }
 
-static inline int getScheduleClauseColumn(int fallback_column) {
-  return schedule_clause_column > 0 ? schedule_clause_column : fallback_column;
+static inline int getScheduleClauseLine() {
+  if (schedule_clause_line <= 0) {
+    std::cerr << "OMPPARSER_INVARIANT[schedule-location]: schedule clause has "
+                 "no source line\n";
+    std::abort();
+  }
+  return schedule_clause_line;
+}
+
+static inline int getScheduleClauseColumn() {
+  if (schedule_clause_column <= 0) {
+    std::cerr << "OMPPARSER_INVARIANT[schedule-location]: schedule clause has "
+                 "no source column\n";
+    std::abort();
+  }
+  return schedule_clause_column;
 }
 
 static void addMapIteratorDefinition(OpenMPClause *clause,
                                      std::vector<const char *> *args) {
   if (clause == nullptr || args == nullptr) {
-    if (args != nullptr) {
-      args->clear();
-    }
-    return;
+    std::cerr << "OMPPARSER_INVARIANT[map-iterator]: clause or argument list "
+                 "is null\n";
+    std::abort();
   }
 
   auto *map_clause = static_cast<OpenMPMapClause *>(clause);
   map_clause->clearIterators();
-  if (args->size() < 3) {
-    args->clear();
-    return;
+  if (args->size() < 3 || args->size() > 4 || (*args)[0] == nullptr ||
+      (*args)[1] == nullptr || (*args)[2] == nullptr ||
+      (args->size() == 4 && (*args)[3] == nullptr)) {
+    std::cerr << "OMPPARSER_INVARIANT[map-iterator]: iterator must own three "
+                 "or four nonnull fields\n";
+    std::abort();
   }
   std::string qualifier;
   std::string var((*args)[0]);
@@ -108,6 +133,11 @@ static void addMapIteratorDefinition(OpenMPClause *clause,
   std::string step;
   if (args->size() > 3) {
     step = std::string((*args)[3]);
+  }
+  if (var.empty() || begin.empty() || end.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[map-iterator]: variable, begin, or end "
+                 "field is empty\n";
+    std::abort();
   }
 
   map_clause->addIterator(qualifier, var, begin, end, step);
@@ -117,14 +147,16 @@ static void addMapIteratorDefinition(OpenMPClause *clause,
 static void addToFromIteratorDefinition(OpenMPClause *clause,
                                         std::vector<const char *> *args) {
   if (clause == nullptr || args == nullptr) {
-    if (args != nullptr) {
-      args->clear();
-    }
-    return;
+    std::cerr << "OMPPARSER_INVARIANT[data-motion-iterator]: clause or "
+                 "argument list is null\n";
+    std::abort();
   }
-  if (args->size() < 3) {
-    args->clear();
-    return;
+  if (args->size() < 3 || args->size() > 4 || (*args)[0] == nullptr ||
+      (*args)[1] == nullptr || (*args)[2] == nullptr ||
+      (args->size() == 4 && (*args)[3] == nullptr)) {
+    std::cerr << "OMPPARSER_INVARIANT[data-motion-iterator]: iterator must "
+                 "own three or four nonnull fields\n";
+    std::abort();
   }
 
   std::string qualifier;
@@ -134,6 +166,11 @@ static void addToFromIteratorDefinition(OpenMPClause *clause,
   std::string step;
   if (args->size() > 3) {
     step = std::string((*args)[3]);
+  }
+  if (var.empty() || begin.empty() || end.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[data-motion-iterator]: variable, begin, "
+                 "or end field is empty\n";
+    std::abort();
   }
 
   if (clause->getKind() == OMPC_to) {
@@ -144,19 +181,28 @@ static void addToFromIteratorDefinition(OpenMPClause *clause,
     auto *from_clause = static_cast<OpenMPFromClause *>(clause);
     from_clause->clearIterators();
     from_clause->addIterator(qualifier, var, begin, end, step);
+  } else {
+    std::cerr << "OMPPARSER_INVARIANT[data-motion-iterator]: clause is not to "
+                 "or from\n";
+    std::abort();
   }
   args->clear();
 }
 
 static const char *trait_score = "";
+static OpenMPVariantClause *requireCurrentVariantClause() {
+  if (current_variant_clause == nullptr) {
+    std::cerr << "OMPPARSER_INVARIANT[variant-selector]: no active variant "
+                 "clause\n";
+    std::abort();
+  }
+  return current_variant_clause;
+}
 /* Treat the entire expression as a string for now */
 extern void openmp_parse_expr();
 extern void openmp_begin_type_string();
 extern void openmp_begin_raw_expression();
 static int openmp_error(const char *);
-OpenMPExprParseCallback exprParse = nullptr;
-void *exprParseUserData = nullptr;
-
 static bool isFortranProcedureName(const char *spelling) {
   if (spelling == nullptr) {
     return false;
@@ -183,27 +229,65 @@ static bool isFortranProcedureName(const char *spelling) {
 bool b_within_variable_list = false; // a flag to indicate if the program is now
                                      // processing a list of variables
 
-/* used for language setting and detecting*/
-OpenMPBaseLang user_set_lang = Lang_unknown;
-OpenMPBaseLang auto_lang;
-void setLang(OpenMPBaseLang _lang) { user_set_lang = _lang; };
+/* The generated parser is non-reentrant; these values describe only the parse
+ * currently in progress and are reset from OpenMPParseOptions on every call. */
+OpenMPBaseLang requested_lang = Lang_unknown;
+OpenMPBaseLang auto_lang = Lang_unknown;
+bool current_normalize_clauses = true;
 
 static inline bool isCLikeOpenMPBaseLang(OpenMPBaseLang lang) {
   return lang == Lang_C || lang == Lang_Cplusplus;
 }
 
 static inline bool parserLanguageIsCLike() {
-  return isCLikeOpenMPBaseLang(user_set_lang) ||
+  return isCLikeOpenMPBaseLang(requested_lang) ||
          isCLikeOpenMPBaseLang(auto_lang);
 }
-
-/* used for clause normalization control */
-bool normalize_clauses_global = true;
-void setNormalizeClauses(bool normalize) { normalize_clauses_global = normalize; };
 
 // Track whether the next clause should be preceded by a comma (to preserve Fortran spacing)
 bool clause_separator_comma = false;
 static std::string current_pragma_raw;
+
+static void resetActiveParseState() {
+  current_directive = nullptr;
+  current_clause = nullptr;
+  current_parent_directive = nullptr;
+  current_parent_clause = nullptr;
+  current_variant_clause = nullptr;
+  directive_storage.clear();
+  apply_clause_stack.clear();
+  apply_clause_separator_stack.clear();
+  firstParameter = 0;
+  secondParameter = 0;
+  thirdParameter = 0;
+  resetScheduleClauseLocationState();
+  usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_unspecified;
+  firstStringParameter.clear();
+  secondStringParameter.clear();
+  reduction_modifier_expression = nullptr;
+  current_expr_separator = OMPC_CLAUSE_SEP_space;
+  current_apply_transform_separator = OMPC_CLAUSE_SEP_comma;
+  map_ref_modifier_parameter = OMPC_MAP_REF_MODIFIER_unspecified;
+  iterator_definition.clear();
+  depend_iterator_definition.clear();
+  depend_iterators_definition_class.clear();
+  map_iterator_args.clear();
+  tofrom_iterator_args.clear();
+  trait_score = "";
+  b_within_variable_list = false;
+  requested_lang = Lang_unknown;
+  auto_lang = Lang_unknown;
+  current_normalize_clauses = true;
+  clause_separator_comma = false;
+  current_pragma_raw.clear();
+  openmpResetExprParseCallback();
+}
+
+[[noreturn]] static void failParseAPI(const char *category,
+                                      const char *message) {
+  std::cerr << "OMPPARSER_API[" << category << "]: " << message << "\n";
+  std::abort();
+}
 
 static std::string trimWhitespaceCopy(const std::string &text) {
   const std::size_t begin = text.find_first_not_of(" \t\r\n");
@@ -290,6 +374,7 @@ static DirectiveType *makeDirectiveAt(int line, int column, Args &&...args) {
       std::make_unique<DirectiveType>(std::forward<Args>(args)...);
   auto *directive = owned_directive.get();
   if (directive != nullptr) {
+    directive->setNormalizeClauses(current_normalize_clauses);
     if (line > 0) {
       directive->setLine(line);
     }
@@ -309,7 +394,9 @@ takeDirectiveOwnership(OpenMPDirective *directive) {
                      return owned.get() == directive;
                    });
   if (directive_iter == directive_storage.end()) {
-    return nullptr;
+    std::cerr << "OMPPARSER_INVARIANT[directive-ownership]: directive is not "
+                 "owned by the active parse\n";
+    std::abort();
   }
 
   auto owned_directive = std::move(*directive_iter);
@@ -317,15 +404,13 @@ takeDirectiveOwnership(OpenMPDirective *directive) {
   return owned_directive;
 }
 
-static OpenMPDirective *releaseDirectiveOwnership(OpenMPDirective *directive) {
-  return takeDirectiveOwnership(directive).release();
-}
-
 template <typename... Args>
 static OpenMPClause *addClauseAt(OpenMPDirective *directive, int line,
                                  int column, int kind, Args... args) {
   if (directive == nullptr) {
-    return nullptr;
+    std::cerr << "OMPPARSER_INVARIANT[clause-parent]: cannot attach a clause "
+                 "to a null directive\n";
+    std::abort();
   }
 
   OpenMPClause *clause = directive->addOpenMPClause(kind, args...);
@@ -338,6 +423,67 @@ static OpenMPClause *addClauseAt(OpenMPDirective *directive, int line,
     }
   }
   return clause;
+}
+
+static void validateParsedDirective(OpenMPDirective *directive) {
+  if (directive == nullptr) {
+    std::cerr << "OMPPARSER_INVARIANT[parse-result]: directive is null\n";
+    std::abort();
+  }
+  if (directive->getKind() != OMPD_end) {
+    return;
+  }
+
+  auto *end_directive = static_cast<OpenMPEndDirective *>(directive);
+  OpenMPDirective *paired = end_directive->getPairedDirective();
+  if (paired == nullptr) {
+    std::cerr << "OMPPARSER_INVARIANT[end-pairing]: end directive has no "
+                 "paired directive\n";
+    std::abort();
+  }
+
+  bool saw_nowait = false;
+  bool saw_copyprivate = false;
+  auto validate_end_clauses = [&](OpenMPDirective *clause_owner) {
+    for (OpenMPClause *clause : *clause_owner->getClausesInOriginalOrder()) {
+      if (clause == nullptr) {
+        std::cerr << "OMPPARSER_INVARIANT[end-clause]: end directive owns a "
+                     "null clause\n";
+        std::abort();
+      }
+      const OpenMPClauseKind clause_kind = clause->getKind();
+      bool allowed = false;
+      switch (paired->getKind()) {
+      case OMPD_do:
+      case OMPD_do_simd:
+      case OMPD_sections:
+      case OMPD_workshare:
+        allowed = clause_kind == OMPC_nowait;
+        break;
+      case OMPD_single:
+        allowed = clause_kind == OMPC_nowait || clause_kind == OMPC_copyprivate;
+        break;
+      default:
+        break;
+      }
+      if (!allowed) {
+        std::cerr << "OMPPARSER_SEMANTIC[end-clause]: clause " << clause_kind
+                  << " is not allowed on end directive " << paired->getKind()
+                  << "\n";
+        std::abort();
+      }
+      saw_nowait = saw_nowait || clause_kind == OMPC_nowait;
+      saw_copyprivate = saw_copyprivate || clause_kind == OMPC_copyprivate;
+    }
+  };
+
+  validate_end_clauses(end_directive);
+  validate_end_clauses(paired);
+  if (saw_nowait && saw_copyprivate) {
+    std::cerr << "OMPPARSER_SEMANTIC[end-single-clause]: copyprivate and "
+                 "nowait are mutually exclusive\n";
+    std::abort();
+  }
 }
 
 %}
@@ -368,7 +514,7 @@ corresponding C type is union name defaults to YYSTYPE.
         TEAMS
         NUM_TEAMS THREAD_LIMIT DOUBLE_COLON
         END USER CONSTRUCT DEVICE IMPLEMENTATION CONDITION SCORE VENDOR
-        KIND HOST NOHOST ANY CPU GPU FPGA ISA ARCH EXTENSION
+        KIND HOST NOHOST ANY CPU GPU FPGA ISA ARCH UID EXTENSION
         AMD ARM BSC CRAY FUJITSU GNU IBM INTEL LLVM NVIDIA PGI TI UNKNOWN
         FINAL UNTIED MERGEABLE IN_REDUCTION DEPEND PRIORITY AFFINITY DETACH MODIFIER_ITERATOR DEPOBJ FINAL_CLAUSE IN INOUT INOUTSET MUTEXINOUTSET OUT
 	        TASKLOOP GRAINSIZE NUM_TASKS NOGROUP TASKYIELD REQUIRES REVERSE_OFFLOAD UNIFIED_ADDRESS UNIFIED_SHARED_MEMORY ATOMIC_DEFAULT_MEM_ORDER DYNAMIC_ALLOCATORS SELF_MAPS SEQ_CST ACQ_REL RELAXED UNROLL TILE
@@ -385,7 +531,7 @@ corresponding C type is union name defaults to YYSTYPE.
 	        LOOPRANGE PERMUTATION COUNTS INDUCTOR COLLECTOR COMBINER NEED_DEVICE_PTR ADJUST_ARGS APPEND_ARGS APPLY STEP
 	        NO_OPENMP NO_OPENMP_CONSTRUCTS NO_OPENMP_ROUTINES NO_PARALLELISM NOCONTEXT NOVARIANTS USE ALL CGROUP
 %token <itype> ICONSTANT
-%token <stype> EXPRESSION ID_EXPRESSION EXPR_STRING VAR_STRING TASK_REDUCTION ALLOCATOR_IDENTIFIER
+%token <stype> EXPRESSION ID_EXPRESSION EXPR_STRING VAR_STRING TASK_REDUCTION ALLOCATOR_MODIFIER ALIGN_MODIFIER
 /* associativity and precedence */
 %left '<' '>' '='
 %left '+' '-'
@@ -917,7 +1063,6 @@ when_variant_directive : variant_directive {
                 ;
 
 context_selector_specification : trait_set_selector
-                | context_selector_specification trait_set_selector
                 | context_selector_specification ',' trait_set_selector
                 ;
 
@@ -928,34 +1073,40 @@ trait_set_selector : trait_set_selector_name { } '=' '{' trait_selector_list {
                             current_parent_directive = nullptr;
                             current_parent_clause = nullptr;
                         };
+                        requireCurrentVariantClause()->endTraitSet();
                      } '}'
                    ;
 
-trait_set_selector_name : USER { ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_user); }
-                | CONSTRUCT { ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_construct); current_parent_directive = current_directive;
+trait_set_selector_name : USER { current_variant_clause = dynamic_cast<OpenMPVariantClause*>(current_clause); requireCurrentVariantClause()->beginTraitSet(OMPC_SELECTOR_user); }
+                | CONSTRUCT { current_variant_clause = dynamic_cast<OpenMPVariantClause*>(current_clause); requireCurrentVariantClause()->beginTraitSet(OMPC_SELECTOR_construct); current_parent_directive = current_directive;
                     current_parent_clause = current_clause; }
-                | DEVICE { ((OpenMPVariantClause*)current_clause)->setIsTargetDeviceSelector(false); ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_device); }
-                | TARGET_DEVICE { ((OpenMPVariantClause*)current_clause)->setIsTargetDeviceSelector(true); ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_target_device); }
-                | IMPLEMENTATION { ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_implementation); }
+                | DEVICE { current_variant_clause = dynamic_cast<OpenMPVariantClause*>(current_clause); requireCurrentVariantClause()->beginTraitSet(OMPC_SELECTOR_device); }
+                | TARGET_DEVICE { current_variant_clause = dynamic_cast<OpenMPVariantClause*>(current_clause); requireCurrentVariantClause()->beginTraitSet(OMPC_SELECTOR_target_device); }
+                | IMPLEMENTATION { current_variant_clause = dynamic_cast<OpenMPVariantClause*>(current_clause); requireCurrentVariantClause()->beginTraitSet(OMPC_SELECTOR_implementation); }
                 ;
 
 trait_selector_list : trait_selector { trait_score = ""; }
-                | trait_selector_list trait_selector { trait_score = ""; }
                 | trait_selector_list ',' trait_selector { trait_score = ""; }
                 ;
 
 trait_selector : condition_selector
                 | construct_selector {
-                    ((OpenMPVariantClause*)current_parent_clause)
-                        ->addConstructDirective(
-                            trait_score, takeDirectiveOwnership(current_directive));
+                    requireCurrentVariantClause()->addConstructDirective(
+                        trait_score, takeDirectiveOwnership(current_directive));
                 }
                 | device_selector
                 | target_device_selector
                 | implementation_selector
                 ;
 
-condition_selector : CONDITION '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setUserCondition(trait_score, $4); } ')'
+condition_selector : CONDITION '(' trait_score {
+                       requireCurrentVariantClause()->beginTraitSelector(
+                           OMPC_TRAIT_condition, trait_score);
+                     } EXPR_STRING {
+                       requireCurrentVariantClause()->addExpressionProperty(
+                           $5, OMP_EXPR_PARSE_expression);
+                       requireCurrentVariantClause()->endTraitSelector();
+                     } ')'
                 ;
 
 device_selector : context_kind
@@ -964,51 +1115,162 @@ device_selector : context_kind
                 ;
 
 target_device_selector : context_device_num
+                       | context_uid
                        ;
 
-context_kind : KIND '(' trait_score context_kind_name ')'
+context_kind : KIND '(' trait_score {
+                 requireCurrentVariantClause()->beginTraitSelector(
+                     OMPC_TRAIT_kind, trait_score);
+               } context_kind_list {
+                 requireCurrentVariantClause()->endTraitSelector();
+               } ')'
              ;
 
-context_device_num : DEVICE_NUM '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setDeviceNumExpression(trait_score, $4); } ')'
+context_device_num : DEVICE_NUM '(' trait_score {
+                       requireCurrentVariantClause()->beginTraitSelector(
+                           OMPC_TRAIT_device_num, trait_score);
+                     } EXPR_STRING {
+                       requireCurrentVariantClause()->addExpressionProperty(
+                           $5, OMP_EXPR_PARSE_expression);
+                       requireCurrentVariantClause()->endTraitSelector();
+                     } ')'
                    ;
 
-context_kind_name : HOST { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_host); }
-                  | NOHOST { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_nohost); }
-                  | ANY { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_any); }
-                  | CPU { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_cpu); }
-                  | GPU { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_gpu); }
-                  | FPGA { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_fpga); }
+context_kind_list : context_kind_name
+                  | context_kind_list ',' context_kind_name
                   ;
 
-context_isa : ISA '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setIsaExpression(trait_score, $4); } ')'
+context_kind_name : HOST { requireCurrentVariantClause()->addContextKindProperty(OMPC_CONTEXT_KIND_host); }
+                  | NOHOST { requireCurrentVariantClause()->addContextKindProperty(OMPC_CONTEXT_KIND_nohost); }
+                  | ANY { requireCurrentVariantClause()->addContextKindProperty(OMPC_CONTEXT_KIND_any); }
+                  | CPU { requireCurrentVariantClause()->addContextKindProperty(OMPC_CONTEXT_KIND_cpu); }
+                  | GPU { requireCurrentVariantClause()->addContextKindProperty(OMPC_CONTEXT_KIND_gpu); }
+                  | FPGA { requireCurrentVariantClause()->addContextKindProperty(OMPC_CONTEXT_KIND_fpga); }
+                  ;
+
+context_isa : ISA '(' trait_score {
+                requireCurrentVariantClause()->beginTraitSelector(
+                    OMPC_TRAIT_isa, trait_score);
+              } context_verbatim_property_list {
+                requireCurrentVariantClause()->endTraitSelector();
+              } ')'
             ;
 
-context_arch : ARCH '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setArchExpression(trait_score, $4); } ')'
+context_arch : ARCH '(' trait_score {
+                 requireCurrentVariantClause()->beginTraitSelector(
+                     OMPC_TRAIT_arch, trait_score);
+               } context_verbatim_property_list {
+                 requireCurrentVariantClause()->endTraitSelector();
+               } ')'
              ;
 
-implementation_selector : VENDOR '(' trait_score context_vendor_name ')'
-                        | EXTENSION '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setExtensionExpression(trait_score, $4); } ')'
-                        | REQUIRES '(' trait_score EXPR_STRING {
-                            ((OpenMPVariantClause*)current_clause)->setImplementationRequiresExpression(trait_score, $4);
+context_uid : UID '(' trait_score {
+                requireCurrentVariantClause()->beginTraitSelector(
+                    OMPC_TRAIT_uid, trait_score);
+              } EXPR_STRING {
+                requireCurrentVariantClause()->addExpressionProperty(
+                    $5, OMP_EXPR_PARSE_verbatim);
+                requireCurrentVariantClause()->endTraitSelector();
+              } ')'
+            ;
+
+context_verbatim_property_list : EXPR_STRING {
+                                  requireCurrentVariantClause()
+                                      ->addExpressionProperty(
+                                          $1, OMP_EXPR_PARSE_verbatim);
+                                }
+                               | context_verbatim_property_list ',' EXPR_STRING {
+                                  requireCurrentVariantClause()
+                                      ->addExpressionProperty(
+                                          $3, OMP_EXPR_PARSE_verbatim);
+                                }
+                               ;
+
+implementation_selector : VENDOR '(' trait_score {
+                            requireCurrentVariantClause()->beginTraitSelector(
+                                OMPC_TRAIT_vendor, trait_score);
+                          } context_vendor_list {
+                            requireCurrentVariantClause()->endTraitSelector();
                           } ')'
-                        | EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setImplementationUserExpression(trait_score, $1); }
-                        | EXPR_STRING '(' trait_score ')' { ((OpenMPVariantClause*)current_clause)->setImplementationUserExpression(trait_score, $1); }
+                        | EXTENSION '(' trait_score {
+                            requireCurrentVariantClause()->beginTraitSelector(
+                                OMPC_TRAIT_extension, trait_score);
+                          } context_verbatim_property_list {
+                            requireCurrentVariantClause()->endTraitSelector();
+                          } ')'
+                        | REQUIRES '(' trait_score {
+                            requireCurrentVariantClause()->beginTraitSelector(
+                                OMPC_TRAIT_requires, trait_score);
+                          } context_verbatim_property_list {
+                            requireCurrentVariantClause()->endTraitSelector();
+                          } ')'
+                        | ATOMIC_DEFAULT_MEM_ORDER '(' trait_score {
+                            requireCurrentVariantClause()->beginTraitSelector(
+                                OMPC_TRAIT_atomic_default_mem_order,
+                                trait_score);
+                          } context_atomic_default_mem_order_property {
+                            requireCurrentVariantClause()->endTraitSelector();
+                          } ')'
+                        | EXPR_STRING {
+                            requireCurrentVariantClause()->beginTraitSelector(
+                                OMPC_TRAIT_implementation_user, "", $1);
+                            requireCurrentVariantClause()->endTraitSelector();
+                          }
+                        | EXPR_STRING '(' trait_score {
+                            requireCurrentVariantClause()->beginTraitSelector(
+                                OMPC_TRAIT_implementation_user, trait_score,
+                                $1);
+                          } context_verbatim_property_list {
+                            requireCurrentVariantClause()->endTraitSelector();
+                          } ')'
                         ;
 
-context_vendor_name : AMD { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_amd); }
-                    | ARM { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_arm); }
-                    | BSC { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_bsc); }
-                    | CRAY { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_cray); }
-                    | FUJITSU { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_fujitsu); }
-                    | GNU { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_gnu); }
-                    | IBM { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_ibm); }
-                    | INTEL { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_intel); }
-                    | LLVM { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_llvm); }
-                    | NVIDIA { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_nvidia); }
-                    | PGI { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_pgi); }
-                    | TI { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_ti); }
-                    | UNKNOWN { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_unknown); }
+context_vendor_list : context_vendor_name
+                    | context_vendor_list ',' context_vendor_name
                     ;
+
+context_vendor_name : AMD { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_amd); }
+                    | ARM { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_arm); }
+                    | BSC { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_bsc); }
+                    | CRAY { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_cray); }
+                    | FUJITSU { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_fujitsu); }
+                    | GNU { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_gnu); }
+                    | IBM { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_ibm); }
+                    | INTEL { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_intel); }
+                    | LLVM { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_llvm); }
+                    | NVIDIA { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_nvidia); }
+                    | PGI { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_pgi); }
+                    | TI { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_ti); }
+                    | USER { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_user); }
+                    | UNKNOWN { requireCurrentVariantClause()->addContextVendorProperty(OMPC_CONTEXT_VENDOR_unknown); }
+                    ;
+
+context_atomic_default_mem_order_property : SEQ_CST {
+                    requireCurrentVariantClause()
+                        ->addAtomicDefaultMemOrderProperty(
+                            OMPC_ATOMIC_DEFAULT_MEM_ORDER_seq_cst);
+                  }
+                | ACQ_REL {
+                    requireCurrentVariantClause()
+                        ->addAtomicDefaultMemOrderProperty(
+                            OMPC_ATOMIC_DEFAULT_MEM_ORDER_acq_rel);
+                  }
+                | ACQUIRE {
+                    requireCurrentVariantClause()
+                        ->addAtomicDefaultMemOrderProperty(
+                            OMPC_ATOMIC_DEFAULT_MEM_ORDER_acquire);
+                  }
+                | RELEASE {
+                    requireCurrentVariantClause()
+                        ->addAtomicDefaultMemOrderProperty(
+                            OMPC_ATOMIC_DEFAULT_MEM_ORDER_release);
+                  }
+                | RELAXED {
+                    requireCurrentVariantClause()
+                        ->addAtomicDefaultMemOrderProperty(
+                            OMPC_ATOMIC_DEFAULT_MEM_ORDER_relaxed);
+                  }
+                ;
 
 construct_selector : parallel_selector
                    | dispatch_selector
@@ -1088,7 +1350,7 @@ loop_construct_selector : LOOP { current_directive = makeDirectiveAt<OpenMPDirec
 loop_construct_selector_parameter : trait_score loop_clause_optseq
                                   ;
 
-trait_score : /* empty */
+trait_score : /* empty */ { trait_score = ""; }
             | SCORE '(' EXPR_STRING { trait_score = $3; } ')' ':'
             ;
 
@@ -1693,18 +1955,18 @@ doacross_type : SOURCE ':' {
                 } doacross_sink_args
               ;
 doacross_source_arg : /* empty */
-                    | expression {
+                    | EXPR_STRING {
                         auto *doacross_clause = static_cast<OpenMPDoacrossClause *>(current_clause);
                         doacross_clause->setSourceExpression($1, current_expr_separator);
                         current_expr_separator = OMPC_CLAUSE_SEP_space;
                       }
                     ;
-doacross_sink_args : expression {
+doacross_sink_args : EXPR_STRING {
                          auto *doacross_clause = static_cast<OpenMPDoacrossClause *>(current_clause);
                          doacross_clause->addSinkArg($1, current_expr_separator);
                          current_expr_separator = OMPC_CLAUSE_SEP_space;
                      }
-                   | doacross_sink_args ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } expression {
+                   | doacross_sink_args ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } EXPR_STRING {
                          auto *doacross_clause = static_cast<OpenMPDoacrossClause *>(current_clause);
                          doacross_clause->addSinkArg($4, current_expr_separator);
                          current_expr_separator = OMPC_CLAUSE_SEP_space;
@@ -1728,14 +1990,19 @@ otherwise_clause : OTHERWISE {
                     current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_otherwise);
                     current_parent_directive = current_directive;
                     current_parent_clause = current_clause;
-                 } '(' variant_directive {
-                    ((OpenMPOtherwiseClause*)current_parent_clause)
-                        ->setVariantDirective(takeDirectiveOwnership(current_directive));
+                 } '(' otherwise_variant_directive {
                     current_directive = current_parent_directive;
                     current_clause = current_parent_clause;
                     current_parent_directive = nullptr;
                     current_parent_clause = nullptr;
                  } ')'
+                 ;
+
+otherwise_variant_directive : variant_directive {
+                    ((OpenMPOtherwiseClause*)current_parent_clause)
+                        ->setVariantDirective(takeDirectiveOwnership(current_directive));
+                 }
+                 | { ; }
                  ;
 
 // OpenMP 6.0 clause implementations
@@ -1983,7 +2250,7 @@ apply_transformation : UNROLL {
                          auto *apply_clause = static_cast<OpenMPApplyClause *>(current_clause);
                          if (apply_clause != nullptr) {
                            apply_clause->addTransformation(
-                               OMPC_APPLY_TRANSFORM_unknown, std::string($1),
+                               OMPC_APPLY_TRANSFORM_user, std::string($1),
                                current_apply_transform_separator);
                          }
                        }
@@ -2932,6 +3199,8 @@ atomic_default_mem_order_clause : ATOMIC_DEFAULT_MEM_ORDER '(' atomic_default_me
 
 atomic_default_mem_order_parameter : SEQ_CST { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_atomic_default_mem_order, OMPC_ATOMIC_DEFAULT_MEM_ORDER_seq_cst); }
                                    | ACQ_REL { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_atomic_default_mem_order, OMPC_ATOMIC_DEFAULT_MEM_ORDER_acq_rel); }
+                                   | ACQUIRE { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_atomic_default_mem_order, OMPC_ATOMIC_DEFAULT_MEM_ORDER_acquire); }
+                                   | RELEASE { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_atomic_default_mem_order, OMPC_ATOMIC_DEFAULT_MEM_ORDER_release); }
                                    | RELAXED { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_atomic_default_mem_order, OMPC_ATOMIC_DEFAULT_MEM_ORDER_relaxed); }
                                    ;
 dynamic_allocators_clause: DYNAMIC_ALLOCATORS {
@@ -3032,7 +3301,7 @@ defaultmap_category : CATEGORY_SCALAR { current_clause = addClauseAt(current_dir
                     | CATEGORY_AGGREGATE { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_defaultmap, firstParameter,OMPC_DEFAULTMAP_CATEGORY_aggregate); }
                     | CATEGORY_POINTER { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_defaultmap,firstParameter,OMPC_DEFAULTMAP_CATEGORY_pointer); }
                     | CATEGORY_ALL { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_defaultmap,firstParameter,OMPC_DEFAULTMAP_CATEGORY_all); }
-                    | CATEGORY_ALLOCATABLE { if (user_set_lang == Lang_Fortran || auto_lang == Lang_Fortran) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_defaultmap,firstParameter,OMPC_DEFAULTMAP_CATEGORY_allocatable);} else { yyerror("Defaultmap clause does not support allocatable in C/C++."); YYABORT;} }
+                    | CATEGORY_ALLOCATABLE { if (requested_lang == Lang_Fortran || auto_lang == Lang_Fortran) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_defaultmap,firstParameter,OMPC_DEFAULTMAP_CATEGORY_allocatable);} else { yyerror("Defaultmap clause does not support allocatable in C/C++."); YYABORT;} }
                     ;
 uses_allocators_clause : USES_ALLOCATORS  { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_uses_allocators); firstParameter = OMPC_USESALLOCATORS_ALLOCATOR_unspecified; firstStringParameter.clear(); secondStringParameter.clear(); } '(' uses_allocators_parameter ')' ;
 uses_allocators_parameter : allocators_list
@@ -4524,7 +4793,7 @@ parallel_single_directive : PARALLEL SINGLE {
                             parallel_single_clause_optseq
                             ;
 parallel_workshare_directive : PARALLEL WORKSHARE {
-                               if (user_set_lang == Lang_Fortran || auto_lang == Lang_Fortran) {
+                               if (requested_lang == Lang_Fortran || auto_lang == Lang_Fortran) {
                                    current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_parallel_workshare); } else {
                                        yyerror("parallel workshare is only supported in Fortran");
                                        YYABORT;
@@ -4592,7 +4861,7 @@ single_paired_directive : SINGLE {
                         single_paired_clause_optseq
                         ;
 workshare_directive : WORKSHARE {
-                         if (user_set_lang == Lang_Fortran || auto_lang == Lang_Fortran) {
+                         if (requested_lang == Lang_Fortran || auto_lang == Lang_Fortran) {
                              current_directive = makeDirectiveAt<OpenMPDirective>(@1.first_line, @1.first_column, OMPD_workshare); } else {
                                  yyerror("workshare is only supported in Fortran");
                                  YYABORT;
@@ -4711,7 +4980,7 @@ type_var : EXPR_STRING {
                std::string type_var = std::string(_type_var);
                // Handle Fortran style embedded "::" if present
                size_t dc_pos = type_var.find("::");
-               if (dc_pos != std::string::npos && (user_set_lang == Lang_Fortran || auto_lang == Lang_Fortran || user_set_lang == Lang_unknown)) {
+               if (dc_pos != std::string::npos && (requested_lang == Lang_Fortran || auto_lang == Lang_Fortran || requested_lang == Lang_unknown)) {
                    std::string _type = type_var.substr(0, dc_pos);
                    // Skip following spaces
                    size_t var_start = dc_pos + 2;
@@ -5534,8 +5803,8 @@ single_paired_clause : copyprivate_clause
                      ;
 construct_type_clause : PARALLEL { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_parallel); }
                       | SECTIONS { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_sections); }
-                      | FOR { if (user_set_lang != Lang_Fortran || auto_lang != Lang_Fortran) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_for);} else {yyerror("cancel or cancellation direcitve does not support for clause in Fortran"); YYABORT; } }
-                      | DO { if (user_set_lang == Lang_Fortran || auto_lang == Lang_Fortran) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_do);} else {yyerror("cancel or cancellation direcitve does not support DO clause in C"); YYABORT; } }
+                      | FOR { if (requested_lang != Lang_Fortran || auto_lang != Lang_Fortran) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_for);} else {yyerror("cancel or cancellation direcitve does not support for clause in Fortran"); YYABORT; } }
+                      | DO { if (requested_lang == Lang_Fortran || auto_lang == Lang_Fortran) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_do);} else {yyerror("cancel or cancellation direcitve does not support DO clause in C"); YYABORT; } }
                       | TASKGROUP { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_taskgroup); }
                       ;
 //construct_type_clause_fortran : PARALLEL { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_parallel); }
@@ -5849,37 +6118,75 @@ allocate_clause : ALLOCATE {
                     current_clause = nullptr;
                   } '(' allocate_parameter ')' ;
 
-allocate_parameter : allocator_parameter_list ':' var_list
+allocate_parameter : legacy_allocator_parameter ':' var_list
+                   | allocate_modifier_parameter_list ':' var_list
                    | allocate_parameter_no_allocator
                    ;
 
-allocate_parameter_no_allocator : {
-                                    if (current_clause == nullptr) {
-                                      current_clause = addClauseAt(current_directive, @$.first_line, @$.first_column, 
-                                          OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_unspecified);
-                                    }
-                                  } var_list
+allocate_parameter_no_allocator : allocate_no_allocator_item
+                                | allocate_parameter_no_allocator ',' {
+                                    current_expr_separator =
+                                        OMPC_CLAUSE_SEP_comma;
+                                  } allocate_no_allocator_item
                                 ;
-allocator_parameter_list : allocator_parameter
-                         | allocator_parameter_list ',' allocator_parameter
-                         ;
-allocator_parameter : DEFAULT_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_default); }
-                    | LARGE_CAP_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_large_cap); }
-                    | CONST_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_cons_mem); }
-                    | HIGH_BW_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_high_bw); }
-                    | LOW_LAT_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_low_lat); }
-                    | CGROUP_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_cgroup); }
-                    | PTEAM_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_pteam); }
-                    | THREAD_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_thread); }
-                    | ALLOCATOR_IDENTIFIER {
+
+allocate_no_allocator_item : EXPR_STRING {
+                               if (current_clause == nullptr) {
+                                 current_clause = addClauseAt(
+                                     current_directive, @1.first_line,
+                                     @1.first_column, OMPC_allocate,
+                                     OMPC_ALLOCATE_ALLOCATOR_unspecified);
+                               }
+                               current_clause->addLangExpr(
+                                   $1, current_expr_separator, 0, 0,
+                                   OMP_EXPR_PARSE_variable_list);
+                               current_expr_separator =
+                                   OMPC_CLAUSE_SEP_space;
+                             }
+                           ;
+
+legacy_allocator_parameter : DEFAULT_MEM_ALLOC { requireNoAllocateAllocator(); current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_default); }
+                           | LARGE_CAP_MEM_ALLOC { requireNoAllocateAllocator(); current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_large_cap); }
+                           | CONST_MEM_ALLOC { requireNoAllocateAllocator(); current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_cons_mem); }
+                           | HIGH_BW_MEM_ALLOC { requireNoAllocateAllocator(); current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_high_bw); }
+                           | LOW_LAT_MEM_ALLOC { requireNoAllocateAllocator(); current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_low_lat); }
+                           | CGROUP_MEM_ALLOC { requireNoAllocateAllocator(); current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_cgroup); }
+                           | PTEAM_MEM_ALLOC { requireNoAllocateAllocator(); current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_pteam); }
+                           | THREAD_MEM_ALLOC { requireNoAllocateAllocator(); current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_thread); }
+                           | EXPR_STRING {
+                               requireNoAllocateAllocator();
+                               current_clause = addClauseAt(
+                                   current_directive, @1.first_line,
+                                   @1.first_column, OMPC_allocate,
+                                   OMPC_ALLOCATE_ALLOCATOR_user, $1);
+                             }
+                           ;
+
+allocate_modifier_parameter_list : allocate_modifier_parameter
+                                 | allocate_modifier_parameter_list ',' allocate_modifier_parameter
+                                 ;
+
+allocate_modifier_parameter : ALLOCATOR_MODIFIER {
                         if (current_clause == nullptr) {
-                          current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_user, $1);
+                          current_clause = addClauseAt(
+                              current_directive, @1.first_line,
+                              @1.first_column, OMPC_allocate,
+                              OMPC_ALLOCATE_ALLOCATOR_unspecified);
                         }
-                        if (current_clause) {
-                          ((OpenMPAllocateClause*)current_clause)->setUserDefinedAllocator(const_cast<char*>($1));
-                        }
+                        static_cast<OpenMPAllocateClause *>(current_clause)
+                            ->setAllocatorModifier($1);
                       }
-                    ;
+                    | ALIGN_MODIFIER {
+                        if (current_clause == nullptr) {
+                          current_clause = addClauseAt(
+                              current_directive, @1.first_line,
+                              @1.first_column, OMPC_allocate,
+                              OMPC_ALLOCATE_ALLOCATOR_unspecified);
+                        }
+                        static_cast<OpenMPAllocateClause *>(current_clause)
+                            ->setAlignModifier($1);
+                      }
+                            ;
 
 private_clause : PRIVATE {
                 current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_private);
@@ -5987,7 +6294,7 @@ copyprivate_clause : COPYPRIVATE {
                    }
                    ;
 fortran_copyprivate_clause : COPYPRIVATE {
-                                 if (user_set_lang == Lang_C || auto_lang == Lang_C) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_copyprivate);} else {yyerror("Single does not support copyprivate_clause in Fortran."); YYABORT;}
+                                 if (requested_lang == Lang_C || auto_lang == Lang_C) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_copyprivate);} else {yyerror("Single does not support copyprivate_clause in Fortran."); YYABORT;}
                                } '(' var_list ')' {
                            }
                            ;
@@ -6030,12 +6337,12 @@ linear_parameter : EXPR_STRING  { current_clause = addClauseAt(current_directive
                  | linear_modifier '(' var_list ')' { ((OpenMPLinearClause*)current_clause)->setModifierFirstSyntax(true); }
                  ;
 linear_modifier : MODOFIER_VAL { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_linear,OMPC_LINEAR_MODIFIER_val); }
-                | MODOFIER_REF { if (user_set_lang == Lang_unknown && auto_lang == Lang_C){ auto_lang = Lang_Cplusplus; } if (user_set_lang == Lang_C) {yyerror("REF modifier is not supportted in C."); YYABORT; } else { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_linear, OMPC_LINEAR_MODIFIER_ref); } }
-                | MODOFIER_UVAL { if (user_set_lang == Lang_unknown && auto_lang == Lang_C){ auto_lang = Lang_Cplusplus; } if (user_set_lang == Lang_C) {yyerror("UVAL modifier is not supportted in C."); YYABORT;} else { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_linear, OMPC_LINEAR_MODIFIER_uval); } }
+                | MODOFIER_REF { if (requested_lang == Lang_unknown && auto_lang == Lang_C){ auto_lang = Lang_Cplusplus; } if (requested_lang == Lang_C) {yyerror("REF modifier is not supportted in C."); YYABORT; } else { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_linear, OMPC_LINEAR_MODIFIER_ref); } }
+                | MODOFIER_UVAL { if (requested_lang == Lang_unknown && auto_lang == Lang_C){ auto_lang = Lang_Cplusplus; } if (requested_lang == Lang_C) {yyerror("UVAL modifier is not supportted in C."); YYABORT;} else { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_linear, OMPC_LINEAR_MODIFIER_uval); } }
                 ;
 linear_modifier_kind : MODOFIER_VAL { ((OpenMPLinearClause*)current_clause)->setModifier(OMPC_LINEAR_MODIFIER_val); }
-                     | MODOFIER_REF { if (user_set_lang == Lang_unknown && auto_lang == Lang_C){ auto_lang = Lang_Cplusplus; } if (user_set_lang == Lang_C) {yyerror("REF modifier is not supportted in C."); YYABORT; } else { ((OpenMPLinearClause*)current_clause)->setModifier(OMPC_LINEAR_MODIFIER_ref); } }
-                     | MODOFIER_UVAL { if (user_set_lang == Lang_unknown && auto_lang == Lang_C){ auto_lang = Lang_Cplusplus; } if (user_set_lang == Lang_C) {yyerror("UVAL modifier is not supportted in C."); YYABORT;} else { ((OpenMPLinearClause*)current_clause)->setModifier(OMPC_LINEAR_MODIFIER_uval); } }
+                     | MODOFIER_REF { if (requested_lang == Lang_unknown && auto_lang == Lang_C){ auto_lang = Lang_Cplusplus; } if (requested_lang == Lang_C) {yyerror("REF modifier is not supportted in C."); YYABORT; } else { ((OpenMPLinearClause*)current_clause)->setModifier(OMPC_LINEAR_MODIFIER_ref); } }
+                     | MODOFIER_UVAL { if (requested_lang == Lang_unknown && auto_lang == Lang_C){ auto_lang = Lang_Cplusplus; } if (requested_lang == Lang_C) {yyerror("UVAL modifier is not supportted in C."); YYABORT;} else { ((OpenMPLinearClause*)current_clause)->setModifier(OMPC_LINEAR_MODIFIER_uval); } }
                      ;
 
 aligned_clause : ALIGNED '(' aligned_parameter ')'
@@ -6089,25 +6396,24 @@ ordered_clause: ORDERED { current_clause = addClauseAt(current_directive, @1.fir
 partial_clause: PARTIAL { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_partial); } '(' expression ')'
               | PARTIAL { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_partial); }
               ;
-fortran_nowait_clause: NOWAIT { if (user_set_lang == Lang_C || auto_lang == Lang_C) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_nowait);} else {yyerror("Sections does not support nowait clause in Fortran."); YYABORT;} }
+fortran_nowait_clause: NOWAIT { if (requested_lang == Lang_C || auto_lang == Lang_C) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_nowait);} else {yyerror("Sections does not support nowait clause in Fortran."); YYABORT;} }
                      ;
-nowait_clause: NOWAIT { 
+nowait_clause: NOWAIT {
                          OpenMPDirective *target_directive = current_directive;
                          if (current_parent_directive != nullptr &&
                              current_parent_directive->getKind() == OMPD_end) {
                            target_directive = current_parent_directive;
                          }
                          current_clause = addClauseAt(target_directive, @1.first_line, @1.first_column, OMPC_nowait);
-                       }
-             | NOWAIT { 
-                         OpenMPDirective *target_directive = current_directive;
-                         if (current_parent_directive != nullptr &&
-                             current_parent_directive->getKind() == OMPD_end) {
-                           target_directive = current_parent_directive;
-                         }
-                         current_clause = addClauseAt(target_directive, @1.first_line, @1.first_column, OMPC_nowait);
-                       } '(' expression ')'
+                       } nowait_argument_opt
              ;
+nowait_argument_opt: /* empty */
+                   | '(' EXPR_STRING {
+                       current_clause->addLangExpr(
+                           $2, OMPC_CLAUSE_SEP_space, 0, 0,
+                           OMP_EXPR_PARSE_expression);
+                     } ')'
+                   ;
 indirect_clause: INDIRECT { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_indirect); }
                ;
 full_clause: FULL { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_full); }
@@ -6213,8 +6519,8 @@ schedule_enum_kind : STATIC {
                       if (current_directive != nullptr)
                         current_clause = addClauseAt(
                             current_directive,
-                            getScheduleClauseLine(@1.first_line),
-                            getScheduleClauseColumn(@1.first_column),
+                            getScheduleClauseLine(),
+                            getScheduleClauseColumn(),
                             OMPC_schedule, firstParameter, secondParameter,
                             OMPC_SCHEDULE_KIND_static);
                     }
@@ -6222,8 +6528,8 @@ schedule_enum_kind : STATIC {
                       if (current_directive != nullptr)
                         current_clause = addClauseAt(
                             current_directive,
-                            getScheduleClauseLine(@1.first_line),
-                            getScheduleClauseColumn(@1.first_column),
+                            getScheduleClauseLine(),
+                            getScheduleClauseColumn(),
                             OMPC_schedule, firstParameter, secondParameter,
                             OMPC_SCHEDULE_KIND_dynamic);
                     }
@@ -6231,8 +6537,8 @@ schedule_enum_kind : STATIC {
                       if (current_directive != nullptr)
                         current_clause = addClauseAt(
                             current_directive,
-                            getScheduleClauseLine(@1.first_line),
-                            getScheduleClauseColumn(@1.first_column),
+                            getScheduleClauseLine(),
+                            getScheduleClauseColumn(),
                             OMPC_schedule, firstParameter, secondParameter,
                             OMPC_SCHEDULE_KIND_guided);
                     }
@@ -6240,8 +6546,8 @@ schedule_enum_kind : STATIC {
                       if (current_directive != nullptr)
                         current_clause = addClauseAt(
                             current_directive,
-                            getScheduleClauseLine(@1.first_line),
-                            getScheduleClauseColumn(@1.first_column),
+                            getScheduleClauseLine(),
+                            getScheduleClauseColumn(),
                             OMPC_schedule, firstParameter, secondParameter,
                             OMPC_SCHEDULE_KIND_auto);
                     }
@@ -6249,8 +6555,8 @@ schedule_enum_kind : STATIC {
                       if (current_directive != nullptr)
                         current_clause = addClauseAt(
                             current_directive,
-                            getScheduleClauseLine(@1.first_line),
-                            getScheduleClauseColumn(@1.first_column),
+                            getScheduleClauseLine(),
+                            getScheduleClauseColumn(),
                             OMPC_schedule, firstParameter, secondParameter,
                             OMPC_SCHEDULE_KIND_runtime);
                     }
@@ -6395,11 +6701,10 @@ reduction_default_only_modifier : MODIFIER_DEFAULT { firstParameter = OMPC_REDUC
 %%
 
 int yyerror(const char *s) {
-    // printf(" %s!\n", s);
-    fprintf(stderr,"error: %s\n",s);
-    resetScheduleClauseLocationState();
-    current_directive = nullptr;
-    return 0;
+    std::cerr << "OMPPARSER_SYNTAX[parse]: "
+              << (s != nullptr ? s : "parser reported an unspecified error")
+              << "\n";
+    std::abort();
 }
  
 int yywrap()
@@ -6408,24 +6713,41 @@ int yywrap()
 } 
 
 // Standalone ompparser
-OpenMPDirective* parseOpenMP(const char* _input,
-                             OpenMPExprParseCallback _exprParse,
-                             void *_exprParseUserData) {
-    OpenMPBaseLang base_lang = Lang_C;
-    current_directive = nullptr;
-    current_clause = nullptr;
-    current_parent_directive = nullptr;
-    current_parent_clause = nullptr;
-    directive_storage.clear();
-    resetScheduleClauseLocationState();
+std::unique_ptr<OpenMPDirective>
+parseOpenMP(const char* _input, const OpenMPParseOptions &options) {
+    if (parse_active) {
+        failParseAPI("reentrancy", "parseOpenMP is not reentrant");
+    }
+    resetActiveParseState();
+    parse_active = true;
+
+    switch (options.base_lang) {
+    case Lang_C:
+    case Lang_Cplusplus:
+    case Lang_Fortran:
+        break;
+    case Lang_unknown:
+    default:
+        failParseAPI("base-language",
+                     "base language must be explicitly C, C++, or Fortran");
+    }
+    if (options.expression_callback == nullptr &&
+        options.expression_callback_user_data != nullptr) {
+        failParseAPI("expression-callback",
+                     "callback user data requires a callback");
+    }
+
+    OpenMPBaseLang base_lang = options.base_lang;
+    requested_lang = options.base_lang;
+    auto_lang = options.base_lang;
+    current_normalize_clauses = options.normalize_clauses;
     std::string input_string;  // Must persist until after start_lexer()
     const char *input = _input;
     current_pragma_raw = (_input != nullptr) ? std::string(_input) : "";
     std::regex fortran_regex ("[!cC*][$][Oo][Mm][Pp]([Xx])?");
 
     if (_input == nullptr) {
-        yyerror("Null input provided to parseOpenMP.");
-        return nullptr;
+        failParseAPI("null-input", "input directive is null");
     }
 
     // Check input length to avoid undefined behavior
@@ -6433,68 +6755,39 @@ OpenMPDirective* parseOpenMP(const char* _input,
     size_t check_len = (input_len < 5) ? input_len : 5;
     std::string prefix_check(input, check_len);
     
-    if (user_set_lang == Lang_unknown){
-        auto_lang = Lang_C;
-        exprParse = _exprParse;
-        exprParseUserData = _exprParseUserData;
-        if (std::regex_search(prefix_check, fortran_regex)) {
-            base_lang = Lang_Fortran;
-            auto_lang = Lang_Fortran;
-            input_string = std::string(input);
-            std::transform(
-                input_string.begin(), input_string.end(), input_string.begin(),
-                [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-            input = input_string.c_str();
+    if (std::regex_search(prefix_check, fortran_regex)) {
+        /* Normalize a control copy so lexer rules that expect lowercase OpenMP
+           keywords match. The lexer retains the original byte stream for
+           captured user expressions. */
+        input_string = std::string(input);
+        std::transform(
+            input_string.begin(), input_string.end(), input_string.begin(),
+            [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        input = input_string.c_str();
+        if (requested_lang != Lang_Fortran){
+            failParseAPI("language-mismatch",
+                         "C/C++ mode received a Fortran directive");
         }
-    } else {
-        base_lang = user_set_lang;
-        exprParse = _exprParse;
-        exprParseUserData = _exprParseUserData;
-        /* Ensure auto_lang reflects the explicitly set language to avoid
-           stale auto-detection state from previous parses. */
-        auto_lang = user_set_lang;
-        if (std::regex_search(prefix_check, fortran_regex)) {
-            /* Input appears to be Fortran-style (e.g. starts with !$OMP or
-               !C$OMP). Normalize a control copy so the lexer rules that expect
-               lowercase OpenMP keywords match. The lexer retains the original
-               byte stream and uses it for every captured user expression. */
-            input_string = std::string(input);
-            std::transform(
-                input_string.begin(), input_string.end(), input_string.begin(),
-                [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-            input = input_string.c_str();
-            if (user_set_lang != Lang_Fortran){
-                yyerror("The language is set to C/C++, but the input is Fortran.");
-                return nullptr;
-            }
-        } else {
-            if (user_set_lang == Lang_Fortran){
-                yyerror("The language is set to Fortran, but the input is C/C++.");
-                return nullptr;
-            }
-        }
+    } else if (requested_lang == Lang_Fortran){
+        failParseAPI("language-mismatch",
+                     "Fortran mode received a C/C++ directive");
     }
-    openmpSetExprParseCallback(exprParse, exprParseUserData);
-    openmpSetExprParseMode(OMP_EXPR_PARSE_none);
+    openmpConfigureExprParseCallback(options.expression_callback,
+                                     options.expression_callback_user_data);
     openmp_reset_lexer_flags();
     start_lexer(input, _input);
     const int parse_result = yyparse();
     end_lexer();
     if (parse_result != 0 || current_directive == nullptr) {
-        current_directive = nullptr;
-        current_clause = nullptr;
-        current_parent_directive = nullptr;
-        current_parent_clause = nullptr;
-        directive_storage.clear();
-        return nullptr;
+        std::cerr << "OMPPARSER_SYNTAX[parse-result]: parser returned "
+                  << parse_result << " without a directive\n";
+        std::abort();
     }
 
+    validateParsedDirective(current_directive);
     current_directive->setBaseLang(base_lang);
-    OpenMPDirective *result = releaseDirectiveOwnership(current_directive);
-    current_directive = nullptr;
-    current_clause = nullptr;
-    current_parent_directive = nullptr;
-    current_parent_clause = nullptr;
-    directive_storage.clear();
+    auto result = takeDirectiveOwnership(current_directive);
+    resetActiveParseState();
+    parse_active = false;
     return result;
 }

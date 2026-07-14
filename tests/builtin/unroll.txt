@@ -24,3 +24,9 @@ PASS: #pragma omp unroll partial
 
 #pragma omp unroll partial(5)
 PASS: #pragma omp unroll partial(5)
+
+#pragma omp unroll partial((int)(2u + 2u))
+PASS: #pragma omp unroll partial((int)(2u+2u))
+
+#pragma omp unroll partial((int)(1LL << 1))
+PASS: #pragma omp unroll partial((int)(1LL<<1))

@@ -30,10 +30,20 @@ void OpenMPAtomicDefaultMemOrderClause::generateDOT(std::ofstream &dot_file,
   case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acq_rel:
     parameter_string = "acq_rel";
     break;
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acquire:
+    parameter_string = "acquire";
+    break;
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_release:
+    parameter_string = "release";
+    break;
   case OMPC_ATOMIC_DEFAULT_MEM_ORDER_relaxed:
     parameter_string = "relaxed";
     break;
-  default:;
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_unknown:
+  default:
+    std::cerr << "OMPPARSER_INVARIANT[atomic-default-mem-order-dot]: invalid "
+                 "clause kind\n";
+    std::abort();
   };
 
   if (parameter_string.size() > 0) {
@@ -1673,293 +1683,102 @@ void OpenMPReductionClause::generateDOT(std::ofstream &dot_file, int depth,
 
 void OpenMPVariantClause::generateDOT(std::ofstream &dot_file, int depth,
                                       int index, std::string parent_node) {
-
-  std::string parameter_string;
-  // Legacy pair variable is no longer needed after selector struct cleanup.
-  OpenMPVariantClause::ScoredExpression *scored_expr = nullptr;
-  std::vector<std::pair<std::string, OpenMPDirective *>>
-      *parameter_pair_directives;
-  OpenMPDirective *variant_directive = NULL;
-
-  /*
-
-      // check implementation
-      clause_string.clear();
-      parameter_string.clear();
-      // check implementation vendor
-      OpenMPClauseContextVendor context_vendor = this->getImplementationKind();
-      switch (context_vendor) {
-          case OMPC_CONTEXT_VENDOR_amd:
-              parameter_string = "amd";
-              break;
-          case OMPC_CONTEXT_VENDOR_arm:
-              parameter_string = "arm";
-              break;
-          case OMPC_CONTEXT_VENDOR_bsc:
-              parameter_string = "bsc";
-              break;
-          case OMPC_CONTEXT_VENDOR_cray:
-              parameter_string = "cray";
-              break;
-          case OMPC_CONTEXT_VENDOR_fujitsu:
-              parameter_string = "fujitsu";
-              break;
-          case OMPC_CONTEXT_VENDOR_gnu:
-              parameter_string = "gnu";
-              break;
-          case OMPC_CONTEXT_VENDOR_ibm:
-              parameter_string = "ibm";
-              break;
-          case OMPC_CONTEXT_VENDOR_intel:
-              parameter_string = "intel";
-              break;
-          case OMPC_CONTEXT_VENDOR_llvm:
-              parameter_string = "llvm";
-              break;
-          case OMPC_CONTEXT_VENDOR_nvidia:
-              parameter_string = "nvidia";
-              break;
-          case OMPC_CONTEXT_VENDOR_pgi:
-              parameter_string = "pgi";
-              break;
-          case OMPC_CONTEXT_VENDOR_ti:
-              parameter_string = "ti";
-              break;
-          case OMPC_CONTEXT_VENDOR_unknown:
-              parameter_string = "unknown";
-              break;
-          case OMPC_CONTEXT_VENDOR_unspecified:
-              break;
-          default:
-              std::cout << "The context vendor is not supported.\n";
-      };
-      if (parameter_string.size() > 0) {
-          clause_string += "vendor(" + parameter_string + "), ";
-      };
-
-      // check implementation extension
-      parameter_string = this->getExtensionExpression();
-      if (parameter_string.size() > 0) {
-          clause_string += "extension(" + parameter_string + "), ";
-      };
-
-      if (clause_string.size() > 0) {
-          result += "implementation = {" + clause_string.substr(0,
-     clause_string.size()-2) + "}, ";
-      };
-
-      clause_string.clear();
-      result = result.substr(0, result.size()-2);
-
-
-
-      result += clause_string + ") ";
-
-      //return result;*/
-  std::string current_line;
-  std::string indent = std::string(depth, '\t');
-  std::string clause_string;
-  std::string clause_type;
-  // std::vector<OpenMPDirective*>* parameter_directives;
-  parent_node = parent_node.substr(0, parent_node.size() - 1);
-  OpenMPClauseKind clause_kind = this->getKind();
-  switch (clause_kind) {
+  if (!parent_node.empty() && parent_node.back() == '\n') {
+    parent_node.pop_back();
+  }
+  const std::string indent(static_cast<std::size_t>(depth), '\t');
+  std::string clause_name;
+  switch (getKind()) {
   case OMPC_when:
-    clause_type = "when";
+    clause_name = "when";
     break;
   case OMPC_match:
-    clause_type = "match";
+    clause_name = "match";
+    break;
+  case OMPC_otherwise:
+    clause_name = "otherwise";
     break;
   default:
-    std::cout << "The variant clause is not supported.\n";
-  };
-  clause_string = parent_node + "_" + clause_type + "_" +
-                  std::to_string(depth) + "_" + std::to_string(index);
-  current_line = indent + parent_node + " -- " + clause_string + "\n";
-  dot_file << current_line.c_str();
-  indent += "\t";
-  current_line =
-      indent + clause_string + " [label = \"" + clause_type + "\"]\n";
-  dot_file << current_line.c_str();
+    std::cerr << "OMPPARSER_INVARIANT[variant-dot]: invalid clause kind\n";
+    std::abort();
+  }
 
-  std::string node_id = "";
-  // check user
-  scored_expr = this->getUserCondition();
-  if (scored_expr != nullptr && scored_expr->expression.size() > 0) {
-    node_id = clause_string + "_user_condition";
-    current_line = indent + clause_string + " -- " + node_id + "\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t" + node_id + " [label = \"user_condition\"]\n";
-    dot_file << current_line.c_str();
-    // output score
-    if (scored_expr->score.size() > 0) {
-      current_line = indent + "\t" + node_id + " -- " + node_id + "_score\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t\t" + node_id + "_score [label = \"score\\n " +
-                     scored_expr->score + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-    // output condition expression
-    current_line = indent + "\t" + node_id + " -- " + node_id + "_expr\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t\t" + node_id + "_expr [label = \"expr\\n " +
-                   scored_expr->expression + "\"]\n";
-    dot_file << current_line.c_str();
-  };
+  const std::string clause_id = parent_node + "_" + clause_name + "_" +
+                                std::to_string(depth) + "_" +
+                                std::to_string(index);
+  dot_file << indent << parent_node << " -- " << clause_id << "\n";
+  dot_file << indent << '\t' << clause_id << " [label = \"" << clause_name
+           << "\"]\n";
 
-  // check construct
-  parameter_pair_directives = this->getConstructDirective();
-  if (parameter_pair_directives->size() != 0) {
-    node_id = clause_string + "_construct";
-    current_line = indent + clause_string + " -- " + node_id + "\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t" + node_id + " [label = \"construct\"]\n";
-    dot_file << current_line.c_str();
-    for (unsigned int i = 0; i < parameter_pair_directives->size(); i++) {
-      parameter_pair_directives->at(i).second->generateDOT(
-          dot_file, depth + 2, i, node_id,
-          parameter_pair_directives->at(i).first);
-    };
-  };
+  if (getKind() != OMPC_otherwise) {
+    if (active_trait_set.has_value() || active_trait_selector.has_value() ||
+        trait_sets.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[variant-dot]: incomplete context "
+                   "selector state\n";
+      std::abort();
+    }
+    for (std::size_t set_index = 0; set_index < trait_sets.size();
+         ++set_index) {
+      const TraitSetSelector &set = trait_sets[set_index];
+      if (set.selectors.empty()) {
+        std::cerr << "OMPPARSER_INVARIANT[variant-dot]: empty selector set\n";
+        std::abort();
+      }
+      const std::string set_id =
+          clause_id + "_set_" + std::to_string(set_index);
+      dot_file << indent << '\t' << clause_id << " -- " << set_id << "\n";
+      dot_file << indent << "\t\t" << set_id << " [label = \"set "
+               << static_cast<int>(set.kind) << "\"]\n";
+      for (std::size_t selector_index = 0;
+           selector_index < set.selectors.size(); ++selector_index) {
+        const TraitSelector &selector = set.selectors[selector_index];
+        requireSelectorPropertyCardinality(selector);
+        const std::string selector_id =
+            set_id + "_selector_" + std::to_string(selector_index);
+        dot_file << indent << "\t\t" << set_id << " -- " << selector_id << "\n";
+        dot_file << indent << "\t\t\t" << selector_id << " [label = \"trait "
+                 << static_cast<int>(selector.kind) << "\"]\n";
+        for (std::size_t property_index = 0;
+             property_index < selector.properties.size(); ++property_index) {
+          const TraitProperty &property = selector.properties[property_index];
+          const unsigned payload_count =
+              static_cast<unsigned>(!property.spelling.empty()) +
+              static_cast<unsigned>(property.context_kind.has_value()) +
+              static_cast<unsigned>(property.context_vendor.has_value()) +
+              static_cast<unsigned>(
+                  property.atomic_default_mem_order.has_value());
+          if (payload_count != 1) {
+            std::cerr << "OMPPARSER_INVARIANT[variant-dot]: property does not "
+                         "own one typed payload\n";
+            std::abort();
+          }
+          const std::string property_id =
+              selector_id + "_property_" + std::to_string(property_index);
+          dot_file << indent << "\t\t\t" << selector_id << " -- " << property_id
+                   << "\n";
+          dot_file << indent << "\t\t\t\t" << property_id
+                   << " [label = \"property " << property_index << "\"]\n";
+        }
+        if (selector.construct_directive != nullptr) {
+          selector.construct_directive->generateDOT(
+              dot_file, depth + 3, static_cast<int>(selector_index),
+              selector_id, "");
+        }
+      }
+    }
+  }
 
-  // check device_arch
-  bool has_device = false;
-  scored_expr = this->getArchExpression();
-  if (scored_expr != nullptr && scored_expr->expression.size() > 0) {
-    if (!has_device) {
-      node_id = clause_string + "_device";
-      current_line = indent + clause_string + " -- " + node_id + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + node_id + " [label = \"device\"]\n";
-      dot_file << current_line.c_str();
-      has_device = true;
-    };
-    current_line = indent + "\t" + node_id + " -- " + node_id + "_arch\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t\t" + node_id + "_arch [label = \"arch\"]\n";
-    dot_file << current_line.c_str();
-    // output score
-    if (scored_expr->score.size() > 0) {
-      current_line =
-          indent + "\t\t" + node_id + "_arch -- " + node_id + "_arch_score\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t\t\t" + node_id +
-                     "_arch_score [label = \"score\\n " + scored_expr->score +
-                     "\"]\n";
-      dot_file << current_line.c_str();
-    };
-    // output arch expression
-    current_line =
-        indent + "\t\t" + node_id + "_arch -- " + node_id + "_arch_expr\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t\t\t" + node_id +
-                   "_arch_expr [label = \"expr\\n " + scored_expr->expression +
-                   "\"]\n";
-    dot_file << current_line.c_str();
-  };
-
-  // check device_isa
-  scored_expr = this->getIsaExpression();
-  if (scored_expr != nullptr && scored_expr->expression != "") {
-    if (!has_device) {
-      node_id = clause_string + "_device";
-      current_line = indent + clause_string + " -- " + node_id + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + node_id + " [label = \"device\"]\n";
-      dot_file << current_line.c_str();
-      has_device = true;
-    };
-    current_line = indent + "\t" + node_id + " -- " + node_id + "_isa\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t\t" + node_id + "_isa [label = \"isa\"]\n";
-    dot_file << current_line.c_str();
-    // output score
-    if (scored_expr->score.size() > 0) {
-      current_line =
-          indent + "\t\t" + node_id + "_isa -- " + node_id + "_isa_score\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t\t\t" + node_id +
-                     "_isa_score [label = \"score\\n " + scored_expr->score +
-                     "\"]\n";
-      dot_file << current_line.c_str();
-    };
-    // output isa expression
-    current_line =
-        indent + "\t\t" + node_id + "_isa -- " + node_id + "_isa_expr\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t\t\t" + node_id +
-                   "_isa_expr [label = \"expr\\n " + scored_expr->expression +
-                   "\"]\n";
-    dot_file << current_line.c_str();
-  };
-
-  // check device_kind
-  parameter_string.clear();
-  std::pair<std::string, OpenMPClauseContextKind> *context_kind =
-      this->getContextKind();
-  switch (context_kind->second) {
-  case OMPC_CONTEXT_KIND_host:
-    parameter_string = "host";
-    break;
-  case OMPC_CONTEXT_KIND_nohost:
-    parameter_string = "nohost";
-    break;
-  case OMPC_CONTEXT_KIND_any:
-    parameter_string = "any";
-    break;
-  case OMPC_CONTEXT_KIND_cpu:
-    parameter_string = "cpu";
-    break;
-  case OMPC_CONTEXT_KIND_gpu:
-    parameter_string = "gpu";
-    break;
-  case OMPC_CONTEXT_KIND_fpga:
-    parameter_string = "fpga";
-    break;
-  case OMPC_CONTEXT_KIND_unknown:
-    break;
-  default:
-    std::cout << "The context kind is not supported.\n";
-  };
-
-  if (parameter_string.size() > 0) {
-    if (!has_device) {
-      node_id = clause_string + "_device";
-      current_line = indent + clause_string + " -- " + node_id + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + node_id + " [label = \"device\"]\n";
-      dot_file << current_line.c_str();
-      has_device = true;
-    };
-    current_line = indent + "\t" + node_id + " -- " + node_id + "_kind\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t\t" + node_id + "_kind [label = \"kind\"]\n";
-    dot_file << current_line.c_str();
-    // output score
-    if (context_kind->first.size() > 0) {
-      current_line =
-          indent + "\t\t" + node_id + "_kind -- " + node_id + "_kind_score\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t\t\t" + node_id +
-                     "_kind_score [label = \"score\\n " + context_kind->first +
-                     "\"]\n";
-      dot_file << current_line.c_str();
-    };
-    // output kind value
-    current_line =
-        indent + "\t\t" + node_id + "_kind -- " + node_id + "_kind_value\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t\t\t" + node_id + "_kind_value [label = \"" +
-                   parameter_string + "\"]\n";
-    dot_file << current_line.c_str();
-  };
-
-  if (clause_kind == OMPC_when) {
-    variant_directive = ((OpenMPWhenClause *)this)->getVariantDirective();
-    if (variant_directive != NULL) {
-      variant_directive->generateDOT(dot_file, depth + 1, 0, clause_string, "");
-    };
-  };
+  OpenMPDirective *variant_directive = nullptr;
+  if (getKind() == OMPC_when) {
+    variant_directive =
+        static_cast<OpenMPWhenClause *>(this)->getVariantDirective();
+  } else if (getKind() == OMPC_otherwise) {
+    variant_directive =
+        static_cast<OpenMPOtherwiseClause *>(this)->getVariantDirective();
+  }
+  if (variant_directive != nullptr) {
+    variant_directive->generateDOT(dot_file, depth + 1, 0, clause_id, "");
+  }
 };
 
 void OpenMPDefaultClause::generateDOT(std::ofstream &dot_file, int depth,

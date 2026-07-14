@@ -23,7 +23,7 @@ PASS: #pragma omp task affinity (iterator ( int bba=4:120:2, double b=1:220:3, i
 #pragma omp task affinity(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9):b, c) in_reduction (test_identifier : x11, y, z) untied mergeable priority(5) detach(abc) depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),in:m, n) private (a[foo(x, goo(x, y)):100], b[1:30], c) firstprivate (foo(x), y) shared (a, b, c[1:10]) 
 PASS: #pragma omp task affinity (iterator ( int bba=4:120:2, b=1:220:3, int c=2:57:9 ) : b, c) in_reduction (test_identifier : x11, y, z) untied mergeable priority(5) detach(abc) depend (iterator ( int bba=4:120:2, b=1:220:3, int c=2:57:9 ), in : m, n) private(a[foo(x,goo(x,y)) : 100], b[1 : 30], c) firstprivate(foo(x), y) shared(a, b, c[1 : 10])
 
-#pragma omp task depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),in:m, n) depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),in:m, n, o, p)
+#pragma omp task depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),in:m, n) depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),in:o, p)
 PASS: #pragma omp task depend (iterator ( int bba=4:120:2, b=1:220:3, int c=2:57:9 ), in : m, n, o, p)
 
 #pragma omp task depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),in:m, n) depend(iterator(int bba=4:120:2),in:m, n)
@@ -32,7 +32,7 @@ PASS: #pragma omp task depend (iterator ( int bba=4:120:2, b=1:220:3, int c=2:57
 #pragma omp task depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),in:m, n) depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),inout:m, n)
 PASS: #pragma omp task depend (iterator ( int bba=4:120:2, b=1:220:3, int c=2:57:9 ), in : m, n) depend (iterator ( int bba=4:120:2, b=1:220:3, int c=2:57:9 ), inout : m, n)
 
-#pragma omp task depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),inout:m, n) depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),inout:m, n, o, p)
+#pragma omp task depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),inout:m, n) depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),inout:o, p)
 PASS: #pragma omp task depend (iterator ( int bba=4:120:2, b=1:220:3, int c=2:57:9 ), inout : m, n, o, p)
 
 #pragma omp task depend(iterator(int bba=4:120:2, b=1:220:3, int c=2:57:9),inout:m, n)
@@ -41,7 +41,7 @@ PASS: #pragma omp task depend (iterator ( int bba=4:120:2, b=1:220:3, int c=2:57
 #pragma omp task depend(inout:m, n)
 PASS: #pragma omp task depend (inout : m, n)
 
-#pragma omp task depend(inout:m, n) depend(inout:m, n, o, p)
+#pragma omp task depend(inout:m, n) depend(inout:o, p)
 PASS: #pragma omp task depend (inout : m, n, o, p)
 
 #pragma omp task depend(inout:m, n) depend(inout:o,p)
@@ -55,6 +55,5 @@ PASS: #pragma omp task depend (inout : m, n) depend (iterator ( int bba=4:120:2,
 
 #pragma omp task depend(inout:m, n) depend(out:o,p)
 PASS: #pragma omp task depend (inout : m, n) depend (out : o, p)
-
 
 

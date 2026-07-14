@@ -1,0 +1,35 @@
+/*
+ * Copyright (c) 2026, Lawrence Livermore National Security, LLC.
+ *
+ * SPDX-License-Identifier: (BSD-3-Clause)
+ */
+
+#pragma omp parallel allocate(get_allocator(): x)
+PASS: #pragma omp parallel allocate (get_allocator(): x)
+
+#pragma omp parallel allocate(allocators[i]: x)
+PASS: #pragma omp parallel allocate (allocators[i]: x)
+
+#pragma omp parallel allocate(ns::allocators[index ? left : right]: x)
+PASS: #pragma omp parallel allocate (ns::allocators[index ? left : right]: x)
+
+#pragma omp parallel allocate(allocator(select_allocator(")\\\"", pool[index + nested(1, 2)], config{4, 8})), align(compute_align(sizeof(int[4]), ')')): x)
+PASS: #pragma omp parallel allocate (allocator(select_allocator(")\\\"", pool[index + nested(1, 2)], config{4, 8})), align(compute_align(sizeof(int[4]), ')')): x)
+
+EXPECT: invalid
+#pragma omp parallel allocate(allocator(): x)
+
+EXPECT: invalid
+#pragma omp parallel allocate(allocator(pool[index)): x)
+
+EXPECT: invalid
+#pragma omp parallel allocate(align(compute_align(64]): x)
+
+EXPECT: invalid
+#pragma omp parallel allocate(allocator(select_allocator("unterminated): x)
+
+EXPECT: invalid
+#pragma omp parallel allocate(get_allocator(: x)
+
+EXPECT: invalid
+#pragma omp parallel allocate(allocators[index): x)

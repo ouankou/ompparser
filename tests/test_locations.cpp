@@ -8,9 +8,14 @@
 
 #include <OpenMPIR.h>
 
+#include <csignal>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <sys/prctl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -52,10 +57,9 @@ bool checkCase(const std::string &label, const char *input, OpenMPBaseLang lang,
                OpenMPDirectiveKind expected_directive_kind,
                int expected_directive_line, int expected_directive_column,
                const std::vector<ClauseExpectation> &clause_expectations) {
-  setLang(lang);
-
-  std::unique_ptr<OpenMPDirective> directive(
-      parseOpenMP(input, nullptr, nullptr));
+  OpenMPParseOptions options;
+  options.base_lang = lang;
+  auto directive = parseOpenMP(input, options);
   if (!directive) {
     std::cerr << "[" << label << "] parse failed for input: " << input << "\n";
     return false;
@@ -102,14 +106,24 @@ bool checkCase(const std::string &label, const char *input, OpenMPBaseLang lang,
 
 bool checkInvalidCase(const std::string &label, const char *input,
                       OpenMPBaseLang lang) {
-  setLang(lang);
+  const pid_t child = fork();
+  if (child < 0) {
+    std::cerr << "[" << label << "] failed to fork death test\n";
+    return false;
+  }
+  if (child == 0) {
+    (void)prctl(PR_SET_DUMPABLE, 0);
+    OpenMPParseOptions options;
+    options.base_lang = lang;
+    auto directive = parseOpenMP(input, options);
+    (void)directive->generatePragmaString();
+    _exit(0);
+  }
 
-  std::unique_ptr<OpenMPDirective> directive(
-      parseOpenMP(input, nullptr, nullptr));
-  if (directive != nullptr) {
-    std::cerr
-        << "[" << label
-        << "] expected parse failure but parseOpenMP returned a directive\n";
+  int status = 0;
+  if (waitpid(child, &status, 0) != child || !WIFSIGNALED(status) ||
+      WTERMSIG(status) != SIGABRT) {
+    std::cerr << "[" << label << "] expected parse to abort\n";
     return false;
   }
 
@@ -119,10 +133,9 @@ bool checkInvalidCase(const std::string &label, const char *input,
 bool checkMapClauseFirstExpressionContains(
     const std::string &label, const char *input, OpenMPBaseLang lang,
     const std::string &expected_fragment) {
-  setLang(lang);
-
-  std::unique_ptr<OpenMPDirective> directive(
-      parseOpenMP(input, nullptr, nullptr));
+  OpenMPParseOptions options;
+  options.base_lang = lang;
+  auto directive = parseOpenMP(input, options);
   if (!directive) {
     std::cerr << "[" << label << "] parse failed for input: " << input << "\n";
     return false;
@@ -161,10 +174,9 @@ bool checkMapClauseFirstExpressionContains(
 bool checkMapClauseFirstPolicyCount(const std::string &label, const char *input,
                                     OpenMPBaseLang lang,
                                     std::size_t expected_count) {
-  setLang(lang);
-
-  std::unique_ptr<OpenMPDirective> directive(
-      parseOpenMP(input, nullptr, nullptr));
+  OpenMPParseOptions options;
+  options.base_lang = lang;
+  auto directive = parseOpenMP(input, options);
   if (!directive) {
     std::cerr << "[" << label << "] parse failed for input: " << input << "\n";
     return false;
@@ -264,6 +276,5 @@ int main() {
            0) &&
        ok;
 
-  setLang(Lang_unknown);
   return ok ? 0 : 1;
 }

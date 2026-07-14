@@ -19,8 +19,8 @@ PASS: #pragma omp master taskloop simd if (a) if (taskloop: b) if (simd: a)
 #pragma omp master taskloop simd shared (a, b, c[1:10])
 PASS: #pragma omp master taskloop simd shared(a, b, c[1 : 10])
 
-#pragma omp master taskloop simd private (a, b) private (a, c)
-PASS: #pragma omp master taskloop simd private(a, b, c)
+#pragma omp master taskloop simd private (a, b) private (d, c)
+PASS: #pragma omp master taskloop simd private(a, b, d, c)
  
 #pragma omp master taskloop simd firstprivate (x, y)
 PASS: #pragma omp master taskloop simd firstprivate(x, y)
@@ -88,52 +88,72 @@ PASS: #pragma omp master taskloop simd nontemporal(a)
 #pragma omp master taskloop simd order(concurrent)
 PASS: #pragma omp master taskloop simd order (concurrent)
 
-// invalid test without paired validation.
-EXPECT: invalid
 
+EXPECT: invalid
 #pragma omp master taskloop simd if (a) if (task : b)
 
+EXPECT: invalid
 #pragma omp master taskloop simd shared 
 
+EXPECT: invalid
 #pragma omp master taskloop simd private (a, b) private
  
+EXPECT: invalid
 #pragma omp master taskloop simd firstprivate 
 
+EXPECT: invalid
 #pragma omp master taskloop simd lastprivate(sde:a,b,c)
 
 #pragma omp master taskloop simd reduction (task, + : a, foo(x))
+PASS: #pragma omp master taskloop simd reduction(task, + : a, foo(x))
 
+EXPECT: invalid
 #pragma omp master taskloop simd in_reduction (task, so : a, foo(x))
 
+EXPECT: invalid
 #pragma omp master taskloop simd default
 
+EXPECT: invalid
 #pragma omp master taskloop simd grainsize
 
+EXPECT: invalid
 #pragma omp master taskloop simd num_tasks
 
+EXPECT: invalid
 #pragma omp master taskloop simd collapse
 
+EXPECT: invalid
 #pragma omp master taskloop simd priority
 
+EXPECT: invalid
 #pragma omp master taskloop simd final
 
+EXPECT: invalid
 #pragma omp master taskloop simd untied (23)
 
+EXPECT: invalid
 #pragma omp master taskloop simd mergeable (23)
 
+EXPECT: invalid
 #pragma omp master taskloop simd nogroup (23)
 
+EXPECT: invalid
 #pragma omp master taskloop simd safelen
 
+EXPECT: invalid
 #pragma omp master taskloop simd simdlen
 
+EXPECT: invalid
 #pragma omp master taskloop simd linear
 
+EXPECT: invalid
 #pragma omp master taskloop simd aligned
 
+EXPECT: invalid
 #pragma omp master taskloop simd collapse
 
+EXPECT: invalid
 #pragma omp master taskloop simd nontemporal
 
+EXPECT: invalid
 #pragma omp master taskloop simd order
-

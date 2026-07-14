@@ -12,40 +12,37 @@
 #include <memory>
 #include <regex>
 
-void output(std::vector<OpenMPDirective *> *);
-void savePragmaList(std::vector<OpenMPDirective *> *, const char *);
+using DirectiveList = std::vector<std::unique_ptr<OpenMPDirective>>;
+
+void output(const DirectiveList &);
+void savePragmaList(const DirectiveList &, const char *);
 int openFile(std::ifstream &, const char *);
 extern std::unique_ptr<std::vector<std::string>> preProcessCManaged(
     std::ifstream &);
 
-void output(std::vector<OpenMPDirective *> *omp_ast_list) {
-
-  if (omp_ast_list != NULL) {
-    for (unsigned int i = 0; i < omp_ast_list->size(); i++) {
-      if (omp_ast_list->at(i) != NULL) {
-        std::cout << omp_ast_list->at(i)->generatePragmaString() << std::endl;
-      } else {
-        std::cout << "NULL" << std::endl;
-      };
-    };
-  };
+void output(const DirectiveList &omp_ast_list) {
+  for (const auto &directive : omp_ast_list) {
+    if (directive != nullptr) {
+      std::cout << directive->generatePragmaString() << std::endl;
+    } else {
+      std::cout << "NULL" << std::endl;
+    }
+  }
 }
 
-void savePragmaList(std::vector<OpenMPDirective *> *omp_ast_list,
+void savePragmaList(const DirectiveList &omp_ast_list,
                     const char *filename) {
 
   std::string output_filename = std::string(filename) + ".pragmas";
   std::ofstream output_file(output_filename.c_str(), std::ofstream::trunc);
 
-  if (omp_ast_list != NULL) {
-    for (unsigned int i = 0; i < omp_ast_list->size(); i++) {
-      if (omp_ast_list->at(i) != NULL) {
-        output_file << omp_ast_list->at(i)->generatePragmaString() << std::endl;
-      } else {
-        output_file << "NULL" << std::endl;
-      };
-    };
-  };
+  for (const auto &directive : omp_ast_list) {
+    if (directive != nullptr) {
+      output_file << directive->generatePragmaString() << std::endl;
+    } else {
+      output_file << "NULL" << std::endl;
+    }
+  }
 
   output_file.close();
 }
@@ -67,8 +64,7 @@ int main(int argc, const char *argv[]) {
   bool normalize_clauses = true; // Default: normalization enabled
   int result;
   unsigned int i;
-  auto omp_ast_list = std::make_unique<std::vector<OpenMPDirective *>>();
-  OpenMPDirective *omp_ast = NULL;
+  DirectiveList omp_ast_list;
   auto omp_directive_list = std::make_unique<std::vector<std::string>>();
 
   // Parse command line arguments
@@ -96,9 +92,6 @@ int main(int argc, const char *argv[]) {
   std::unique_ptr<std::vector<std::string>> omp_pragmas =
       preProcessCManaged(input_file);
 
-  // Set normalization flag globally before parsing
-  setNormalizeClauses(normalize_clauses);
-
   // Detect language from file extension
   std::string filename_str(filename);
   OpenMPBaseLang default_lang = Lang_C;
@@ -122,33 +115,25 @@ int main(int argc, const char *argv[]) {
 
   // parse the preprocessed inputs
   for (i = 0; i < omp_pragmas->size(); i++) {
-    // Detect if this is a Fortran directive and set language accordingly
+    OpenMPParseOptions options;
+    options.normalize_clauses = normalize_clauses;
     if (std::regex_search(omp_pragmas->at(i), fortran_regex)) {
-      setLang(Lang_Fortran);
+      options.base_lang = Lang_Fortran;
     } else {
-      setLang(default_lang);
+      options.base_lang = default_lang;
     }
 
-    omp_ast = parseOpenMP(omp_pragmas->at(i).c_str(), nullptr, nullptr);
-    omp_ast_list->push_back(omp_ast);
-    if (omp_ast != NULL) {
-      omp_directive_list->push_back(omp_ast->toString());
-    } else {
-      omp_directive_list->push_back("");
-    };
-  };
+    auto omp_ast = parseOpenMP(omp_pragmas->at(i).c_str(), options);
+    omp_directive_list->push_back(omp_ast->toString());
+    omp_ast_list.push_back(std::move(omp_ast));
+  }
 
   std::cout << "=================== SUMMARY ===================\n";
   std::cout << "TOTAL OPENMP PRAGMAS: " << omp_pragmas->size() << "\n";
 
-  output(omp_ast_list.get());
+  output(omp_ast_list);
 
-  savePragmaList(omp_ast_list.get(), filename);
-
-  // Clean up allocated directives
-  for (OpenMPDirective *directive : *omp_ast_list) {
-    delete directive;
-  }
+  savePragmaList(omp_ast_list, filename);
 
   return 0;
 }

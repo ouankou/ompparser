@@ -13,8 +13,8 @@
 //One is starting with "omp", which is the input.
 //The other one is starting with "PASS: ", which is the result for validation.
 
-#pragma omp distribute parallel for private (a, b) private (a, c)
-PASS: #pragma omp distribute parallel for private(a, b, c)
+#pragma omp distribute parallel for private (a, b) private (d, c)
+PASS: #pragma omp distribute parallel for private(a, b, d, c)
   
 #pragma omp distribute parallel for num_threads (3*5+4/(7+10))
 PASS: #pragma omp distribute parallel for num_threads(3*5+4/(7+10))
@@ -76,32 +76,38 @@ PASS: #pragma omp distribute parallel for dist_schedule (static, 2)
 #pragma omp distribute parallel for dist_schedule(static)
 PASS: #pragma omp distribute parallel for dist_schedule (static)
 
-// invalid test without paired validation.
-EXPECT: invalid
 
 #pragma omp distribute parallel for private (a[foo(x, goo(x, y)):100], b[1:30], c) num_threads (3*5+4/(7+10)) allocate (omp_user_defined_mem_alloc : m, n[1:5]) allocate (no, allo, cator)
+PASS: #pragma omp distribute parallel for private(a[foo(x,goo(x,y)) : 100], b[1 : 30], c) num_threads(3*5+4/(7+10)) allocate (omp_user_defined_mem_alloc: m, n[1 : 5]) allocate (no, allo, cator)
 
+EXPECT: invalid
 #pragma omp distribute parallel for private (a, b, c) private (a, b, e) firstprivate (foo(x), y), shared (a, b, c[1:10])
 
 #pragma omp distribute parallel for private (a[foo(x, goo(x, y)):100], b[1:30], c) firstprivate (foo(x), y), shared (a, b, c[1:10]) num_threads (4)
+PASS: #pragma omp distribute parallel for private(a[foo(x,goo(x,y)) : 100], b[1 : 30], c) firstprivate(foo(x), y), shared(a, b, c[1 : 10]) num_threads(4)
 
 #pragma omp distribute parallel for reduction (tasktest : x11, y, z) allocate (user_defined_test : m, n[1:5]) allocate (omp_high_bw_mem_alloc : m, n[1:5]) reduction (inscan, max : a, foo(x))
+PASS: #pragma omp distribute parallel for reduction(tasktest : x11, y, z) allocate (user_defined_test: m, n[1 : 5]) allocate (omp_high_bw_mem_alloc: m, n[1 : 5]) reduction(inscan, max : a, foo(x))
 
+EXPECT: invalid
 #pragma omp distribute parallel for lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 #pragma omp distribute parallel for collapse
 
 #pragma omp distribute parallel for nowait(dsfasf)
+PASS: #pragma omp distribute parallel for nowait(dsfasf)
 
+EXPECT: invalid
 #pragma omp distribute parallel for order
 
+EXPECT: invalid
 #pragma omp distribute parallel for schedule(use,user:runtime,2)
 
+EXPECT: invalid
 #pragma omp distribute parallel for schedule(simd,simd:runtime,2)
 
+EXPECT: invalid
 #pragma omp distribute parallel for dist_schedule(user,2)
-
-
-
 
 

@@ -70,36 +70,45 @@ PASS: #pragma omp for simd aligned (*a, &b, c:2)
 #pragma omp for simd nontemporal(a)
 PASS: #pragma omp for simd nontemporal(a)
 
-// invalid test without paired validation.
-EXPECT: invalid
 
+EXPECT: invalid
 #pragma omp for simd lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 #pragma omp for simd collapse
 
 #pragma omp for simd nowait(dsfasf)
+PASS: #pragma omp for simd nowait(dsfasf)
 
+EXPECT: invalid
 #pragma omp for simd order
 
+EXPECT: invalid
 #pragma omp for simd schedule(use,user:runtime,2)
 
+EXPECT: invalid
 #pragma omp for simd schedule(simd,simd:runtime,2)
 
+EXPECT: invalid
 #pragma omp for simd nontemporal
 
+EXPECT: invalid
 #pragma omp for simd if(parallel:,b,c)
 
+EXPECT: invalid
 #pragma omp for simd safelen
 
+EXPECT: invalid
 #pragma omp for simd simdlen
 
+EXPECT: invalid
 #pragma omp for simd linear
 
+EXPECT: invalid
 #pragma omp for simd aligned
 
+EXPECT: invalid
 #pragma omp for simd private(conditional:a,b,c)
-
-
 
 
 

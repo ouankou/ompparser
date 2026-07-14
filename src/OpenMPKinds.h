@@ -88,6 +88,24 @@ enum OpenMPContextSelectorSequenceKind {
   OMPC_SELECTOR_implementation
 };
 
+// A selector is always owned by exactly one context selector set.  Keeping the
+// selector kind distinct from the set kind makes it possible to validate the
+// OpenMP context-selector grammar before any downstream AST is built.
+enum OpenMPContextTraitSelectorKind {
+  OMPC_TRAIT_condition,
+  OMPC_TRAIT_construct,
+  OMPC_TRAIT_kind,
+  OMPC_TRAIT_arch,
+  OMPC_TRAIT_isa,
+  OMPC_TRAIT_device_num,
+  OMPC_TRAIT_uid,
+  OMPC_TRAIT_vendor,
+  OMPC_TRAIT_extension,
+  OMPC_TRAIT_requires,
+  OMPC_TRAIT_atomic_default_mem_order,
+  OMPC_TRAIT_implementation_user
+};
+
 enum OpenMPInitClauseKind {
   OMPC_INIT_KIND_target,
   OMPC_INIT_KIND_targetsync,
@@ -112,6 +130,7 @@ enum OpenMPApplyTransformKind {
   OMPC_APPLY_TRANSFORM_nothing,
   OMPC_APPLY_TRANSFORM_tile_sizes,
   OMPC_APPLY_TRANSFORM_apply,
+  OMPC_APPLY_TRANSFORM_user,
   OMPC_APPLY_TRANSFORM_unknown
 };
 

@@ -37,25 +37,28 @@ PASS: !$omp end single nowait
 !$omp end single copyprivate(to,b,c) 
 PASS: !$omp end single copyprivate(to, b, c)
 
-!$omp end single copyprivate(single,b,c) nowait
-PASS: !$omp end single copyprivate(single, b, c) nowait
-
-// invalid test without paired validation.
 EXPECT: invalid
+!$omp end single copyprivate(single,b,c) nowait
 
+EXPECT: invalid
 !$omp single lastprivate(userde:a,b,c)
 
+EXPECT: invalid
 !$omp single nowait(dsfasf)
 
+EXPECT: invalid
 !$omp single copyprivate(conditional:a,b,c)
 
+EXPECT: invalid
 !$omp single nowait
 
+EXPECT: invalid
 !$omp single nowait
 
+EXPECT: invalid
 !$omp single copyprivate(a,b,c)
 
+EXPECT: invalid
 !$omp end single allocate(a,b,c)
-
 
 

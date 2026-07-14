@@ -9,6 +9,7 @@
 #include "OpenMPIR.h"
 #include <cctype>
 #include <emscripten/bind.h>
+#include <iostream>
 #include <regex>
 #include <sstream>
 #include <string>
@@ -34,7 +35,7 @@ bool IsFortranDirective(const std::string &line) {
 }
 
 OpenMPBaseLang ResolveLang(int lang_mode, int lang_hint) {
-  auto to_base_lang = [](int value, OpenMPBaseLang fallback) {
+  auto to_base_lang = [](int value, const char *option_name) {
     switch (value) {
     case LangMode_C:
       return Lang_C;
@@ -43,15 +44,17 @@ OpenMPBaseLang ResolveLang(int lang_mode, int lang_hint) {
     case LangMode_Fortran:
       return Lang_Fortran;
     default:
-      return fallback;
+      std::cerr << "OMPPARSER_INVARIANT[wasm-language]: invalid "
+                << option_name << " value " << value << "\n";
+      std::abort();
     }
   };
 
   if (lang_mode == LangMode_Auto) {
-    return to_base_lang(lang_hint, Lang_C);
+    return to_base_lang(lang_hint, "language hint");
   }
 
-  return to_base_lang(lang_mode, Lang_C);
+  return to_base_lang(lang_mode, "language mode");
 }
 
 void StripTrailingCarriageReturn(std::string &line) {
@@ -257,28 +260,24 @@ std::string ParseAndUnparse(const std::string &input, int lang_mode,
   const bool auto_lang = (lang_mode == LangMode_Auto);
   OpenMPBaseLang default_lang = ResolveLang(lang_mode, lang_hint);
 
-  setNormalizeClauses(true);
-
   bool first = true;
   for (const auto &pragma : pragmas) {
     OpenMPBaseLang lang = default_lang;
     if (auto_lang && IsFortranDirective(pragma))
       lang = Lang_Fortran;
 
-    setLang(lang);
     std::string parse_input = pragma;
     if (lang == Lang_Fortran)
       parse_input = TrimLeadingWhitespace(pragma);
-    OpenMPDirective *openmp_ast =
-        parseOpenMP(parse_input.c_str(), nullptr, nullptr);
-    if (!openmp_ast)
-      continue;
-
+    OpenMPParseOptions options;
+    options.base_lang = lang;
+    auto openmp_ast = parseOpenMP(parse_input.c_str(), options);
     std::string line = openmp_ast->generatePragmaString();
-    delete openmp_ast;
-
-    if (line.empty())
-      continue;
+    if (line.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[wasm-unparse]: directive produced "
+                   "empty text\n";
+      std::abort();
+    }
 
     if (!first)
       output << "\n";

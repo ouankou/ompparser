@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdio.h>
 #include <string.h>
 #include <string>
@@ -30,6 +31,7 @@ enum OpenMPFortranSentinelKind { OMPFS_omp, OMPFS_ompx };
 enum OpenMPExprParseMode {
   OMP_EXPR_PARSE_none,
   OMP_EXPR_PARSE_expression,
+  OMP_EXPR_PARSE_constant_integer,
   OMP_EXPR_PARSE_variable_list,
   OMP_EXPR_PARSE_array_section,
   OMP_EXPR_PARSE_verbatim
@@ -41,9 +43,13 @@ typedef void *(*OpenMPExprParseCallback)(OpenMPDirectiveKind directive_kind,
                                          const char *expression,
                                          void *user_data);
 
-void openmpSetExprParseCallback(OpenMPExprParseCallback callback,
-                                void *user_data);
-void openmpSetExprParseMode(OpenMPExprParseMode mode);
+struct OpenMPParseOptions {
+  OpenMPBaseLang base_lang = Lang_unknown;
+  bool normalize_clauses = true;
+  OpenMPExprParseCallback expression_callback = nullptr;
+  void *expression_callback_user_data = nullptr;
+};
+
 const void *openmpParseExpressionNode(OpenMPDirectiveKind directive_kind,
                                       OpenMPClauseKind clause_kind,
                                       OpenMPExprParseMode parse_mode,
@@ -51,9 +57,6 @@ const void *openmpParseExpressionNode(OpenMPDirectiveKind directive_kind,
 
 int openmpGetCurrentTokenLine();
 int openmpGetCurrentTokenColumn();
-
-// Global flag for clause normalization control
-extern bool normalize_clauses_global;
 
 class SourceLocation {
   int line;
@@ -188,14 +191,16 @@ public:
   }
 
 protected:
-  void addAuxiliaryLangExpr(
+  const void *addAuxiliaryLangExpr(
       const std::string &expression,
       OpenMPExprParseMode parse_mode = OMP_EXPR_PARSE_expression) {
     if (expression.empty()) {
-      return;
+      return nullptr;
     }
-    auxiliaryExpressionNodes.push_back(openmpParseExpressionNode(
-        directive_kind, kind, parse_mode, expression.c_str()));
+    const void *node = openmpParseExpressionNode(
+        directive_kind, kind, parse_mode, expression.c_str());
+    auxiliaryExpressionNodes.push_back(node);
+    return node;
   }
 
 public:
@@ -300,9 +305,7 @@ protected:
 public:
   OpenMPDirective(OpenMPDirectiveKind k, OpenMPBaseLang _lang = Lang_unknown,
                   int _line = 0, int _col = 0)
-      : SourceLocation(_line, _col), kind(k), lang(_lang) {
-    normalize_clauses = normalize_clauses_global;
-  };
+      : SourceLocation(_line, _col), kind(k), lang(_lang) {};
 
   virtual ~OpenMPDirective() = default;
 
@@ -311,15 +314,27 @@ public:
   std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *getAllClauses() {
     return &clauses;
   };
+  const std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *
+  getAllClauses() const {
+    return &clauses;
+  };
 
-  std::vector<OpenMPClause *> *getClauses(OpenMPClauseKind kind) {
-    // Lazily initialize clause vector if it doesn't exist
-    if (clauses.count(kind) == 0) {
+  std::vector<OpenMPClause *> *getOrCreateClauses(OpenMPClauseKind kind) {
+    auto clause_it = clauses.find(kind);
+    if (clause_it == clauses.end()) {
       auto vec = std::make_unique<std::vector<OpenMPClause *>>();
       clauses[kind] = vec.get();
       clause_vector_storage.push_back(std::move(vec));
     }
-    return clauses[kind];
+    return clauses.at(kind);
+  };
+  std::vector<OpenMPClause *> *findClauses(OpenMPClauseKind kind) {
+    auto clause_it = clauses.find(kind);
+    return clause_it == clauses.end() ? nullptr : clause_it->second;
+  };
+  const std::vector<OpenMPClause *> *findClauses(OpenMPClauseKind kind) const {
+    auto clause_it = clauses.find(kind);
+    return clause_it == clauses.end() ? nullptr : clause_it->second;
   };
   std::vector<OpenMPClause *> *getClausesInOriginalOrder() {
     return clauses_in_original_order.get();
@@ -379,21 +394,46 @@ protected:
 
 public:
   OpenMPAtomicDirective() : OpenMPDirective(OMPD_atomic) {};
-  std::vector<OpenMPClause *> *getClausesAtomicAfter(OpenMPClauseKind kind) {
-    if (clauses_atomic_after.count(kind) == 0) {
+  std::vector<OpenMPClause *> *
+  getOrCreateClausesAtomicAfter(OpenMPClauseKind kind) {
+    auto clause_it = clauses_atomic_after.find(kind);
+    if (clause_it == clauses_atomic_after.end()) {
       auto vec = std::make_unique<std::vector<OpenMPClause *>>();
       clauses_atomic_after[kind] = vec.get();
       atomic_clause_vector_storage.push_back(std::move(vec));
     }
-    return clauses_atomic_after[kind];
+    return clauses_atomic_after.at(kind);
   };
-  std::vector<OpenMPClause *> *getAtomicClauses(OpenMPClauseKind kind) {
-    if (clauses_atomic_clauses.count(kind) == 0) {
+  std::vector<OpenMPClause *> *findClausesAtomicAfter(OpenMPClauseKind kind) {
+    auto clause_it = clauses_atomic_after.find(kind);
+    return clause_it == clauses_atomic_after.end() ? nullptr
+                                                   : clause_it->second;
+  };
+  const std::vector<OpenMPClause *> *
+  findClausesAtomicAfter(OpenMPClauseKind kind) const {
+    auto clause_it = clauses_atomic_after.find(kind);
+    return clause_it == clauses_atomic_after.end() ? nullptr
+                                                   : clause_it->second;
+  };
+  std::vector<OpenMPClause *> *getOrCreateAtomicClauses(OpenMPClauseKind kind) {
+    auto clause_it = clauses_atomic_clauses.find(kind);
+    if (clause_it == clauses_atomic_clauses.end()) {
       auto vec = std::make_unique<std::vector<OpenMPClause *>>();
       clauses_atomic_clauses[kind] = vec.get();
       atomic_clause_vector_storage.push_back(std::move(vec));
     }
-    return clauses_atomic_clauses[kind];
+    return clauses_atomic_clauses.at(kind);
+  };
+  std::vector<OpenMPClause *> *findAtomicClauses(OpenMPClauseKind kind) {
+    auto clause_it = clauses_atomic_clauses.find(kind);
+    return clause_it == clauses_atomic_clauses.end() ? nullptr
+                                                     : clause_it->second;
+  };
+  const std::vector<OpenMPClause *> *
+  findAtomicClauses(OpenMPClauseKind kind) const {
+    auto clause_it = clauses_atomic_clauses.find(kind);
+    return clause_it == clauses_atomic_clauses.end() ? nullptr
+                                                     : clause_it->second;
   };
   std::map<OpenMPClauseKind, std::vector<OpenMPClause *> *> *
   getAllClausesAtomicAfter() {
@@ -449,18 +489,57 @@ class OpenMPEndDirective : public OpenMPDirective {
 protected:
   OpenMPDirective *paired_directive = nullptr;
   std::unique_ptr<OpenMPDirective> paired_directive_storage;
+  bool has_matched_begin_observer = false;
   bool use_compact_enddo = false;
 
 public:
   OpenMPEndDirective() : OpenMPDirective(OMPD_end) {};
   void setPairedDirective(std::unique_ptr<OpenMPDirective> _paired_directive) {
+    if (_paired_directive == nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[paired-directive]: paired directive is "
+                   "null\n";
+      std::abort();
+    }
+    if (_paired_directive.get() == this) {
+      std::cerr << "OMPPARSER_INVARIANT[paired-directive]: end directive "
+                   "cannot own itself\n";
+      std::abort();
+    }
+    if (paired_directive != nullptr || paired_directive_storage != nullptr ||
+        has_matched_begin_observer) {
+      std::cerr << "OMPPARSER_INVARIANT[paired-directive]: pairing is already "
+                   "assigned\n";
+      std::abort();
+    }
     paired_directive_storage = std::move(_paired_directive);
     paired_directive = paired_directive_storage.get();
   };
-  void setPairedDirective(OpenMPDirective *_paired_directive) {
+  void setMatchedBeginDirective(OpenMPDirective &_matched_begin) {
+    if (&_matched_begin == this) {
+      std::cerr << "OMPPARSER_INVARIANT[matched-begin]: end directive cannot "
+                   "observe itself\n";
+      std::abort();
+    }
+    if (has_matched_begin_observer) {
+      std::cerr << "OMPPARSER_INVARIANT[matched-begin]: matched begin is "
+                   "already assigned\n";
+      std::abort();
+    }
+    if (paired_directive_storage == nullptr ||
+        paired_directive != paired_directive_storage.get()) {
+      std::cerr << "OMPPARSER_INVARIANT[matched-begin]: end directive has no "
+                   "parser-owned payload to replace\n";
+      std::abort();
+    }
+    if (&_matched_begin == paired_directive_storage.get()) {
+      std::cerr << "OMPPARSER_INVARIANT[matched-begin]: matched begin cannot "
+                   "be the parser-owned payload being destroyed\n";
+      std::abort();
+    }
     paired_directive_storage.reset();
-    paired_directive = _paired_directive;
-  };
+    paired_directive = &_matched_begin;
+    has_matched_begin_observer = true;
+  }
   OpenMPDirective *getPairedDirective() { return paired_directive; };
   void setUseCompactEndDo(bool compact) { use_compact_enddo = compact; }
   bool getUseCompactEndDo() const { return use_compact_enddo; }
@@ -671,6 +750,7 @@ protected:
   OpenMPDeclareMapperDirectiveIdentifier identifier =
       OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified; // modifier
   std::string user_defined_identifier;
+  const void *user_defined_identifier_node = nullptr;
   std::string type_var;
   std::string type;
   std::string var;
@@ -688,6 +768,9 @@ public:
   OpenMPDeclareMapperDirectiveIdentifier getIdentifier() { return identifier; };
   void setUserDefinedIdentifier(std::string _user_defined_identifier);
   std::string getUserDefinedIdentifier() { return user_defined_identifier; }
+  const void *getUserDefinedIdentifierNode() const {
+    return user_defined_identifier_node;
+  }
   std::string getDeclareMapperType() { return type; }
   std::string getDeclareMapperVar() { return var; }
   void setDeclareMapperType(const char *_declare_mapper_type);
@@ -971,10 +1054,13 @@ public:
 // allocate clause
 class OpenMPAllocateClause : public OpenMPClause {
 protected:
+  enum class ModifierKind { allocator, align };
   OpenMPAllocateClauseAllocator allocator; // Allocate allocator
   std::string user_defined_allocator; /* user defined value if it is used */
   const void *user_defined_allocator_node = nullptr;
-  std::vector<std::string> extra_allocator_parameters;
+  std::string alignment;
+  const void *alignment_node = nullptr;
+  std::vector<ModifierKind> modifier_order;
 
 public:
   OpenMPAllocateClause(OpenMPAllocateClauseAllocator _allocator)
@@ -983,42 +1069,63 @@ public:
 
   OpenMPAllocateClauseAllocator getAllocator() { return allocator; };
 
-  void setUserDefinedAllocator(char *_allocator) {
+  void setUserDefinedAllocator(const char *_allocator) {
     if (_allocator == nullptr) {
-      return;
+      std::cerr << "OMPPARSER_INVARIANT[allocate-allocator]: allocator is "
+                   "null\n";
+      std::abort();
     }
     std::string value(_allocator);
-    if (user_defined_allocator.empty()) {
-      user_defined_allocator = value;
-      user_defined_allocator_node = openmpParseExpressionNode(
-          directive_kind, kind, OMP_EXPR_PARSE_expression,
-          user_defined_allocator.c_str());
-    } else {
-      if (value != user_defined_allocator &&
-          std::find(extra_allocator_parameters.begin(),
-                    extra_allocator_parameters.end(),
-                    value) == extra_allocator_parameters.end()) {
-        extra_allocator_parameters.push_back(value);
-      }
-      if (value == user_defined_allocator) {
-        user_defined_allocator_node = openmpParseExpressionNode(
-            directive_kind, kind, OMP_EXPR_PARSE_expression,
-            user_defined_allocator.c_str());
-      }
+    if (value.empty() || !user_defined_allocator.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[allocate-allocator]: allocator is "
+                   "empty or was assigned more than once\n";
+      std::abort();
     }
+    user_defined_allocator = value;
+    user_defined_allocator_node = openmpParseExpressionNode(
+        directive_kind, kind, OMP_EXPR_PARSE_expression,
+        user_defined_allocator.c_str());
   }
 
   std::string getUserDefinedAllocator() { return user_defined_allocator; };
   const void *getUserDefinedAllocatorNode() const {
     return user_defined_allocator_node;
   }
-  const std::vector<std::string> &getExtraAllocatorParameters() const {
-    return extra_allocator_parameters;
+  void setAllocatorModifier(const char *_allocator) {
+    if (allocator != OMPC_ALLOCATE_ALLOCATOR_unspecified) {
+      std::cerr << "OMPPARSER_SEMANTIC[allocate-allocator]: allocate clause "
+                   "specifies more than one allocator\n";
+      std::abort();
+    }
+    allocator = OMPC_ALLOCATE_ALLOCATOR_user;
+    setUserDefinedAllocator(_allocator);
+    modifier_order.push_back(ModifierKind::allocator);
   }
-  void addExtraAllocatorParameter(const std::string &param) {
-    extra_allocator_parameters.push_back(param);
+  void setAlignModifier(const char *_alignment) {
+    if (_alignment == nullptr || *_alignment == '\0' || !alignment.empty()) {
+      std::cerr << "OMPPARSER_SEMANTIC[allocate-align]: alignment is null, "
+                   "empty, or specified more than once\n";
+      std::abort();
+    }
+    if (allocator != OMPC_ALLOCATE_ALLOCATOR_unspecified &&
+        std::find(modifier_order.begin(), modifier_order.end(),
+                  ModifierKind::allocator) == modifier_order.end()) {
+      std::cerr << "OMPPARSER_SEMANTIC[allocate-modifiers]: legacy allocator "
+                   "syntax cannot be combined with OpenMP 6.0 modifiers\n";
+      std::abort();
+    }
+    alignment = _alignment;
+    alignment_node = openmpParseExpressionNode(
+        directive_kind, kind, OMP_EXPR_PARSE_expression, alignment.c_str());
+    modifier_order.push_back(ModifierKind::align);
   }
-
+  const std::string &getAlignment() const { return alignment; }
+  const void *getAlignmentNode() const { return alignment_node; }
+  bool usesAllocatorModifierSyntax() const {
+    return std::find(modifier_order.begin(), modifier_order.end(),
+                     ModifierKind::allocator) != modifier_order.end();
+  }
+  bool hasAlignModifier() const { return !alignment.empty(); }
   static OpenMPClause *addAllocateClause(OpenMPDirective *,
                                          OpenMPAllocateClauseAllocator, char *);
   std::string toString();
@@ -1037,7 +1144,13 @@ public:
 
   OpenMPAllocatorClauseAllocator getAllocator() { return allocator; };
 
-  void setUserDefinedAllocator(char *_allocator) {
+  void setUserDefinedAllocator(const char *_allocator) {
+    if (_allocator == nullptr || *_allocator == '\0' ||
+        !user_defined_allocator.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[allocator-clause]: allocator is null, "
+                   "empty, or was assigned more than once\n";
+      std::abort();
+    }
     user_defined_allocator = std::string(_allocator);
     addAuxiliaryLangExpr(user_defined_allocator);
   }
@@ -1248,145 +1361,81 @@ public:
   std::string toString();
 };
 
+// OpenMP 6.0 permits nowait with either no argument or one logical expression.
+// A dedicated clause prevents programmatic IR producers from constructing a
+// state that the grammar itself can never produce.
+class OpenMPNowaitClause final : public OpenMPClause {
+public:
+  OpenMPNowaitClause() : OpenMPClause(OMPC_nowait) {}
+  void
+  addLangExpr(const char *expression,
+              OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space, int line = 0,
+              int col = 0,
+              OpenMPExprParseMode parse_mode = OMP_EXPR_PARSE_none) override;
+};
+
 // OpenMP clauses with variant directives, such as WHEN and MATCH clauses.
 class OpenMPVariantClause : public OpenMPClause {
-protected:
-  struct ScoredExpression {
-    std::string score;
-    std::string expression;
-  };
-  struct ImplementationExpression {
-    OpenMPImplementationExprKind kind = OMPC_IMPL_EXPR_unknown;
-    std::string score;
-    std::string expression;
+public:
+  struct TraitProperty {
+    std::string spelling;
+    const void *node = nullptr;
+    OpenMPExprParseMode parse_mode = OMP_EXPR_PARSE_none;
+    std::optional<OpenMPClauseContextKind> context_kind;
+    std::optional<OpenMPClauseContextVendor> context_vendor;
+    std::optional<OpenMPAtomicDefaultMemOrderClauseKind>
+        atomic_default_mem_order;
   };
 
-  ScoredExpression user_condition_expression;
-  std::vector<std::pair<std::string, OpenMPDirective *>> construct_directives;
-  std::vector<std::unique_ptr<OpenMPDirective>> construct_directive_storage;
-  ScoredExpression arch_expression;
-  ScoredExpression isa_expression;
-  std::pair<std::string, OpenMPClauseContextKind> context_kind_name =
-      std::make_pair("", OMPC_CONTEXT_KIND_unknown);
-  ScoredExpression device_num_expression;
-  ScoredExpression extension_expression;
-  std::pair<std::string, OpenMPClauseContextVendor> context_vendor_name =
-      std::make_pair("", OMPC_CONTEXT_VENDOR_unspecified);
-  ImplementationExpression implementation_user_defined_expression;
-  bool is_target_device_selector = false;
-  // Preserve selector order as it appeared in the source
-  std::vector<OpenMPContextSelectorSequenceKind> selector_order;
+  struct TraitSelector {
+    OpenMPContextTraitSelectorKind kind = OMPC_TRAIT_condition;
+    std::string score;
+    const void *score_node = nullptr;
+    std::string implementation_defined_name;
+    std::vector<TraitProperty> properties;
+    std::unique_ptr<OpenMPDirective> construct_directive;
+  };
+
+  struct TraitSetSelector {
+    OpenMPContextSelectorSequenceKind kind = OMPC_SELECTOR_user;
+    std::vector<TraitSelector> selectors;
+  };
+
+protected:
+  std::vector<TraitSetSelector> trait_sets;
+  std::optional<std::size_t> active_trait_set;
+  std::optional<std::size_t> active_trait_selector;
+
+  TraitSetSelector &
+  requireActiveTraitSet(OpenMPContextSelectorSequenceKind expected,
+                        const char *invariant_name);
+  TraitSelector &requireActiveTraitSelector(const char *invariant_name);
+  void requireUniqueSelector(OpenMPContextTraitSelectorKind kind,
+                             const std::string &identity,
+                             const char *invariant_name) const;
+  void requireSelectorPropertyCardinality(const TraitSelector &selector) const;
 
 public:
   OpenMPVariantClause(OpenMPClauseKind _kind) : OpenMPClause(_kind) {};
 
-  void setUserCondition(const char *_score,
-                        const char *_user_condition_expression) {
-    user_condition_expression.score = std::string(_score);
-    user_condition_expression.expression =
-        std::string(_user_condition_expression);
-    addAuxiliaryLangExpr(user_condition_expression.score);
-    addAuxiliaryLangExpr(user_condition_expression.expression);
-  };
-  ScoredExpression *getUserCondition() { return &user_condition_expression; };
-  void addConstructDirective(const char *_score,
-                             OpenMPDirective *_construct_directive) {
-    if (_construct_directive == nullptr) {
-      return;
-    }
-    construct_directives.push_back(
-        std::make_pair(std::string(_score), _construct_directive));
-  };
+  void beginTraitSet(OpenMPContextSelectorSequenceKind kind);
+  void endTraitSet();
+  const std::vector<TraitSetSelector> &getTraitSets() const {
+    return trait_sets;
+  }
+  void beginTraitSelector(OpenMPContextTraitSelectorKind kind,
+                          const char *score,
+                          const char *implementation_defined_name = nullptr);
+  void addExpressionProperty(const char *expression,
+                             OpenMPExprParseMode parse_mode);
+  void addContextKindProperty(OpenMPClauseContextKind kind);
+  void addContextVendorProperty(OpenMPClauseContextVendor vendor);
   void
-  addConstructDirective(const char *_score,
-                        std::unique_ptr<OpenMPDirective> _construct_directive) {
-    if (_construct_directive == nullptr) {
-      return;
-    }
-    auto *construct_directive = _construct_directive.get();
-    construct_directive_storage.push_back(std::move(_construct_directive));
-    construct_directives.push_back(
-        std::make_pair(std::string(_score), construct_directive));
-  };
-  std::vector<std::pair<std::string, OpenMPDirective *>> *
-  getConstructDirective() {
-    return &construct_directives;
-  };
-  void setArchExpression(const char *_score, const char *_arch_expression) {
-    arch_expression.score = std::string(_score);
-    arch_expression.expression = std::string(_arch_expression);
-    addAuxiliaryLangExpr(arch_expression.score);
-    addAuxiliaryLangExpr(arch_expression.expression, OMP_EXPR_PARSE_verbatim);
-  };
-  ScoredExpression *getArchExpression() { return &arch_expression; };
-  void setIsaExpression(const char *_score, const char *_isa_expression) {
-    isa_expression.score = std::string(_score);
-    isa_expression.expression = std::string(_isa_expression);
-    addAuxiliaryLangExpr(isa_expression.score);
-    addAuxiliaryLangExpr(isa_expression.expression, OMP_EXPR_PARSE_verbatim);
-  };
-  ScoredExpression *getIsaExpression() { return &isa_expression; };
-  void setContextKind(const char *_score,
-                      OpenMPClauseContextKind _context_kind_name) {
-    context_kind_name = std::make_pair(std::string(_score), _context_kind_name);
-  };
-  std::pair<std::string, OpenMPClauseContextKind> *getContextKind() {
-    return &context_kind_name;
-  };
-  void setDeviceNumExpression(const char *_score,
-                              const char *_device_num_expression) {
-    device_num_expression.score = std::string(_score);
-    device_num_expression.expression = std::string(_device_num_expression);
-    addAuxiliaryLangExpr(device_num_expression.score);
-    addAuxiliaryLangExpr(device_num_expression.expression);
-  };
-  ScoredExpression *getDeviceNumExpression() { return &device_num_expression; };
-  void setExtensionExpression(const char *_score,
-                              const char *_extension_expression) {
-    extension_expression.score = std::string(_score);
-    extension_expression.expression = std::string(_extension_expression);
-    addAuxiliaryLangExpr(extension_expression.score);
-    addAuxiliaryLangExpr(extension_expression.expression);
-  };
-  ScoredExpression *getExtensionExpression() { return &extension_expression; };
-  void setImplementationKind(const char *_score,
-                             OpenMPClauseContextVendor _context_vendor_name) {
-    context_vendor_name =
-        std::make_pair(std::string(_score), _context_vendor_name);
-  };
-  std::pair<std::string, OpenMPClauseContextVendor> *getImplementationKind() {
-    return &context_vendor_name;
-  };
-  void setImplementationRequiresExpression(const char *_score,
-                                           const char *args) {
-    implementation_user_defined_expression.kind = OMPC_IMPL_EXPR_requires;
-    implementation_user_defined_expression.score = std::string(_score);
-    implementation_user_defined_expression.expression = std::string(args);
-    addAuxiliaryLangExpr(implementation_user_defined_expression.score);
-    addAuxiliaryLangExpr(implementation_user_defined_expression.expression);
-  };
-  void setImplementationUserExpression(const char *_score,
-                                       const char *_implementation_expression) {
-    implementation_user_defined_expression.kind = OMPC_IMPL_EXPR_user;
-    implementation_user_defined_expression.score = std::string(_score);
-    implementation_user_defined_expression.expression =
-        std::string(_implementation_expression);
-    addAuxiliaryLangExpr(implementation_user_defined_expression.score);
-    addAuxiliaryLangExpr(implementation_user_defined_expression.expression);
-  };
-  ImplementationExpression *getImplementationExpression() {
-    return &implementation_user_defined_expression;
-  };
-  void setIsTargetDeviceSelector(bool _is_target_device) {
-    is_target_device_selector = _is_target_device;
-  };
-  bool getIsTargetDeviceSelector() { return is_target_device_selector; };
-  void addSelectorKind(OpenMPContextSelectorSequenceKind kind) {
-    selector_order.push_back(kind);
-  };
-  const std::vector<OpenMPContextSelectorSequenceKind> &getSelectorOrder() {
-    return selector_order;
-  };
+  addAtomicDefaultMemOrderProperty(OpenMPAtomicDefaultMemOrderClauseKind kind);
+  void endTraitSelector();
+  void
+  addConstructDirective(const char *score,
+                        std::unique_ptr<OpenMPDirective> construct_directive);
   std::string toString();
   void generateDOT(std::ofstream &, int, int, std::string);
 };
@@ -1403,12 +1452,13 @@ public:
   OpenMPDirective *getVariantDirective() { return variant_directive; };
   void
   setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
+    if (_variant_directive == nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[when-directive]: variant directive is "
+                   "null\n";
+      std::abort();
+    }
     variant_directive_storage = std::move(_variant_directive);
     variant_directive = variant_directive_storage.get();
-  };
-  void setVariantDirective(OpenMPDirective *_variant_directive) {
-    variant_directive_storage.reset();
-    variant_directive = _variant_directive;
   };
 
   static OpenMPClause *addWhenClause(OpenMPDirective *directive);
@@ -1427,12 +1477,14 @@ public:
   OpenMPDirective *getVariantDirective() { return variant_directive; };
   void
   setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
+    if (_variant_directive == nullptr) {
+      std::cerr
+          << "OMPPARSER_INVARIANT[otherwise-directive]: variant directive "
+             "is null\n";
+      std::abort();
+    }
     variant_directive_storage = std::move(_variant_directive);
     variant_directive = variant_directive_storage.get();
-  };
-  void setVariantDirective(OpenMPDirective *_variant_directive) {
-    variant_directive_storage.reset();
-    variant_directive = _variant_directive;
   };
 
   static OpenMPClause *addOtherwiseClause(OpenMPDirective *directive);
@@ -1499,12 +1551,13 @@ public:
   OpenMPDirective *getVariantDirective() { return variant_directive; };
   void
   setVariantDirective(std::unique_ptr<OpenMPDirective> _variant_directive) {
+    if (_variant_directive == nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[default-variant]: variant directive is "
+                   "null\n";
+      std::abort();
+    }
     variant_directive_storage = std::move(_variant_directive);
     variant_directive = variant_directive_storage.get();
-  };
-  void setVariantDirective(OpenMPDirective *_variant_directive) {
-    variant_directive_storage.reset();
-    variant_directive = _variant_directive;
   };
 
   static OpenMPClause *addDefaultClause(OpenMPDirective *,
@@ -1732,16 +1785,22 @@ public:
       const std::vector<std::vector<const char *>> &definition_class) {
     iterators.clear();
     for (const auto &vec : definition_class) {
-      if (vec.size() < 4) {
-        continue;
+      if (vec.size() != 5 || vec[0] == nullptr || vec[1] == nullptr ||
+          vec[2] == nullptr || vec[3] == nullptr || vec[4] == nullptr) {
+        std::cerr << "OMPPARSER_INVARIANT[depend-iterator]: iterator must own "
+                     "exactly five nonnull fields\n";
+        std::abort();
       }
       Iterator it;
-      it.qualifier = vec[0] ? std::string(vec[0]) : "";
-      it.var = vec[1] ? std::string(vec[1]) : "";
-      it.begin = vec[2] ? std::string(vec[2]) : "";
-      it.end = vec[3] ? std::string(vec[3]) : "";
-      if (vec.size() > 4 && vec[4]) {
-        it.step = std::string(vec[4]);
+      it.qualifier = vec[0];
+      it.var = vec[1];
+      it.begin = vec[2];
+      it.end = vec[3];
+      it.step = vec[4];
+      if (it.var.empty() || it.begin.empty() || it.end.empty()) {
+        std::cerr << "OMPPARSER_INVARIANT[depend-iterator]: variable, begin, "
+                     "or end field is empty\n";
+        std::abort();
       }
       addIterator(it);
     }
@@ -1814,18 +1873,25 @@ public:
       : OpenMPClause(OMPC_affinity), modifier(_modifier) {};
   void addIteratorsDefinitionClass(
       const std::vector<const char *> &iterator_definition) {
-    if (iterator_definition.size() < 4) {
-      return;
+    if (iterator_definition.size() != 5 || iterator_definition[0] == nullptr ||
+        iterator_definition[1] == nullptr ||
+        iterator_definition[2] == nullptr ||
+        iterator_definition[3] == nullptr ||
+        iterator_definition[4] == nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[affinity-iterator]: iterator must own "
+                   "exactly five nonnull fields\n";
+      std::abort();
     }
     Iterator it;
-    it.qualifier =
-        iterator_definition[0] ? std::string(iterator_definition[0]) : "";
-    it.var = iterator_definition[1] ? std::string(iterator_definition[1]) : "";
-    it.begin =
-        iterator_definition[2] ? std::string(iterator_definition[2]) : "";
-    it.end = iterator_definition[3] ? std::string(iterator_definition[3]) : "";
-    if (iterator_definition.size() > 4 && iterator_definition[4]) {
-      it.step = std::string(iterator_definition[4]);
+    it.qualifier = iterator_definition[0];
+    it.var = iterator_definition[1];
+    it.begin = iterator_definition[2];
+    it.end = iterator_definition[3];
+    it.step = iterator_definition[4];
+    if (it.var.empty() || it.begin.empty() || it.end.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[affinity-iterator]: variable, begin, "
+                   "or end field is empty\n";
+      std::abort();
     }
     iterators.push_back(it);
     addAuxiliaryLangExpr(it.qualifier);
@@ -1908,11 +1974,21 @@ public:
   OpenMPToClauseKind getKind() { return to_kind; };
   void setMapperIdentifier(const char *_identifier) {
     if (_identifier == nullptr) {
-      mapper_identifier.clear();
-      mapper_identifier_node = nullptr;
-      return;
+      std::cerr << "OMPPARSER_INVARIANT[to-mapper]: mapper identifier is "
+                   "null\n";
+      std::abort();
+    }
+    if (!mapper_identifier.empty() || mapper_identifier_node != nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[to-mapper]: mapper identifier is "
+                   "assigned more than once\n";
+      std::abort();
     }
     mapper_identifier = std::string(_identifier);
+    if (mapper_identifier.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[to-mapper]: mapper identifier is "
+                   "empty\n";
+      std::abort();
+    }
     mapper_identifier_node =
         openmpParseExpressionNode(directive_kind, kind, OMP_EXPR_PARSE_verbatim,
                                   mapper_identifier.c_str());
@@ -1973,11 +2049,21 @@ public:
 
   void setMapperIdentifier(const char *_identifier) {
     if (_identifier == nullptr) {
-      mapper_identifier.clear();
-      mapper_identifier_node = nullptr;
-      return;
+      std::cerr << "OMPPARSER_INVARIANT[from-mapper]: mapper identifier is "
+                   "null\n";
+      std::abort();
+    }
+    if (!mapper_identifier.empty() || mapper_identifier_node != nullptr) {
+      std::cerr << "OMPPARSER_INVARIANT[from-mapper]: mapper identifier is "
+                   "assigned more than once\n";
+      std::abort();
     }
     mapper_identifier = std::string(_identifier);
+    if (mapper_identifier.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[from-mapper]: mapper identifier is "
+                   "empty\n";
+      std::abort();
+    }
     mapper_identifier_node =
         openmpParseExpressionNode(directive_kind, kind, OMP_EXPR_PARSE_verbatim,
                                   mapper_identifier.c_str());
@@ -2113,6 +2199,8 @@ protected:
   OpenMPMapClauseType type = OMPC_MAP_TYPE_unknown;
   OpenMPMapClauseRefModifier ref_modifier = OMPC_MAP_REF_MODIFIER_unspecified;
   std::string mapper_identifier;
+  const void *mapper_identifier_node = nullptr;
+  bool mapper_identifier_node_captured = false;
   struct Iterator {
     std::string qualifier;
     std::string var;
@@ -2145,6 +2233,26 @@ public:
     ref_modifier = value;
   }
   std::string getMapperIdentifier() { return mapper_identifier; };
+  void captureMapperIdentifierNode() {
+    if (mapper_identifier_node_captured) {
+      std::cerr << "OMPPARSER_INVARIANT[map-mapper]: mapper identifier was "
+                   "captured more than once\n";
+      std::abort();
+    }
+    mapper_identifier_node_captured = true;
+    if (mapper_identifier.empty()) {
+      if (mapper_identifier_node != nullptr) {
+        std::cerr << "OMPPARSER_INVARIANT[map-mapper]: empty mapper "
+                     "identifier owns a callback node\n";
+        std::abort();
+      }
+      return;
+    }
+    mapper_identifier_node =
+        openmpParseExpressionNode(directive_kind, kind, OMP_EXPR_PARSE_verbatim,
+                                  mapper_identifier.c_str());
+  }
+  const void *getMapperIdentifierNode() const { return mapper_identifier_node; }
   void addIterator(const Iterator &it) {
     iterators.push_back(it);
     addAuxiliaryLangExpr(it.qualifier);
@@ -2553,16 +2661,7 @@ public:
   std::string toString();
 };
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-extern OpenMPDirective *parseOpenMP(const char *,
-                                    OpenMPExprParseCallback exprParse,
-                                    void *exprParseUserData);
-extern void setLang(OpenMPBaseLang lang);
-extern void setNormalizeClauses(bool normalize);
-#ifdef __cplusplus
-}
-#endif
+std::unique_ptr<OpenMPDirective> parseOpenMP(const char *input,
+                                             const OpenMPParseOptions &options);
 
 #endif // OMPPARSER_OPENMPAST_H
