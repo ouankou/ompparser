@@ -34,6 +34,11 @@ enum OpenMPExprParseMode {
   OMP_EXPR_PARSE_constant_integer,
   OMP_EXPR_PARSE_variable_list,
   OMP_EXPR_PARSE_array_section,
+  OMP_EXPR_PARSE_openmp_iterator_type,
+  OMP_EXPR_PARSE_openmp_iterator_name,
+  OMP_EXPR_PARSE_openmp_declare_mapper_identifier,
+  OMP_EXPR_PARSE_openmp_declare_mapper_type,
+  OMP_EXPR_PARSE_openmp_declare_mapper_variable,
   OMP_EXPR_PARSE_verbatim
 };
 
@@ -93,6 +98,17 @@ struct OpenMPExpressionItem {
   std::string text;
   OpenMPClauseSeparator separator = OMPC_CLAUSE_SEP_space;
 };
+
+struct OpenMPIteratorDefinition {
+  std::string qualifier;
+  std::string var;
+  std::string begin;
+  std::string end;
+  std::string step;
+};
+
+std::vector<OpenMPIteratorDefinition>
+parseOpenMPIteratorDefinitions(const char *text);
 
 /**
  * The class or baseclass for all the clause classes. For all the clauses that
@@ -201,6 +217,18 @@ protected:
         directive_kind, kind, parse_mode, expression.c_str());
     auxiliaryExpressionNodes.push_back(node);
     return node;
+  }
+
+  void addIteratorAuxiliaryLangExprs(const std::string &qualifier,
+                                     const std::string &name,
+                                     const std::string &begin,
+                                     const std::string &end,
+                                     const std::string &step) {
+    addAuxiliaryLangExpr(qualifier, OMP_EXPR_PARSE_openmp_iterator_type);
+    addAuxiliaryLangExpr(name, OMP_EXPR_PARSE_openmp_iterator_name);
+    addAuxiliaryLangExpr(begin, OMP_EXPR_PARSE_expression);
+    addAuxiliaryLangExpr(end, OMP_EXPR_PARSE_expression);
+    addAuxiliaryLangExpr(step, OMP_EXPR_PARSE_expression);
   }
 
 public:
@@ -749,32 +777,42 @@ class OpenMPDeclareMapperDirective : public OpenMPDirective {
 protected:
   OpenMPDeclareMapperDirectiveIdentifier identifier =
       OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified; // modifier
+  bool identifier_explicit = false;
   std::string user_defined_identifier;
   const void *user_defined_identifier_node = nullptr;
-  std::string type_var;
   std::string type;
+  const void *type_node = nullptr;
   std::string var;
+  const void *var_node = nullptr;
   bool type_var_has_space = false;
 
 public:
   OpenMPDeclareMapperDirective(
       OpenMPDeclareMapperDirectiveIdentifier _identifier)
       : OpenMPDirective(OMPD_declare_mapper) {
-    identifier = _identifier;
-  };
-  void setIdentifier(OpenMPDeclareMapperDirectiveIdentifier _identifier) {
+    if (_identifier != OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified) {
+      std::cerr << "OMPPARSER_INVARIANT[declare-mapper-constructor]: "
+                   "identifier must be supplied by the complete mapper "
+                   "specification\n";
+      std::abort();
+    }
     identifier = _identifier;
   };
   OpenMPDeclareMapperDirectiveIdentifier getIdentifier() { return identifier; };
+  bool hasExplicitIdentifier() const { return identifier_explicit; }
   void setUserDefinedIdentifier(std::string _user_defined_identifier);
   std::string getUserDefinedIdentifier() { return user_defined_identifier; }
   const void *getUserDefinedIdentifierNode() const {
     return user_defined_identifier_node;
   }
-  std::string getDeclareMapperType() { return type; }
-  std::string getDeclareMapperVar() { return var; }
+  const std::string &getDeclareMapperType() const { return type; }
+  const void *getDeclareMapperTypeNode() const { return type_node; }
+  const std::string &getDeclareMapperVar() const { return var; }
+  const void *getDeclareMapperVarNode() const { return var_node; }
   void setDeclareMapperType(const char *_declare_mapper_type);
   void setDeclareMapperVar(const char *_declare_mapper_variable);
+  OpenMPBaseLang setSpecification(const char *specification,
+                                  OpenMPBaseLang language);
   void setTypeVarHasSpace(bool has_space) { type_var_has_space = has_space; }
   bool hasTypeVarSpace() const { return type_var_has_space; }
 };
@@ -1750,14 +1788,7 @@ protected:
   OpenMPDependClauseModifier modifier; // modifier
   OpenMPDependClauseType type;         // type
   std::string dependence_vector;
-  struct Iterator {
-    std::string qualifier;
-    std::string var;
-    std::string begin;
-    std::string end;
-    std::string step;
-  };
-  std::vector<Iterator> iterators;
+  std::vector<OpenMPIteratorDefinition> iterators;
 
 public:
   OpenMPDependClause() : OpenMPClause(OMPC_depend) {}
@@ -1771,40 +1802,15 @@ public:
     dependence_vector = std::string(_dependence_vector);
   };
   std::string getDependenceVector() { return dependence_vector; };
-  void addIterator(const Iterator &it) {
+  void addIterator(const OpenMPIteratorDefinition &it) {
     iterators.push_back(it);
-    addAuxiliaryLangExpr(it.qualifier);
-    addAuxiliaryLangExpr(it.var);
-    addAuxiliaryLangExpr(it.begin);
-    addAuxiliaryLangExpr(it.end);
-    addAuxiliaryLangExpr(it.step);
+    addIteratorAuxiliaryLangExprs(it.qualifier, it.var, it.begin, it.end,
+                                  it.step);
   }
-  const std::vector<Iterator> &getIterators() const { return iterators; }
+  const std::vector<OpenMPIteratorDefinition> &getIterators() const {
+    return iterators;
+  }
   void clearIterators() { iterators.clear(); }
-  void setDependIteratorsDefinitionClass(
-      const std::vector<std::vector<const char *>> &definition_class) {
-    iterators.clear();
-    for (const auto &vec : definition_class) {
-      if (vec.size() != 5 || vec[0] == nullptr || vec[1] == nullptr ||
-          vec[2] == nullptr || vec[3] == nullptr || vec[4] == nullptr) {
-        std::cerr << "OMPPARSER_INVARIANT[depend-iterator]: iterator must own "
-                     "exactly five nonnull fields\n";
-        std::abort();
-      }
-      Iterator it;
-      it.qualifier = vec[0];
-      it.var = vec[1];
-      it.begin = vec[2];
-      it.end = vec[3];
-      it.step = vec[4];
-      if (it.var.empty() || it.begin.empty() || it.end.empty()) {
-        std::cerr << "OMPPARSER_INVARIANT[depend-iterator]: variable, begin, "
-                     "or end field is empty\n";
-        std::abort();
-      }
-      addIterator(it);
-    }
-  };
   static OpenMPClause *addDependClause(OpenMPDirective *,
                                        OpenMPDependClauseModifier,
                                        OpenMPDependClauseType);
@@ -1857,53 +1863,22 @@ class OpenMPAffinityClause : public OpenMPClause {
 
 protected:
   OpenMPAffinityClauseModifier modifier; // modifier
-  struct Iterator {
-    std::string qualifier;
-    std::string var;
-    std::string begin;
-    std::string end;
-    std::string step;
-  };
-  std::vector<Iterator> iterators;
+  std::vector<OpenMPIteratorDefinition> iterators;
 
 public:
   OpenMPAffinityClause() : OpenMPClause(OMPC_affinity) {}
 
   OpenMPAffinityClause(OpenMPAffinityClauseModifier _modifier)
       : OpenMPClause(OMPC_affinity), modifier(_modifier) {};
-  void addIteratorsDefinitionClass(
-      const std::vector<const char *> &iterator_definition) {
-    if (iterator_definition.size() != 5 || iterator_definition[0] == nullptr ||
-        iterator_definition[1] == nullptr ||
-        iterator_definition[2] == nullptr ||
-        iterator_definition[3] == nullptr ||
-        iterator_definition[4] == nullptr) {
-      std::cerr << "OMPPARSER_INVARIANT[affinity-iterator]: iterator must own "
-                   "exactly five nonnull fields\n";
-      std::abort();
-    }
-    Iterator it;
-    it.qualifier = iterator_definition[0];
-    it.var = iterator_definition[1];
-    it.begin = iterator_definition[2];
-    it.end = iterator_definition[3];
-    it.step = iterator_definition[4];
-    if (it.var.empty() || it.begin.empty() || it.end.empty()) {
-      std::cerr << "OMPPARSER_INVARIANT[affinity-iterator]: variable, begin, "
-                   "or end field is empty\n";
-      std::abort();
-    }
+  void addIterator(const OpenMPIteratorDefinition &it) {
     iterators.push_back(it);
-    addAuxiliaryLangExpr(it.qualifier);
-    addAuxiliaryLangExpr(it.var);
-    addAuxiliaryLangExpr(it.begin);
-    addAuxiliaryLangExpr(it.end);
-    addAuxiliaryLangExpr(it.step);
-  };
-  const std::vector<Iterator> &getIterators() const { return iterators; };
-  const std::vector<Iterator> &getIteratorsDefinitionClass() const {
-    return getIterators();
-  };
+    addIteratorAuxiliaryLangExprs(it.qualifier, it.var, it.begin, it.end,
+                                  it.step);
+  }
+  const std::vector<OpenMPIteratorDefinition> &getIterators() const {
+    return iterators;
+  }
+  void clearIterators() { iterators.clear(); }
   OpenMPAffinityClauseModifier getModifier() { return modifier; };
   static OpenMPClause *addAffinityClause(OpenMPDirective *,
                                          OpenMPAffinityClauseModifier);
@@ -1957,14 +1932,7 @@ protected:
   OpenMPToClauseKind to_kind;
   std::string mapper_identifier;
   const void *mapper_identifier_node = nullptr;
-  struct Iterator {
-    std::string qualifier;
-    std::string var;
-    std::string begin;
-    std::string end;
-    std::string step;
-  };
-  std::vector<Iterator> iterators;
+  std::vector<OpenMPIteratorDefinition> iterators;
   std::vector<OpenMPExpressionItem> items;
 
 public:
@@ -1995,23 +1963,27 @@ public:
   };
   std::string getMapperIdentifier() { return mapper_identifier; };
   const void *getMapperIdentifierNode() const { return mapper_identifier_node; }
+  void addIterator(const OpenMPIteratorDefinition &it) {
+    iterators.push_back(it);
+    addIteratorAuxiliaryLangExprs(it.qualifier, it.var, it.begin, it.end,
+                                  it.step);
+  }
   void addIterator(const std::string &qualifier, const std::string &var,
                    const std::string &begin, const std::string &end,
                    const std::string &step = std::string()) {
-    Iterator it;
+    OpenMPIteratorDefinition it;
     it.qualifier = qualifier;
     it.var = var;
     it.begin = begin;
     it.end = end;
     it.step = step;
     iterators.push_back(it);
-    addAuxiliaryLangExpr(it.qualifier);
-    addAuxiliaryLangExpr(it.var);
-    addAuxiliaryLangExpr(it.begin);
-    addAuxiliaryLangExpr(it.end);
-    addAuxiliaryLangExpr(it.step);
+    addIteratorAuxiliaryLangExprs(it.qualifier, it.var, it.begin, it.end,
+                                  it.step);
   }
-  const std::vector<Iterator> &getIterators() const { return iterators; }
+  const std::vector<OpenMPIteratorDefinition> &getIterators() const {
+    return iterators;
+  }
   void clearIterators() { iterators.clear(); }
   void addItem(const std::string &expr,
                OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
@@ -2031,14 +2003,7 @@ protected:
   OpenMPFromClauseKind from_kind;
   std::string mapper_identifier;
   const void *mapper_identifier_node = nullptr;
-  struct Iterator {
-    std::string qualifier;
-    std::string var;
-    std::string begin;
-    std::string end;
-    std::string step;
-  };
-  std::vector<Iterator> iterators;
+  std::vector<OpenMPIteratorDefinition> iterators;
   std::vector<OpenMPExpressionItem> items;
 
 public:
@@ -2070,23 +2035,27 @@ public:
   };
   std::string getMapperIdentifier() { return mapper_identifier; };
   const void *getMapperIdentifierNode() const { return mapper_identifier_node; }
+  void addIterator(const OpenMPIteratorDefinition &it) {
+    iterators.push_back(it);
+    addIteratorAuxiliaryLangExprs(it.qualifier, it.var, it.begin, it.end,
+                                  it.step);
+  }
   void addIterator(const std::string &qualifier, const std::string &var,
                    const std::string &begin, const std::string &end,
                    const std::string &step = std::string()) {
-    Iterator it;
+    OpenMPIteratorDefinition it;
     it.qualifier = qualifier;
     it.var = var;
     it.begin = begin;
     it.end = end;
     it.step = step;
     iterators.push_back(it);
-    addAuxiliaryLangExpr(it.qualifier);
-    addAuxiliaryLangExpr(it.var);
-    addAuxiliaryLangExpr(it.begin);
-    addAuxiliaryLangExpr(it.end);
-    addAuxiliaryLangExpr(it.step);
+    addIteratorAuxiliaryLangExprs(it.qualifier, it.var, it.begin, it.end,
+                                  it.step);
   }
-  const std::vector<Iterator> &getIterators() const { return iterators; }
+  const std::vector<OpenMPIteratorDefinition> &getIterators() const {
+    return iterators;
+  }
   void clearIterators() { iterators.clear(); }
   void addItem(const std::string &expr,
                OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
@@ -2201,14 +2170,7 @@ protected:
   std::string mapper_identifier;
   const void *mapper_identifier_node = nullptr;
   bool mapper_identifier_node_captured = false;
-  struct Iterator {
-    std::string qualifier;
-    std::string var;
-    std::string begin;
-    std::string end;
-    std::string step;
-  };
-  std::vector<Iterator> iterators;
+  std::vector<OpenMPIteratorDefinition> iterators;
   std::vector<OpenMPExpressionItem> items;
   std::vector<std::vector<DistDataPolicy>> dist_data_policies;
 
@@ -2253,31 +2215,27 @@ public:
                                   mapper_identifier.c_str());
   }
   const void *getMapperIdentifierNode() const { return mapper_identifier_node; }
-  void addIterator(const Iterator &it) {
+  void addIterator(const OpenMPIteratorDefinition &it) {
     iterators.push_back(it);
-    addAuxiliaryLangExpr(it.qualifier);
-    addAuxiliaryLangExpr(it.var);
-    addAuxiliaryLangExpr(it.begin);
-    addAuxiliaryLangExpr(it.end);
-    addAuxiliaryLangExpr(it.step);
+    addIteratorAuxiliaryLangExprs(it.qualifier, it.var, it.begin, it.end,
+                                  it.step);
   }
   void addIterator(const std::string &qualifier, const std::string &var,
                    const std::string &begin, const std::string &end,
                    const std::string &step = std::string()) {
-    Iterator it;
+    OpenMPIteratorDefinition it;
     it.qualifier = qualifier;
     it.var = var;
     it.begin = begin;
     it.end = end;
     it.step = step;
     iterators.push_back(it);
-    addAuxiliaryLangExpr(it.qualifier);
-    addAuxiliaryLangExpr(it.var);
-    addAuxiliaryLangExpr(it.begin);
-    addAuxiliaryLangExpr(it.end);
-    addAuxiliaryLangExpr(it.step);
+    addIteratorAuxiliaryLangExprs(it.qualifier, it.var, it.begin, it.end,
+                                  it.step);
   }
-  const std::vector<Iterator> &getIterators() const { return iterators; }
+  const std::vector<OpenMPIteratorDefinition> &getIterators() const {
+    return iterators;
+  }
   void clearIterators() { iterators.clear(); }
   void addItem(const std::string &expr,
                OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma);

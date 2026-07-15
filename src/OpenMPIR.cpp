@@ -134,6 +134,382 @@ bool isOpenMPIdentifierSpelling(const std::string &spelling) {
                      });
 }
 
+[[noreturn]] void failOpenMPSyntax(const char *domain, const std::string &text,
+                                   const char *detail) {
+  std::cerr << "OMPPARSER_SEMANTIC[" << domain << "]: " << detail << " in '"
+            << text << "'\n";
+  std::abort();
+}
+
+[[noreturn]] void failIteratorSyntax(const std::string &text,
+                                     const char *detail) {
+  failOpenMPSyntax("iterator-definition", text, detail);
+}
+
+struct OpenMPDelimiterState {
+  int parentheses = 0;
+  int brackets = 0;
+  int braces = 0;
+  int angles = 0;
+  char quote = '\0';
+  bool escaped = false;
+
+  bool structuralTopLevel() const {
+    return parentheses == 0 && brackets == 0 && braces == 0;
+  }
+
+  bool fullyTopLevel() const { return structuralTopLevel() && angles == 0; }
+
+  bool balanced() const {
+    return parentheses == 0 && brackets == 0 && braces == 0 && angles == 0 &&
+           quote == '\0' && !escaped;
+  }
+
+  void consumeQuoted(char character) {
+    if (quote == '\0') {
+      if (character == '\'' || character == '"') {
+        quote = character;
+      }
+      return;
+    }
+    if (escaped) {
+      escaped = false;
+    } else if (character == '\\') {
+      escaped = true;
+    } else if (character == quote) {
+      quote = '\0';
+    }
+  }
+
+  void requireBalanced(const std::string &text, const char *detail) const {
+    if (!balanced()) {
+      failIteratorSyntax(text, detail);
+    }
+  }
+};
+
+bool remainderBeginsIteratorDefinition(const std::string &text,
+                                       std::size_t begin) {
+  OpenMPDelimiterState state;
+  for (std::size_t index = begin; index < text.size(); ++index) {
+    const char character = text[index];
+    if (state.quote != '\0' || character == '\'' || character == '"') {
+      state.consumeQuoted(character);
+      continue;
+    }
+    switch (character) {
+    case '(':
+      ++state.parentheses;
+      break;
+    case ')':
+      if (--state.parentheses < 0)
+        failIteratorSyntax(text, "unmatched ')' after iterator separator");
+      break;
+    case '[':
+      ++state.brackets;
+      break;
+    case ']':
+      if (--state.brackets < 0)
+        failIteratorSyntax(text, "unmatched ']' after iterator separator");
+      break;
+    case '{':
+      ++state.braces;
+      break;
+    case '}':
+      if (--state.braces < 0)
+        failIteratorSyntax(text, "unmatched '}' after iterator separator");
+      break;
+    case '<':
+      if (state.structuralTopLevel())
+        ++state.angles;
+      break;
+    case '>':
+      if (state.structuralTopLevel() && state.angles > 0)
+        --state.angles;
+      break;
+    case '=':
+      if (state.fullyTopLevel())
+        return !trimWhitespace(text, begin, index - begin).empty();
+      break;
+    case ':': {
+      const bool scope_operator =
+          (index > begin && text[index - 1] == ':') ||
+          (index + 1 < text.size() && text[index + 1] == ':');
+      if (!scope_operator && state.fullyTopLevel())
+        return false;
+      break;
+    }
+    case ',':
+      if (state.fullyTopLevel())
+        return false;
+      break;
+    default:
+      break;
+    }
+  }
+  if (!state.balanced())
+    failIteratorSyntax(text, "unbalanced delimiters after iterator separator");
+  return false;
+}
+
+std::vector<std::string>
+splitOpenMPIteratorSpecificationList(const std::string &text) {
+  std::vector<std::string> result;
+  OpenMPDelimiterState state;
+  std::size_t item_begin = 0;
+  bool saw_assignment = false;
+
+  for (std::size_t index = 0; index < text.size(); ++index) {
+    const char character = text[index];
+    if (state.quote != '\0' || character == '\'' || character == '"') {
+      state.consumeQuoted(character);
+      continue;
+    }
+    switch (character) {
+    case '(':
+      ++state.parentheses;
+      break;
+    case ')':
+      if (--state.parentheses < 0)
+        failIteratorSyntax(text, "unmatched ')' delimiter");
+      break;
+    case '[':
+      ++state.brackets;
+      break;
+    case ']':
+      if (--state.brackets < 0)
+        failIteratorSyntax(text, "unmatched ']' delimiter");
+      break;
+    case '{':
+      ++state.braces;
+      break;
+    case '}':
+      if (--state.braces < 0)
+        failIteratorSyntax(text, "unmatched '}' delimiter");
+      break;
+    case '<':
+      if (!saw_assignment && state.structuralTopLevel())
+        ++state.angles;
+      break;
+    case '>':
+      if (!saw_assignment && state.structuralTopLevel() && state.angles > 0)
+        --state.angles;
+      break;
+    case '=':
+      if (state.fullyTopLevel())
+        saw_assignment = true;
+      break;
+    case ',':
+      if (state.fullyTopLevel() &&
+          remainderBeginsIteratorDefinition(text, index + 1)) {
+        if (!saw_assignment)
+          failIteratorSyntax(text, "iterator item has no assignment");
+        const std::string item =
+            trimWhitespace(text, item_begin, index - item_begin);
+        if (item.empty())
+          failIteratorSyntax(text, "iterator list contains an empty item");
+        result.push_back(item);
+        item_begin = index + 1;
+        saw_assignment = false;
+      }
+      break;
+    default:
+      break;
+    }
+  }
+  state.requireBalanced(text, "iterator list has unbalanced delimiters");
+  if (!saw_assignment)
+    failIteratorSyntax(text, "final iterator item has no assignment");
+  const std::string item = trimWhitespace(text, item_begin, text.size());
+  if (item.empty())
+    failIteratorSyntax(text, "iterator list has no final item");
+  result.push_back(item);
+  return result;
+}
+
+std::size_t findOpenMPIteratorAssignment(const std::string &item) {
+  OpenMPDelimiterState state;
+  for (std::size_t index = 0; index < item.size(); ++index) {
+    const char character = item[index];
+    if (state.quote != '\0' || character == '\'' || character == '"') {
+      state.consumeQuoted(character);
+      continue;
+    }
+    switch (character) {
+    case '(':
+      ++state.parentheses;
+      break;
+    case ')':
+      if (--state.parentheses < 0)
+        failIteratorSyntax(item, "unmatched ')' before assignment");
+      break;
+    case '[':
+      ++state.brackets;
+      break;
+    case ']':
+      if (--state.brackets < 0)
+        failIteratorSyntax(item, "unmatched ']' before assignment");
+      break;
+    case '{':
+      ++state.braces;
+      break;
+    case '}':
+      if (--state.braces < 0)
+        failIteratorSyntax(item, "unmatched '}' before assignment");
+      break;
+    case '<':
+      if (state.structuralTopLevel())
+        ++state.angles;
+      break;
+    case '>':
+      if (state.structuralTopLevel() && state.angles > 0)
+        --state.angles;
+      break;
+    case '=':
+      if (state.fullyTopLevel())
+        return index;
+      break;
+    default:
+      break;
+    }
+  }
+  failIteratorSyntax(item, "iterator item has no top-level assignment");
+}
+
+std::vector<std::string> splitOpenMPIteratorRange(const std::string &range) {
+  std::vector<std::string> result;
+  OpenMPDelimiterState state;
+  std::size_t field_begin = 0;
+  unsigned ternary_depth = 0;
+  for (std::size_t index = 0; index < range.size(); ++index) {
+    const char character = range[index];
+    if (state.quote != '\0' || character == '\'' || character == '"') {
+      state.consumeQuoted(character);
+      continue;
+    }
+    switch (character) {
+    case '(':
+      ++state.parentheses;
+      break;
+    case ')':
+      if (--state.parentheses < 0)
+        failIteratorSyntax(range, "unmatched ')' in range");
+      break;
+    case '[':
+      ++state.brackets;
+      break;
+    case ']':
+      if (--state.brackets < 0)
+        failIteratorSyntax(range, "unmatched ']' in range");
+      break;
+    case '{':
+      ++state.braces;
+      break;
+    case '}':
+      if (--state.braces < 0)
+        failIteratorSyntax(range, "unmatched '}' in range");
+      break;
+    case '?':
+      if (state.structuralTopLevel())
+        ++ternary_depth;
+      break;
+    case ':': {
+      const bool scope_operator =
+          (index > 0 && range[index - 1] == ':') ||
+          (index + 1 < range.size() && range[index + 1] == ':');
+      if (!scope_operator && state.structuralTopLevel()) {
+        if (ternary_depth > 0) {
+          --ternary_depth;
+        } else {
+          const std::string field =
+              trimWhitespace(range, field_begin, index - field_begin);
+          if (field.empty())
+            failIteratorSyntax(range, "iterator range contains an empty field");
+          result.push_back(field);
+          field_begin = index + 1;
+        }
+      }
+      break;
+    }
+    default:
+      break;
+    }
+  }
+  state.requireBalanced(range, "iterator range has unbalanced delimiters");
+  if (ternary_depth != 0)
+    failIteratorSyntax(range, "iterator range has an unmatched '?'");
+  const std::string field =
+      trimWhitespace(range, field_begin, range.size() - field_begin);
+  if (field.empty())
+    failIteratorSyntax(range, "iterator range has an empty final field");
+  result.push_back(field);
+  if (result.size() < 2 || result.size() > 3)
+    failIteratorSyntax(range, "iterator range must contain begin:end[:step]");
+  return result;
+}
+
+std::size_t findTopLevelMapperColon(const std::string &text) {
+  OpenMPDelimiterState state;
+  std::size_t mapper_colon = std::string::npos;
+  for (std::size_t index = 0; index < text.size(); ++index) {
+    const char character = text[index];
+    if (state.quote != '\0' || character == '\'' || character == '"') {
+      state.consumeQuoted(character);
+      continue;
+    }
+    switch (character) {
+    case '(':
+      ++state.parentheses;
+      break;
+    case ')':
+      if (--state.parentheses < 0)
+        failOpenMPSyntax("declare-mapper-specification", text,
+                         "unmatched ')' delimiter");
+      break;
+    case '[':
+      ++state.brackets;
+      break;
+    case ']':
+      if (--state.brackets < 0)
+        failOpenMPSyntax("declare-mapper-specification", text,
+                         "unmatched ']' delimiter");
+      break;
+    case '{':
+      ++state.braces;
+      break;
+    case '}':
+      if (--state.braces < 0)
+        failOpenMPSyntax("declare-mapper-specification", text,
+                         "unmatched '}' delimiter");
+      break;
+    case '<':
+      if (state.structuralTopLevel())
+        ++state.angles;
+      break;
+    case '>':
+      if (state.structuralTopLevel() && state.angles > 0)
+        --state.angles;
+      break;
+    case ':': {
+      const bool scope_operator =
+          (index > 0 && text[index - 1] == ':') ||
+          (index + 1 < text.size() && text[index + 1] == ':');
+      if (!scope_operator && state.fullyTopLevel() &&
+          mapper_colon == std::string::npos)
+        mapper_colon = index;
+      break;
+    }
+    default:
+      break;
+    }
+  }
+  if (!state.balanced()) {
+    failOpenMPSyntax("declare-mapper-specification", text,
+                     "unbalanced delimiters");
+  }
+  return mapper_colon;
+}
+
 bool isOpenMPStringPropertySpelling(const std::string &spelling) {
   if (spelling.size() < 3 ||
       (spelling.front() != '"' && spelling.front() != '\'') ||
@@ -207,6 +583,63 @@ std::string normalizeRawExpression(const char *expr,
 }
 
 } // namespace
+
+std::vector<OpenMPIteratorDefinition>
+parseOpenMPIteratorDefinitions(const char *text) {
+  if (text == nullptr) {
+    std::cerr << "OMPPARSER_INVARIANT[iterator-definition]: null iterator "
+                 "specifier list\n";
+    std::abort();
+  }
+  const std::string specification = trimWhitespace(text);
+  if (specification.empty())
+    failIteratorSyntax(specification, "iterator specifier list is empty");
+
+  std::vector<OpenMPIteratorDefinition> definitions;
+  for (const std::string &item :
+       splitOpenMPIteratorSpecificationList(specification)) {
+    const std::size_t assignment = findOpenMPIteratorAssignment(item);
+    const std::string declaration = trimWhitespace(item, 0, assignment);
+    const std::string range_text =
+        trimWhitespace(item, assignment + 1, item.size() - assignment - 1);
+    if (declaration.empty() || range_text.empty())
+      failIteratorSyntax(item, "iterator declaration or range is empty");
+
+    std::size_t name_end = declaration.size();
+    while (name_end > 0 &&
+           std::isspace(static_cast<unsigned char>(declaration[name_end - 1])))
+      --name_end;
+    std::size_t name_begin = name_end;
+    while (name_begin > 0) {
+      const unsigned char character =
+          static_cast<unsigned char>(declaration[name_begin - 1]);
+      if (!std::isalnum(character) && character != '_')
+        break;
+      --name_begin;
+    }
+    const std::string name =
+        declaration.substr(name_begin, name_end - name_begin);
+    if (!isOpenMPIdentifierSpelling(name) ||
+        !trimWhitespace(declaration, name_end, declaration.size() - name_end)
+             .empty()) {
+      failIteratorSyntax(item, "iterator declaration has no final identifier");
+    }
+
+    const std::vector<std::string> range = splitOpenMPIteratorRange(range_text);
+    OpenMPIteratorDefinition definition;
+    definition.qualifier = trimWhitespace(declaration, 0, name_begin);
+    definition.var = name;
+    definition.begin = range[0];
+    definition.end = range[1];
+    if (range.size() == 3)
+      definition.step = range[2];
+    definitions.push_back(std::move(definition));
+  }
+  if (definitions.empty())
+    failIteratorSyntax(specification,
+                       "iterator specifier list produced no definitions");
+  return definitions;
+}
 
 namespace {
 
@@ -1001,19 +1434,149 @@ void OpenMPDeclareMapperDirective::setUserDefinedIdentifier(
                  "is empty\n";
     std::abort();
   }
-  user_defined_identifier_node = openmpParseExpressionNode(
-      OMPD_declare_mapper, OMPC_unknown, OMP_EXPR_PARSE_verbatim,
-      user_defined_identifier.c_str());
+  user_defined_identifier_node =
+      openmpParseExpressionNode(OMPD_declare_mapper, OMPC_unknown,
+                                OMP_EXPR_PARSE_openmp_declare_mapper_identifier,
+                                user_defined_identifier.c_str());
 }
 
 void OpenMPDeclareMapperDirective::setDeclareMapperType(
     const char *_declare_mapper_type) {
-  type = normalizeRawExpression(_declare_mapper_type);
+  if (_declare_mapper_type == nullptr || !type.empty() ||
+      type_node != nullptr) {
+    std::cerr << "OMPPARSER_INVARIANT[declare-mapper-type]: type is null or "
+                 "was assigned more than once\n";
+    std::abort();
+  }
+  type = trimWhitespace(_declare_mapper_type);
+  if (type.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[declare-mapper-type]: type is empty\n";
+    std::abort();
+  }
+  type_node = openmpParseExpressionNode(
+      OMPD_declare_mapper, OMPC_unknown,
+      OMP_EXPR_PARSE_openmp_declare_mapper_type, type.c_str());
 }
 
 void OpenMPDeclareMapperDirective::setDeclareMapperVar(
     const char *_declare_mapper_variable) {
-  var = normalizeRawExpression(_declare_mapper_variable);
+  if (_declare_mapper_variable == nullptr || !var.empty() ||
+      var_node != nullptr) {
+    std::cerr << "OMPPARSER_INVARIANT[declare-mapper-variable]: variable is "
+                 "null or was assigned more than once\n";
+    std::abort();
+  }
+  var = trimWhitespace(_declare_mapper_variable);
+  if (!isOpenMPIdentifierSpelling(var)) {
+    std::cerr << "OMPPARSER_SEMANTIC[declare-mapper-variable]: '" << var
+              << "' is not one base-language identifier\n";
+    std::abort();
+  }
+  var_node = openmpParseExpressionNode(
+      OMPD_declare_mapper, OMPC_unknown,
+      OMP_EXPR_PARSE_openmp_declare_mapper_variable, var.c_str());
+}
+
+OpenMPBaseLang
+OpenMPDeclareMapperDirective::setSpecification(const char *specification,
+                                               OpenMPBaseLang language) {
+  if (specification == nullptr ||
+      identifier != OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified ||
+      identifier_explicit || !user_defined_identifier.empty() ||
+      user_defined_identifier_node != nullptr || !type.empty() ||
+      type_node != nullptr || !var.empty() || var_node != nullptr) {
+    std::cerr << "OMPPARSER_INVARIANT[declare-mapper-specification]: "
+                 "specification is null or was assigned more than once\n";
+    std::abort();
+  }
+  std::string text = trimWhitespace(specification);
+  if (text.empty()) {
+    std::cerr << "OMPPARSER_SEMANTIC[declare-mapper-specification]: empty "
+                 "mapper specification\n";
+    std::abort();
+  }
+
+  const std::size_t mapper_colon = findTopLevelMapperColon(text);
+  std::string declaration = text;
+  if (mapper_colon != std::string::npos) {
+    identifier_explicit = true;
+    const std::string mapper_identifier = trimWhitespace(text, 0, mapper_colon);
+    declaration =
+        trimWhitespace(text, mapper_colon + 1, text.size() - mapper_colon - 1);
+    if (mapper_identifier == "default") {
+      identifier = OMPD_DECLARE_MAPPER_IDENTIFIER_default;
+    } else if (isOpenMPIdentifierSpelling(mapper_identifier)) {
+      identifier = OMPD_DECLARE_MAPPER_IDENTIFIER_user;
+      setUserDefinedIdentifier(mapper_identifier);
+    } else {
+      std::cerr << "OMPPARSER_SEMANTIC[declare-mapper-identifier]: '"
+                << mapper_identifier << "' is not one mapper identifier\n";
+      std::abort();
+    }
+  } else {
+    identifier = OMPD_DECLARE_MAPPER_IDENTIFIER_default;
+  }
+  if (declaration.empty()) {
+    std::cerr << "OMPPARSER_SEMANTIC[declare-mapper-specification]: mapper "
+                 "type and variable are empty\n";
+    std::abort();
+  }
+
+  if (language == Lang_unknown)
+    language =
+        declaration.find("::") != std::string::npos ? Lang_Fortran : Lang_C;
+  if (language == Lang_Fortran) {
+    const std::size_t separator = declaration.find("::");
+    if (separator == std::string::npos ||
+        declaration.find("::", separator + 2) != std::string::npos) {
+      std::cerr << "OMPPARSER_SEMANTIC[declare-mapper-specification]: "
+                   "Fortran mapper requires one exact 'type :: variable' "
+                   "separator\n";
+      std::abort();
+    }
+    setDeclareMapperType(trimWhitespace(declaration, 0, separator).c_str());
+    setDeclareMapperVar(trimWhitespace(declaration, separator + 2,
+                                       declaration.size() - separator - 2)
+                            .c_str());
+    type_var_has_space = true;
+    return language;
+  }
+  if (language != Lang_C && language != Lang_Cplusplus) {
+    std::cerr << "OMPPARSER_INVARIANT[declare-mapper-specification]: invalid "
+                 "base language\n";
+    std::abort();
+  }
+
+  std::size_t variable_end = declaration.size();
+  while (variable_end > 0 && std::isspace(static_cast<unsigned char>(
+                                 declaration[variable_end - 1])))
+    --variable_end;
+  std::size_t variable_begin = variable_end;
+  while (variable_begin > 0) {
+    const unsigned char character =
+        static_cast<unsigned char>(declaration[variable_begin - 1]);
+    if (!std::isalnum(character) && character != '_')
+      break;
+    --variable_begin;
+  }
+  const std::string variable =
+      declaration.substr(variable_begin, variable_end - variable_begin);
+  const std::string mapper_type =
+      trimWhitespace(declaration, 0, variable_begin);
+  if (!isOpenMPIdentifierSpelling(variable) || mapper_type.empty() ||
+      !trimWhitespace(declaration, variable_end,
+                      declaration.size() - variable_end)
+           .empty()) {
+    std::cerr << "OMPPARSER_SEMANTIC[declare-mapper-specification]: C/C++ "
+                 "mapper does not have exact 'type variable' grammar\n";
+    std::abort();
+  }
+  type_var_has_space =
+      variable_begin > 0 &&
+      std::isspace(static_cast<unsigned char>(declaration[variable_begin - 1]));
+  setDeclareMapperType(mapper_type.c_str());
+  setDeclareMapperVar(variable.c_str());
+  return language;
 }
 
 void OpenMPClause::addLangExpr(const char *expression,

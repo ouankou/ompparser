@@ -66,11 +66,7 @@ static const char *reduction_modifier_expression = nullptr;
 OpenMPClauseSeparator current_expr_separator = OMPC_CLAUSE_SEP_space;
 OpenMPClauseSeparator current_apply_transform_separator = OMPC_CLAUSE_SEP_comma;
 static int map_ref_modifier_parameter = OMPC_MAP_REF_MODIFIER_unspecified;
-static std::vector<const char *> iterator_definition;
-static std::vector<const char *> depend_iterator_definition;
-static std::vector<std::vector<const char *>> depend_iterators_definition_class;
-static std::vector<const char *> map_iterator_args;
-static std::vector<const char *> tofrom_iterator_args;
+static std::vector<OpenMPIteratorDefinition> pending_iterator_definitions;
 static bool parse_active = false;
 static inline bool hasMapIteratorModifier() {
   return firstParameter == OMPC_MAP_MODIFIER_iterator ||
@@ -109,84 +105,75 @@ static inline int getScheduleClauseColumn() {
   return schedule_clause_column;
 }
 
-static void addMapIteratorDefinition(OpenMPClause *clause,
-                                     std::vector<const char *> *args) {
-  if (clause == nullptr || args == nullptr) {
-    std::cerr << "OMPPARSER_INVARIANT[map-iterator]: clause or argument list "
-                 "is null\n";
+static void addIteratorDefinitions(
+    OpenMPClause *clause,
+    std::vector<OpenMPIteratorDefinition> *definitions) {
+  if (clause == nullptr || definitions == nullptr || definitions->empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[iterator-list]: clause has no complete "
+                 "iterator-specifier list\n";
     std::abort();
   }
 
-  auto *map_clause = static_cast<OpenMPMapClause *>(clause);
-  map_clause->clearIterators();
-  if (args->size() < 3 || args->size() > 4 || (*args)[0] == nullptr ||
-      (*args)[1] == nullptr || (*args)[2] == nullptr ||
-      (args->size() == 4 && (*args)[3] == nullptr)) {
-    std::cerr << "OMPPARSER_INVARIANT[map-iterator]: iterator must own three "
-                 "or four nonnull fields\n";
-    std::abort();
-  }
-  std::string qualifier;
-  std::string var((*args)[0]);
-  std::string begin((*args)[1]);
-  std::string end((*args)[2]);
-  std::string step;
-  if (args->size() > 3) {
-    step = std::string((*args)[3]);
-  }
-  if (var.empty() || begin.empty() || end.empty()) {
-    std::cerr << "OMPPARSER_INVARIANT[map-iterator]: variable, begin, or end "
-                 "field is empty\n";
-    std::abort();
-  }
-
-  map_clause->addIterator(qualifier, var, begin, end, step);
-  args->clear();
-}
-
-static void addToFromIteratorDefinition(OpenMPClause *clause,
-                                        std::vector<const char *> *args) {
-  if (clause == nullptr || args == nullptr) {
-    std::cerr << "OMPPARSER_INVARIANT[data-motion-iterator]: clause or "
-                 "argument list is null\n";
-    std::abort();
-  }
-  if (args->size() < 3 || args->size() > 4 || (*args)[0] == nullptr ||
-      (*args)[1] == nullptr || (*args)[2] == nullptr ||
-      (args->size() == 4 && (*args)[3] == nullptr)) {
-    std::cerr << "OMPPARSER_INVARIANT[data-motion-iterator]: iterator must "
-                 "own three or four nonnull fields\n";
+  auto require_empty = [](const auto *typed_clause) {
+    if (typed_clause == nullptr || !typed_clause->getIterators().empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[iterator-list]: clause already owns "
+                   "iterator definitions\n";
+      std::abort();
+    }
+  };
+  switch (clause->getKind()) {
+  case OMPC_affinity:
+    require_empty(static_cast<OpenMPAffinityClause *>(clause));
+    break;
+  case OMPC_map:
+    require_empty(static_cast<OpenMPMapClause *>(clause));
+    break;
+  case OMPC_to:
+    require_empty(static_cast<OpenMPToClause *>(clause));
+    break;
+  case OMPC_from:
+    require_empty(static_cast<OpenMPFromClause *>(clause));
+    break;
+  case OMPC_depend:
+    require_empty(static_cast<OpenMPDependClause *>(clause));
+    break;
+  default:
+    std::cerr << "OMPPARSER_INVARIANT[iterator-list]: unsupported clause kind "
+              << static_cast<int>(clause->getKind()) << "\n";
     std::abort();
   }
 
-  std::string qualifier;
-  std::string var((*args)[0]);
-  std::string begin((*args)[1]);
-  std::string end((*args)[2]);
-  std::string step;
-  if (args->size() > 3) {
-    step = std::string((*args)[3]);
-  }
-  if (var.empty() || begin.empty() || end.empty()) {
-    std::cerr << "OMPPARSER_INVARIANT[data-motion-iterator]: variable, begin, "
-                 "or end field is empty\n";
-    std::abort();
-  }
+  for (const OpenMPIteratorDefinition &definition : *definitions) {
+    if (definition.var.empty() || definition.begin.empty() ||
+        definition.end.empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[iterator-list]: iterator name, begin, "
+                   "or end field is empty\n";
+      std::abort();
+    }
 
-  if (clause->getKind() == OMPC_to) {
-    auto *to_clause = static_cast<OpenMPToClause *>(clause);
-    to_clause->clearIterators();
-    to_clause->addIterator(qualifier, var, begin, end, step);
-  } else if (clause->getKind() == OMPC_from) {
-    auto *from_clause = static_cast<OpenMPFromClause *>(clause);
-    from_clause->clearIterators();
-    from_clause->addIterator(qualifier, var, begin, end, step);
-  } else {
-    std::cerr << "OMPPARSER_INVARIANT[data-motion-iterator]: clause is not to "
-                 "or from\n";
-    std::abort();
+    switch (clause->getKind()) {
+    case OMPC_affinity:
+      static_cast<OpenMPAffinityClause *>(clause)->addIterator(definition);
+      break;
+    case OMPC_map:
+      static_cast<OpenMPMapClause *>(clause)->addIterator(definition);
+      break;
+    case OMPC_to:
+      static_cast<OpenMPToClause *>(clause)->addIterator(definition);
+      break;
+    case OMPC_from:
+      static_cast<OpenMPFromClause *>(clause)->addIterator(definition);
+      break;
+    case OMPC_depend:
+      static_cast<OpenMPDependClause *>(clause)->addIterator(definition);
+      break;
+    default:
+      std::cerr << "OMPPARSER_INVARIANT[iterator-list]: unsupported clause "
+                   "kind changed while attaching iterator definitions\n";
+      std::abort();
+    }
   }
-  args->clear();
+  definitions->clear();
 }
 
 static const char *trait_score = "";
@@ -235,15 +222,6 @@ OpenMPBaseLang requested_lang = Lang_unknown;
 OpenMPBaseLang auto_lang = Lang_unknown;
 bool current_normalize_clauses = true;
 
-static inline bool isCLikeOpenMPBaseLang(OpenMPBaseLang lang) {
-  return lang == Lang_C || lang == Lang_Cplusplus;
-}
-
-static inline bool parserLanguageIsCLike() {
-  return isCLikeOpenMPBaseLang(requested_lang) ||
-         isCLikeOpenMPBaseLang(auto_lang);
-}
-
 // Track whether the next clause should be preceded by a comma (to preserve Fortran spacing)
 bool clause_separator_comma = false;
 static std::string current_pragma_raw;
@@ -268,11 +246,7 @@ static void resetActiveParseState() {
   current_expr_separator = OMPC_CLAUSE_SEP_space;
   current_apply_transform_separator = OMPC_CLAUSE_SEP_comma;
   map_ref_modifier_parameter = OMPC_MAP_REF_MODIFIER_unspecified;
-  iterator_definition.clear();
-  depend_iterator_definition.clear();
-  depend_iterators_definition_class.clear();
-  map_iterator_args.clear();
-  tofrom_iterator_args.clear();
+  pending_iterator_definitions.clear();
   trait_score = "";
   b_within_variable_list = false;
   requested_lang = Lang_unknown;
@@ -506,13 +480,13 @@ corresponding C type is union name defaults to YYSTYPE.
         IF NUM_THREADS DEFAULT PRIVATE FIRSTPRIVATE SAVED SHARED COPYIN REDUCTION PROC_BIND ALLOCATE SIMD TASK LASTPRIVATE WHEN MATCH PARTIAL FULL
 %token  FIRSTPRIVATE_MODIFIER_PARALLEL FIRSTPRIVATE_MODIFIER_FOR FIRSTPRIVATE_MODIFIER_DO FIRSTPRIVATE_MODIFIER_DISTRIBUTE FIRSTPRIVATE_MODIFIER_SECTIONS FIRSTPRIVATE_MODIFIER_SINGLE FIRSTPRIVATE_MODIFIER_SCOPE FIRSTPRIVATE_MODIFIER_TARGET FIRSTPRIVATE_MODIFIER_TARGET_DATA FIRSTPRIVATE_MODIFIER_TASK FIRSTPRIVATE_MODIFIER_TASKLOOP FIRSTPRIVATE_MODIFIER_TEAMS
         LINEAR SCHEDULE COLLAPSE NOWAIT ORDER ORDERED MODIFIER_CONDITIONAL MODIFIER_MONOTONIC MODIFIER_NONMONOTONIC STATIC DYNAMIC GUIDED AUTO RUNTIME MODOFIER_VAL MODOFIER_REF MODOFIER_UVAL MODIFIER_SIMD
-        SAFELEN SIMDLEN ALIGNED ALIGN NONTEMPORAL UNIFORM INBRANCH NOTINBRANCH DIST_SCHEDULE BIND INCLUSIVE EXCLUSIVE COPYPRIVATE ALLOCATOR INITIALIZER OMP_PRIV IDENTIFIER_DEFAULT WORKSHARE/*YAYING*/
+        SAFELEN SIMDLEN ALIGNED ALIGN NONTEMPORAL UNIFORM INBRANCH NOTINBRANCH DIST_SCHEDULE BIND INCLUSIVE EXCLUSIVE COPYPRIVATE ALLOCATOR INITIALIZER OMP_PRIV WORKSHARE/*YAYING*/
         NONE MASTER PRIMARY CLOSE SPREAD MODIFIER_INSCAN MODIFIER_TASK MODIFIER_DEFAULT 
         PLUS MINUS STAR BITAND BITOR BITXOR LOGAND LOGOR EQV NEQV MAX MIN
         DEFAULT_MEM_ALLOC LARGE_CAP_MEM_ALLOC CONST_MEM_ALLOC HIGH_BW_MEM_ALLOC LOW_LAT_MEM_ALLOC CGROUP_MEM_ALLOC
         PTEAM_MEM_ALLOC THREAD_MEM_ALLOC
         TEAMS
-        NUM_TEAMS THREAD_LIMIT DOUBLE_COLON
+        NUM_TEAMS THREAD_LIMIT
         END USER CONSTRUCT DEVICE IMPLEMENTATION CONDITION SCORE VENDOR
         KIND HOST NOHOST ANY CPU GPU FPGA ISA ARCH UID EXTENSION
         AMD ARM BSC CRAY FUJITSU GNU IBM INTEL LLVM NVIDIA PGI TI UNKNOWN
@@ -3024,52 +2998,20 @@ depend_with_modifier_clause : DEPEND { firstParameter = OMPC_DEPEND_MODIFIER_uns
 
 depend_parameter : dependence_type
                  | depend_modifier ',' dependence_type {
-                     auto *depend_clause =
-                         static_cast<OpenMPDependClause *>(current_clause);
-                     if (depend_clause != nullptr) {
-                       depend_clause->setDependIteratorsDefinitionClass(
-                           depend_iterators_definition_class);
-                     }
-                     depend_iterators_definition_class.clear();
+                     addIteratorDefinitions(
+                         current_clause, &pending_iterator_definitions);
                    }
                  ;
 dependence_type : depend_enum_type 
                 ;
 depend_modifier : MODIFIER_ITERATOR {
-                   depend_iterators_definition_class.clear();
-                   depend_iterator_definition.clear();
+                   pending_iterator_definitions.clear();
                    firstParameter = OMPC_DEPEND_MODIFIER_iterator;
-                 } '(' depend_iterators_definition ')'
+                 } '(' EXPR_STRING ')' {
+                   pending_iterator_definitions =
+                       parseOpenMPIteratorDefinitions($4);
+                   }
                 ;
-depend_iterators_definition : depend_iterator_specifier
-                            | depend_iterators_definition ',' depend_iterator_specifier
-                            ;
-depend_iterator_specifier : EXPR_STRING EXPR_STRING {
-                            depend_iterator_definition.push_back($1);
-                            depend_iterator_definition.push_back($2);
-                          } '=' depend_range_specification
-                          | EXPR_STRING {
-                            depend_iterator_definition.push_back("");
-                            depend_iterator_definition.push_back($1);
-                          } '=' depend_range_specification
-                          ;
-depend_range_specification : EXPR_STRING { depend_iterator_definition.push_back($1); }
-                             ':' EXPR_STRING { depend_iterator_definition.push_back($4); }
-                             depend_range_step
-                           ;
-depend_range_step : /*empty*/ {
-                     depend_iterator_definition.push_back("");
-                     depend_iterators_definition_class.push_back(
-                         depend_iterator_definition);
-                     depend_iterator_definition.clear();
-                   }
-                  | ':' EXPR_STRING {
-                     depend_iterator_definition.push_back($2);
-                     depend_iterators_definition_class.push_back(
-                         depend_iterator_definition);
-                     depend_iterator_definition.clear();
-                   }
-                  ;
 depend_enum_type : IN { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_in);
                         if (!current_clause->getExpressions()->empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
                  | OUT { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_out);
@@ -3116,44 +3058,18 @@ affinity_parameter : EXPR_STRING { current_clause = addClauseAt(current_directiv
                    | affinity_modifier ':' var_list
                    ;
 
-affinity_modifier : MODIFIER_ITERATOR { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_affinity, OMPC_AFFINITY_MODIFIER_iterator); 
-                              }'('iterators_definition')'{}
+affinity_modifier : MODIFIER_ITERATOR {
+                      current_clause = addClauseAt(
+                          current_directive, @1.first_line, @1.first_column,
+                          OMPC_affinity, OMPC_AFFINITY_MODIFIER_iterator);
+                      pending_iterator_definitions.clear();
+                    } '(' EXPR_STRING ')' {
+                      pending_iterator_definitions =
+                          parseOpenMPIteratorDefinitions($4);
+                      addIteratorDefinitions(
+                          current_clause, &pending_iterator_definitions);
+                    }
                   ;
-iterators_definition : iterator_specifier
-                     | iterators_definition ',' iterator_specifier
-                     ;
-iterator_specifier : EXPR_STRING EXPR_STRING {
-                      iterator_definition.push_back($1);
-                      iterator_definition.push_back($2);
-                    } '=' range_specification
-                   | EXPR_STRING {
-                      iterator_definition.push_back("");
-                      iterator_definition.push_back($1);
-                    } '=' range_specification
-                   ;
-range_specification : EXPR_STRING { iterator_definition.push_back($1); }
-                      ':' EXPR_STRING { iterator_definition.push_back($4); }
-                      range_step
-                    ;
-range_step : /*empty*/ {
-             iterator_definition.push_back("");
-             auto *affinity_clause =
-                 static_cast<OpenMPAffinityClause *>(current_clause);
-             if (affinity_clause != nullptr) {
-               affinity_clause->addIteratorsDefinitionClass(iterator_definition);
-             }
-             iterator_definition.clear();
-           }
-           | ':' EXPR_STRING {
-             iterator_definition.push_back($2);
-             auto *affinity_clause =
-                 static_cast<OpenMPAffinityClause *>(current_clause);
-             if (affinity_clause != nullptr) {
-               affinity_clause->addIteratorsDefinitionClass(iterator_definition);
-             }
-             iterator_definition.clear();
-           }
-           ;
 
 detach_clause: DETACH {
                             current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_detach);
@@ -3346,8 +3262,17 @@ to_mapper : TO_MAPPER { current_clause = addClauseAt(current_directive, @1.first
                                 ((OpenMPToClause*)current_clause)->setMapperIdentifier($4);
                               }
           ;
-to_iterator : TO_ITERATOR { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_to, OMPC_TO_iterator); tofrom_iterator_args.clear();
-                                }'(' to_iterator_args ')' { addToFromIteratorDefinition(current_clause, &tofrom_iterator_args); }
+to_iterator : TO_ITERATOR {
+                current_clause = addClauseAt(
+                    current_directive, @1.first_line, @1.first_column, OMPC_to,
+                    OMPC_TO_iterator);
+                pending_iterator_definitions.clear();
+              } '(' EXPR_STRING ')' {
+                pending_iterator_definitions =
+                    parseOpenMPIteratorDefinitions($4);
+                addIteratorDefinitions(
+                    current_clause, &pending_iterator_definitions);
+              }
             ;
 to_var_list : to_var
             | to_var_list ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } to_var
@@ -3359,12 +3284,6 @@ to_var : EXPR_STRING {
            current_expr_separator = OMPC_CLAUSE_SEP_space;
          }
        ;
-to_iterator_args : EXPR_STRING { tofrom_iterator_args.push_back($1); } '=' EXPR_STRING { tofrom_iterator_args.push_back($4); } ':' EXPR_STRING { tofrom_iterator_args.push_back($7); } to_iterator_step
-                 ;
-to_iterator_step : /* empty */
-                 | ':' EXPR_STRING { tofrom_iterator_args.push_back($2); }
-                 ;
-
 from_clause: FROM { current_expr_separator = OMPC_CLAUSE_SEP_space; } '(' from_parameter ')' ;
 from_parameter : EXPR_STRING { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_from, OMPC_FROM_unspecified); static_cast<OpenMPFromClause*>(current_clause)->addItem($1);  }
                | EXPR_STRING ',' { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_from, OMPC_FROM_unspecified); current_expr_separator = OMPC_CLAUSE_SEP_comma; static_cast<OpenMPFromClause*>(current_clause)->addItem($1); } from_var_list
@@ -3377,8 +3296,17 @@ from_mapper : FROM_MAPPER { current_clause = addClauseAt(current_directive, @1.f
                                 ((OpenMPFromClause*)current_clause)->setMapperIdentifier($4);
                               }
             ;
-from_iterator : FROM_ITERATOR { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_from, OMPC_FROM_iterator); tofrom_iterator_args.clear();
-                                  } '(' to_iterator_args ')' { addToFromIteratorDefinition(current_clause, &tofrom_iterator_args); }
+from_iterator : FROM_ITERATOR {
+                  current_clause = addClauseAt(
+                      current_directive, @1.first_line, @1.first_column,
+                      OMPC_from, OMPC_FROM_iterator);
+                  pending_iterator_definitions.clear();
+                } '(' EXPR_STRING ')' {
+                  pending_iterator_definitions =
+                      parseOpenMPIteratorDefinitions($4);
+                  addIteratorDefinitions(
+                      current_clause, &pending_iterator_definitions);
+                }
             ;
 from_var_list : from_var
               | from_var_list ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } from_var
@@ -3502,7 +3430,8 @@ map_type : MAP_TYPE_TO {
                  OMPC_MAP_TYPE_to, map_ref_modifier_parameter,
                  firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
-               addMapIteratorDefinition(current_clause, &map_iterator_args);
+               addIteratorDefinitions(
+                   current_clause, &pending_iterator_definitions);
              }
            }
          | MAP_TYPE_FROM {
@@ -3511,7 +3440,8 @@ map_type : MAP_TYPE_TO {
                  OMPC_MAP_TYPE_from, map_ref_modifier_parameter,
                  firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
-               addMapIteratorDefinition(current_clause, &map_iterator_args);
+               addIteratorDefinitions(
+                   current_clause, &pending_iterator_definitions);
              }
            }
          | MAP_TYPE_TOFROM {
@@ -3520,7 +3450,8 @@ map_type : MAP_TYPE_TO {
                  OMPC_MAP_TYPE_tofrom, map_ref_modifier_parameter,
                  firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
-               addMapIteratorDefinition(current_clause, &map_iterator_args);
+               addIteratorDefinitions(
+                   current_clause, &pending_iterator_definitions);
              }
            }
          | MAP_TYPE_STORAGE {
@@ -3529,7 +3460,8 @@ map_type : MAP_TYPE_TO {
                  OMPC_MAP_TYPE_storage, map_ref_modifier_parameter,
                  firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
-               addMapIteratorDefinition(current_clause, &map_iterator_args);
+               addIteratorDefinitions(
+                   current_clause, &pending_iterator_definitions);
              }
            }
          | MAP_TYPE_ALLOC {
@@ -3538,7 +3470,8 @@ map_type : MAP_TYPE_TO {
                  OMPC_MAP_TYPE_alloc, map_ref_modifier_parameter,
                  firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
-               addMapIteratorDefinition(current_clause, &map_iterator_args);
+               addIteratorDefinitions(
+                   current_clause, &pending_iterator_definitions);
              }
            }
          | MAP_TYPE_RELEASE {
@@ -3547,7 +3480,8 @@ map_type : MAP_TYPE_TO {
                  OMPC_MAP_TYPE_release, map_ref_modifier_parameter,
                  firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
-               addMapIteratorDefinition(current_clause, &map_iterator_args);
+               addIteratorDefinitions(
+                   current_clause, &pending_iterator_definitions);
              }
            }
          | MAP_TYPE_DELETE {
@@ -3556,7 +3490,8 @@ map_type : MAP_TYPE_TO {
                  OMPC_MAP_TYPE_delete, map_ref_modifier_parameter,
                  firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
-               addMapIteratorDefinition(current_clause, &map_iterator_args);
+               addIteratorDefinitions(
+                   current_clause, &pending_iterator_definitions);
              }
            }
          | MAP_TYPE_PRESENT {
@@ -3565,7 +3500,8 @@ map_type : MAP_TYPE_TO {
                  OMPC_MAP_TYPE_present, map_ref_modifier_parameter,
                  firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
-               addMapIteratorDefinition(current_clause, &map_iterator_args);
+               addIteratorDefinitions(
+                   current_clause, &pending_iterator_definitions);
              }
            }
          | MAP_TYPE_SELF {
@@ -3574,7 +3510,8 @@ map_type : MAP_TYPE_TO {
                  OMPC_MAP_TYPE_self, map_ref_modifier_parameter,
                  firstStringParameter.c_str());
              if (hasMapIteratorModifier()) {
-               addMapIteratorDefinition(current_clause, &map_iterator_args);
+               addIteratorDefinitions(
+                   current_clause, &pending_iterator_definitions);
              }
            }
          ;
@@ -3582,14 +3519,12 @@ map_modifier_mapper : MAP_MODIFIER_MAPPER '('EXPR_STRING')' { firstStringParamet
                    ;
 map_modifier_iterator : MAP_MODIFIER_ITERATOR {
                           firstParameter = OMPC_MAP_MODIFIER_iterator;
-                          map_iterator_args.clear();
-                        } '(' map_iterator_argument_list ')'
+                          pending_iterator_definitions.clear();
+                        } '(' EXPR_STRING ')' {
+                          pending_iterator_definitions =
+                              parseOpenMPIteratorDefinitions($4);
+                        }
                       ;
-map_iterator_argument_list : EXPR_STRING { map_iterator_args.push_back($1); } '=' EXPR_STRING { map_iterator_args.push_back($4); } ':' EXPR_STRING { map_iterator_args.push_back($7); } map_iterator_step
-                           ;
-map_iterator_step : /* empty */
-                  | ':' EXPR_STRING { map_iterator_args.push_back($2); }
-                  ;
 
 task_reduction_clause : TASK_REDUCTION '(' task_reduction_identifier ':' var_list ')' {
                       }
@@ -4961,66 +4896,24 @@ typername_variable : {
 typername_list : typername_variable
                | typername_list ',' typername_variable
                ;
-declare_mapper_directive : DECLARE MAPPER { current_directive = makeDirectiveAt<OpenMPDeclareMapperDirective>(@1.first_line, @1.first_column, OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified); } '(' mapper_list ')' declare_mapper_clause_optseq
+declare_mapper_directive : DECLARE MAPPER {
+                             current_directive =
+                                 makeDirectiveAt<OpenMPDeclareMapperDirective>(
+                                     @1.first_line, @1.first_column,
+                                     OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified);
+                           } '(' EXPR_STRING ')' {
+                             OpenMPBaseLang language =
+                                 static_cast<OpenMPDeclareMapperDirective *>(
+                                     current_directive)
+                                     ->setSpecification(
+                                         $5,
+                                         requested_lang != Lang_unknown
+                                             ? requested_lang
+                                             : auto_lang);
+                             if (auto_lang == Lang_unknown)
+                               auto_lang = language;
+                           } declare_mapper_clause_optseq
                          ;
-
-mapper_list : mapper_identifier_optseq 
-            ;
-
-mapper_identifier_optseq : type_var
-                         | mapper_identifier ':' type_var
-                         ;
- 
-mapper_identifier : IDENTIFIER_DEFAULT { ((OpenMPDeclareMapperDirective*)current_directive)->setIdentifier(OMPD_DECLARE_MAPPER_IDENTIFIER_default); }
-                  | EXPR_STRING { ((OpenMPDeclareMapperDirective*)current_directive)->setIdentifier(OMPD_DECLARE_MAPPER_IDENTIFIER_user); ((OpenMPDeclareMapperDirective*)current_directive)->setUserDefinedIdentifier($1); }
-                  ;
-         
-type_var : EXPR_STRING { 
-               const char * _type_var = $1;
-               std::string type_var = std::string(_type_var);
-               // Handle Fortran style embedded "::" if present
-               size_t dc_pos = type_var.find("::");
-               if (dc_pos != std::string::npos && (requested_lang == Lang_Fortran || auto_lang == Lang_Fortran || requested_lang == Lang_unknown)) {
-                   std::string _type = type_var.substr(0, dc_pos);
-                   // Skip following spaces
-                   size_t var_start = dc_pos + 2;
-                   while (var_start < type_var.size() && (type_var[var_start] == ' ' || type_var[var_start] == '\t')) {
-                       ++var_start;
-                   }
-                   std::string _var = type_var.substr(var_start);
-                   ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperType(_type.c_str());
-                   ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperVar(_var.c_str());
-                   ((OpenMPDeclareMapperDirective*)current_directive)->setTypeVarHasSpace(true);
-                   if (auto_lang == Lang_unknown) {
-                       auto_lang = Lang_Fortran;
-                   }
-               } else if (parserLanguageIsCLike()) {
-                   int length = type_var.length() - 1;
-                   for (int i = length; i >= 0; i--) {
-                       if (type_var[i] == ' ' || type_var[i] == '*') { 
-                           std::string _type = type_var.substr(0, i + 1);
-                           std::string _var = type_var.substr(i + 1, length - i);
-                           const char* type = _type.c_str();
-                           const char* var = _var.c_str();
-                           ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperType(type);
-                           ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperVar(var);
-                           ((OpenMPDeclareMapperDirective*)current_directive)->setTypeVarHasSpace(type_var[i] == ' ');
-                           break;
-                       }
-                   }
-               } else {
-                   yyerror("The syntax should be \"type :: var\" in Fortran"); 
-                   YYABORT; 
-               }
-         } 
-         | declare_mapper_type DOUBLE_COLON declare_mapper_var { if (parserLanguageIsCLike()) yyerror("The syntax should be \"type var\" in C"); YYABORT; }
-         ;
-         
-declare_mapper_type : EXPR_STRING { ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperType($1); }
-                    ;
-                    
-declare_mapper_var : EXPR_STRING { ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperVar($1); }
-                   ;
 
 parallel_clause_optseq : /* empty */
                        | parallel_clause_seq

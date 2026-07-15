@@ -180,22 +180,40 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
     goto default_case;
   }
   case OMPD_declare_mapper: {
+    auto *mapper_directive = static_cast<OpenMPDeclareMapperDirective *>(this);
     OpenMPDeclareMapperDirectiveIdentifier identifier =
-        ((OpenMPDeclareMapperDirective *)this)->getIdentifier();
+        mapper_directive->getIdentifier();
+    if (identifier == OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified ||
+        mapper_directive->getDeclareMapperType().empty() ||
+        mapper_directive->getDeclareMapperVar().empty()) {
+      std::cerr << "OMPPARSER_INVARIANT[declare-mapper]: mapper "
+                   "specification is incomplete\n";
+      std::abort();
+    }
+    if (!mapper_directive->hasExplicitIdentifier() &&
+        identifier != OMPD_DECLARE_MAPPER_IDENTIFIER_default) {
+      std::cerr << "OMPPARSER_INVARIANT[declare-mapper-id]: omitted mapper "
+                   "identifier is not the typed default identifier\n";
+      std::abort();
+    }
     // Remove trailing space from directive name before adding opening paren
     if (!result.empty() && result.back() == ' ') {
       result.pop_back();
     }
     result += "(";
-    if (identifier != OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified) {
+    if (mapper_directive->hasExplicitIdentifier()) {
+      if (identifier == OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified) {
+        std::cerr << "OMPPARSER_INVARIANT[declare-mapper-id]: explicit "
+                     "identifier is unspecified\n";
+        std::abort();
+      }
       switch (identifier) {
       case OMPD_DECLARE_MAPPER_IDENTIFIER_default: {
         result += "default";
         break;
       }
       case OMPD_DECLARE_MAPPER_IDENTIFIER_user: {
-        std::string id =
-            ((OpenMPDeclareMapperDirective *)this)->getUserDefinedIdentifier();
+        std::string id = mapper_directive->getUserDefinedIdentifier();
         if (id.empty()) {
           std::cerr << "OMPPARSER_INVARIANT[declare-mapper-id]: user mapper "
                        "identifier is empty\n";
@@ -214,15 +232,14 @@ std::string OpenMPDirective::generatePragmaString(std::string prefix,
       }
     }
 
-    std::string declare_mapper_type =
-        ((OpenMPDeclareMapperDirective *)this)->getDeclareMapperType();
+    std::string declare_mapper_type = mapper_directive->getDeclareMapperType();
     result += declare_mapper_type;
     std::string declare_mapper_variable =
-        ((OpenMPDeclareMapperDirective *)this)->getDeclareMapperVar();
+        mapper_directive->getDeclareMapperVar();
     // Fortran requires :: separator between type and variable
     if (this->getBaseLang() == Lang_Fortran) {
       result += " :: ";
-    } else if (((OpenMPDeclareMapperDirective *)this)->hasTypeVarSpace()) {
+    } else if (mapper_directive->hasTypeVarSpace()) {
       result += " ";
     }
     result += declare_mapper_variable;
@@ -745,7 +762,7 @@ std::string OpenMPDepobjUpdateClause::toString() {
 };
 
 std::string OpenMPAffinityClause::toString() {
-  const auto &iterators_definition_class = this->getIteratorsDefinitionClass();
+  const auto &iterators_definition_class = this->getIterators();
   std::string result = "affinity ";
   std::string clause_string = "(";
   OpenMPAffinityClauseModifier modifier = this->getModifier();

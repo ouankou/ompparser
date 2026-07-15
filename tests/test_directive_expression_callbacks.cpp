@@ -131,7 +131,16 @@ bool checkClauseRecords(const char *input, OpenMPBaseLang base_lang,
   if (directive == nullptr || directive->getKind() != directive_kind ||
       directive->generatePragmaString() != expected_output ||
       capture.records.size() != expected.size()) {
-    std::cerr << "clause callback result mismatch for: " << input << "\n";
+    std::cerr << "clause callback result mismatch for: " << input << "\n"
+              << "  directive="
+              << (directive ? static_cast<int>(directive->getKind()) : -1)
+              << " wanted=" << static_cast<int>(directive_kind) << "\n"
+              << "  output='"
+              << (directive ? directive->generatePragmaString() : "<null>")
+              << "'\n"
+              << "  wanted='" << expected_output << "'\n"
+              << "  records=" << capture.records.size()
+              << " wanted=" << expected.size() << "\n";
     return false;
   }
   for (std::size_t index = 0; index < expected.size(); ++index) {
@@ -140,7 +149,16 @@ bool checkClauseRecords(const char *input, OpenMPBaseLang base_lang,
     if (actual.directive != wanted.directive ||
         actual.clause != wanted.clause || actual.mode != wanted.mode ||
         actual.expression != wanted.expression) {
-      std::cerr << "clause callback record mismatch for: " << input << "\n";
+      std::cerr << "clause callback record mismatch at index " << index
+                << " for: " << input << "\n"
+                << "  actual directive=" << static_cast<int>(actual.directive)
+                << " clause=" << static_cast<int>(actual.clause)
+                << " mode=" << static_cast<int>(actual.mode) << " text='"
+                << actual.expression << "'\n"
+                << "  wanted directive=" << static_cast<int>(wanted.directive)
+                << " clause=" << static_cast<int>(wanted.clause)
+                << " mode=" << static_cast<int>(wanted.mode) << " text='"
+                << wanted.expression << "'\n";
       return false;
     }
   }
@@ -303,6 +321,31 @@ bool checkNowaitRejectsSecondExpression() {
   return WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
 }
 
+bool checkMalformedDirectiveAborts(const char *label, const char *input,
+                                   OpenMPBaseLang base_lang) {
+  const pid_t child = fork();
+  if (child < 0) {
+    std::cerr << "failed to fork " << label << " death test\n";
+    return false;
+  }
+  if (child == 0) {
+    OpenMPParseOptions options;
+    options.base_lang = base_lang;
+    (void)parseOpenMP(input, options);
+    _exit(0);
+  }
+  int status = 0;
+  if (waitpid(child, &status, 0) != child) {
+    std::cerr << "failed to wait for " << label << " death test\n";
+    return false;
+  }
+  if (!WIFSIGNALED(status) || WTERMSIG(status) != SIGABRT) {
+    std::cerr << label << " did not abort\n";
+    return false;
+  }
+  return true;
+}
+
 bool checkOptionalMetadirectiveVariants() {
   OpenMPParseOptions options;
   options.base_lang = Lang_Cplusplus;
@@ -341,6 +384,21 @@ int main() {
   bool ok = true;
   ok = checkTypedVariantSelectorRecords() && ok;
   ok = checkNowaitRejectsSecondExpression() && ok;
+  ok = checkMalformedDirectiveAborts(
+           "iterator without assignment",
+           "#pragma omp target map(iterator(unsigned long i 0:n), to: a[i])",
+           Lang_Cplusplus) &&
+       ok;
+  ok = checkMalformedDirectiveAborts(
+           "iterator with empty range endpoint",
+           "#pragma omp target map(iterator(unsigned long i = 0:), to: a[i])",
+           Lang_Cplusplus) &&
+       ok;
+  ok = checkMalformedDirectiveAborts(
+           "declare mapper without a type",
+           "#pragma omp declare mapper(custom : value) map(to: value)",
+           Lang_Cplusplus) &&
+       ok;
   ok = checkOptionalMetadirectiveVariants() && ok;
   ok = checkRecords(
            "#pragma omp declare variant(foo) match(construct={parallel})",
@@ -378,6 +436,144 @@ int main() {
                           {{OMPD_target, OMPC_nowait, OMP_EXPR_PARSE_expression,
                             "is_deferred"}},
                           "#pragma omp target nowait(is_deferred)") &&
+       ok;
+  ok =
+      checkClauseRecords(
+          "#pragma omp task depend(iterator(T T = 0:n, int i = T:n), "
+          "in: a[T][i])",
+          Lang_Cplusplus, OMPD_task,
+          {{OMPD_task, OMPC_depend, OMP_EXPR_PARSE_openmp_iterator_type, "T"},
+           {OMPD_task, OMPC_depend, OMP_EXPR_PARSE_openmp_iterator_name, "T"},
+           {OMPD_task, OMPC_depend, OMP_EXPR_PARSE_expression, "0"},
+           {OMPD_task, OMPC_depend, OMP_EXPR_PARSE_expression, "n"},
+           {OMPD_task, OMPC_depend, OMP_EXPR_PARSE_openmp_iterator_type, "int"},
+           {OMPD_task, OMPC_depend, OMP_EXPR_PARSE_openmp_iterator_name, "i"},
+           {OMPD_task, OMPC_depend, OMP_EXPR_PARSE_expression, "T"},
+           {OMPD_task, OMPC_depend, OMP_EXPR_PARSE_expression, "n"},
+           {OMPD_task, OMPC_depend, OMP_EXPR_PARSE_expression, "a[T][i]"}},
+          "#pragma omp task depend (iterator ( T T=0:n, int i=T:n ), in : "
+          "a[T][i])") &&
+      ok;
+  const std::vector<Record> typed_iterator_prefix = {
+      {OMPD_target, OMPC_map, OMP_EXPR_PARSE_openmp_iterator_type, "T"},
+      {OMPD_target, OMPC_map, OMP_EXPR_PARSE_openmp_iterator_name, "T"},
+      {OMPD_target, OMPC_map, OMP_EXPR_PARSE_expression, "0"},
+      {OMPD_target, OMPC_map, OMP_EXPR_PARSE_expression, "n"},
+      {OMPD_target, OMPC_map, OMP_EXPR_PARSE_openmp_iterator_type, "int"},
+      {OMPD_target, OMPC_map, OMP_EXPR_PARSE_openmp_iterator_name, "i"},
+      {OMPD_target, OMPC_map, OMP_EXPR_PARSE_expression, "T"},
+      {OMPD_target, OMPC_map, OMP_EXPR_PARSE_expression, "n"},
+      {OMPD_target, OMPC_map, OMP_EXPR_PARSE_array_section, "a[T][i]"}};
+  ok = checkClauseRecords(
+           "#pragma omp target map(iterator(T T = 0:n, int i = T:n), "
+           "to: a[T][i])",
+           Lang_Cplusplus, OMPD_target, typed_iterator_prefix,
+           "#pragma omp target map(iterator(T T=0:n, int i=T:n), to : "
+           "a[T][i])") &&
+       ok;
+  ok = checkClauseRecords(
+           "#pragma omp target update to(iterator(T T = 0:n, int i = T:n): "
+           "a[T][i])",
+           Lang_Cplusplus, OMPD_target_update,
+           {{OMPD_target_update, OMPC_to, OMP_EXPR_PARSE_openmp_iterator_type,
+             "T"},
+            {OMPD_target_update, OMPC_to, OMP_EXPR_PARSE_openmp_iterator_name,
+             "T"},
+            {OMPD_target_update, OMPC_to, OMP_EXPR_PARSE_expression, "0"},
+            {OMPD_target_update, OMPC_to, OMP_EXPR_PARSE_expression, "n"},
+            {OMPD_target_update, OMPC_to, OMP_EXPR_PARSE_openmp_iterator_type,
+             "int"},
+            {OMPD_target_update, OMPC_to, OMP_EXPR_PARSE_openmp_iterator_name,
+             "i"},
+            {OMPD_target_update, OMPC_to, OMP_EXPR_PARSE_expression, "T"},
+            {OMPD_target_update, OMPC_to, OMP_EXPR_PARSE_expression, "n"},
+            {OMPD_target_update, OMPC_to, OMP_EXPR_PARSE_array_section,
+             "a[T][i]"}},
+           "#pragma omp target update to(iterator(T T=0:n, int i=T:n) : "
+           "a[T][i])") &&
+       ok;
+  ok = checkClauseRecords(
+           "#pragma omp target update from(iterator(int j = 0:n): b[j])",
+           Lang_Cplusplus, OMPD_target_update,
+           {{OMPD_target_update, OMPC_from, OMP_EXPR_PARSE_openmp_iterator_type,
+             "int"},
+            {OMPD_target_update, OMPC_from, OMP_EXPR_PARSE_openmp_iterator_name,
+             "j"},
+            {OMPD_target_update, OMPC_from, OMP_EXPR_PARSE_expression, "0"},
+            {OMPD_target_update, OMPC_from, OMP_EXPR_PARSE_expression, "n"},
+            {OMPD_target_update, OMPC_from, OMP_EXPR_PARSE_array_section,
+             "b[j]"}},
+           "#pragma omp target update from(iterator(int j=0:n) : b[j])") &&
+       ok;
+  ok = checkClauseRecords(
+           "#pragma omp target map(iterator(unsigned long i = "
+           "f<std::pair<int, long>>(0, 1):n + 1:step(2), int j = 0:m), "
+           "to: a[i][j])",
+           Lang_Cplusplus, OMPD_target,
+           {{OMPD_target, OMPC_map, OMP_EXPR_PARSE_openmp_iterator_type,
+             "unsigned long"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_openmp_iterator_name, "i"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_expression,
+             "f<std::pair<int, long>>(0, 1)"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_expression, "n + 1"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_expression, "step(2)"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_openmp_iterator_type, "int"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_openmp_iterator_name, "j"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_expression, "0"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_expression, "m"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_array_section, "a[i][j]"}},
+           "#pragma omp target map(iterator(unsigned long "
+           "i=f<std::pair<int, long>>(0, 1):n + 1:step(2), int j=0:m), to : "
+           "a[i][j])") &&
+       ok;
+  ok = checkClauseRecords(
+           "#pragma omp target map(iterator(int k = ')':n), to: a[k])",
+           Lang_Cplusplus, OMPD_target,
+           {{OMPD_target, OMPC_map, OMP_EXPR_PARSE_openmp_iterator_type, "int"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_openmp_iterator_name, "k"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_expression, "')'"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_expression, "n"},
+            {OMPD_target, OMPC_map, OMP_EXPR_PARSE_array_section, "a[k]"}},
+           "#pragma omp target map(iterator(int k=')':n), to : a[k])") &&
+       ok;
+  ok = checkClauseRecords(
+           "#pragma omp declare mapper(custom : const MapperRecord value) "
+           "map(to: value)",
+           Lang_Cplusplus, OMPD_declare_mapper,
+           {{OMPD_declare_mapper, OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_identifier, "custom"},
+            {OMPD_declare_mapper, OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_type, "const MapperRecord"},
+            {OMPD_declare_mapper, OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_variable, "value"},
+            {OMPD_declare_mapper, OMPC_map, OMP_EXPR_PARSE_array_section,
+             "value"}},
+           "#pragma omp declare mapper(custom : const MapperRecord value) "
+           "map(to : value)") &&
+       ok;
+  ok = checkClauseRecords(
+           "#pragma omp declare mapper(MapperRecord value) map(to: value)",
+           Lang_Cplusplus, OMPD_declare_mapper,
+           {{OMPD_declare_mapper, OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_type, "MapperRecord"},
+            {OMPD_declare_mapper, OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_variable, "value"},
+            {OMPD_declare_mapper, OMPC_map, OMP_EXPR_PARSE_array_section,
+             "value"}},
+           "#pragma omp declare mapper(MapperRecord value) map(to : value)") &&
+       ok;
+  ok = checkClauseRecords(
+           "#pragma omp declare mapper(default : MapperRecord value) "
+           "map(to: value)",
+           Lang_Cplusplus, OMPD_declare_mapper,
+           {{OMPD_declare_mapper, OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_type, "MapperRecord"},
+            {OMPD_declare_mapper, OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_variable, "value"},
+            {OMPD_declare_mapper, OMPC_map, OMP_EXPR_PARSE_array_section,
+             "value"}},
+           "#pragma omp declare mapper(default : MapperRecord value) "
+           "map(to : value)") &&
        ok;
   ok =
       checkClauseRecords(
