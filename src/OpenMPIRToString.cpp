@@ -2226,7 +2226,12 @@ std::string OpenMPVariantClause::toString() {
               selector.kind == OMPC_TRAIT_condition ||
                       selector.kind == OMPC_TRAIT_device_num
                   ? OMP_EXPR_PARSE_expression
-                  : OMP_EXPR_PARSE_verbatim;
+                  : (selector.kind == OMPC_TRAIT_arch ||
+                             selector.kind == OMPC_TRAIT_isa ||
+                             selector.kind == OMPC_TRAIT_uid ||
+                             selector.kind == OMPC_TRAIT_extension
+                         ? OMP_EXPR_PARSE_openmp_context_name
+                         : OMP_EXPR_PARSE_verbatim);
           if (property.parse_mode != expected_mode) {
             std::cerr << "OMPPARSER_INVARIANT[variant-trait-property]: "
                          "expression parse mode diverged\n";

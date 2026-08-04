@@ -221,6 +221,7 @@ bool b_within_variable_list = false; // a flag to indicate if the program is now
 OpenMPBaseLang requested_lang = Lang_unknown;
 OpenMPBaseLang auto_lang = Lang_unknown;
 bool current_normalize_clauses = true;
+bool current_preserve_expression_whitespace = false;
 
 // Track whether the next clause should be preceded by a comma (to preserve Fortran spacing)
 bool clause_separator_comma = false;
@@ -252,6 +253,7 @@ static void resetActiveParseState() {
   requested_lang = Lang_unknown;
   auto_lang = Lang_unknown;
   current_normalize_clauses = true;
+  current_preserve_expression_whitespace = false;
   clause_separator_comma = false;
   current_pragma_raw.clear();
   openmpResetExprParseCallback();
@@ -1125,7 +1127,7 @@ context_kind_name : HOST { requireCurrentVariantClause()->addContextKindProperty
 context_isa : ISA '(' trait_score {
                 requireCurrentVariantClause()->beginTraitSelector(
                     OMPC_TRAIT_isa, trait_score);
-              } context_verbatim_property_list {
+              } context_name_property_list {
                 requireCurrentVariantClause()->endTraitSelector();
               } ')'
             ;
@@ -1133,7 +1135,7 @@ context_isa : ISA '(' trait_score {
 context_arch : ARCH '(' trait_score {
                  requireCurrentVariantClause()->beginTraitSelector(
                      OMPC_TRAIT_arch, trait_score);
-               } context_verbatim_property_list {
+               } context_name_property_list {
                  requireCurrentVariantClause()->endTraitSelector();
                } ')'
              ;
@@ -1143,10 +1145,24 @@ context_uid : UID '(' trait_score {
                     OMPC_TRAIT_uid, trait_score);
               } EXPR_STRING {
                 requireCurrentVariantClause()->addExpressionProperty(
-                    $5, OMP_EXPR_PARSE_verbatim);
+                    $5, OMP_EXPR_PARSE_openmp_context_name);
                 requireCurrentVariantClause()->endTraitSelector();
               } ')'
             ;
+
+context_name_property_list : EXPR_STRING {
+                              requireCurrentVariantClause()
+                                  ->addExpressionProperty(
+                                      $1,
+                                      OMP_EXPR_PARSE_openmp_context_name);
+                            }
+                           | context_name_property_list ',' EXPR_STRING {
+                              requireCurrentVariantClause()
+                                  ->addExpressionProperty(
+                                      $3,
+                                      OMP_EXPR_PARSE_openmp_context_name);
+                            }
+                           ;
 
 context_verbatim_property_list : EXPR_STRING {
                                   requireCurrentVariantClause()
@@ -1169,7 +1185,7 @@ implementation_selector : VENDOR '(' trait_score {
                         | EXTENSION '(' trait_score {
                             requireCurrentVariantClause()->beginTraitSelector(
                                 OMPC_TRAIT_extension, trait_score);
-                          } context_verbatim_property_list {
+                          } context_name_property_list {
                             requireCurrentVariantClause()->endTraitSelector();
                           } ')'
                         | REQUIRES '(' trait_score {
@@ -3136,8 +3152,8 @@ ext_implementation_defined_requirement_clause: EXT_ EXPR_STRING {
                                              ;
 device_clause : DEVICE '(' device_parameter ')' ;
 
-device_parameter : EXPR_STRING  { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device, OMPC_DEVICE_MODIFIER_unspecified); current_clause->addLangExpr($1, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression); }
-                 | EXPR_STRING ',' { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device); current_expr_separator = OMPC_CLAUSE_SEP_comma; current_clause->addLangExpr($1, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression); } var_list
+device_parameter : EXPR_STRING  { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device, OMPC_DEVICE_MODIFIER_unspecified); static_cast<OpenMPDeviceClause *>(current_clause)->addDeviceExpression($1); }
+                 | EXPR_STRING ',' { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device); current_expr_separator = OMPC_CLAUSE_SEP_comma; static_cast<OpenMPDeviceClause *>(current_clause)->addDeviceExpression($1); } var_list
                  | EXPR_STRING ':' EXPR_STRING {
                        std::string selector = std::string($1 ? $1 : "") + ":" + std::string($3 ? $3 : "");
                        current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device, OMPC_DEVICE_MODIFIER_unspecified);
@@ -3158,8 +3174,8 @@ device_modifier_parameter : ANCESTOR { current_clause = addClauseAt(current_dire
                           
 device_without_modifier_clause : DEVICE '(' device_without_modifier_parameter ')' ;
 
-device_without_modifier_parameter : EXPR_STRING  { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device, OMPC_DEVICE_MODIFIER_unspecified); current_clause->addLangExpr($1, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression); }
-                                  | EXPR_STRING ',' { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device); current_expr_separator = OMPC_CLAUSE_SEP_comma; current_clause->addLangExpr($1, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression); } var_list
+device_without_modifier_parameter : EXPR_STRING  { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device, OMPC_DEVICE_MODIFIER_unspecified); static_cast<OpenMPDeviceClause *>(current_clause)->addDeviceExpression($1); }
+                                  | EXPR_STRING ',' { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device); current_expr_separator = OMPC_CLAUSE_SEP_comma; static_cast<OpenMPDeviceClause *>(current_clause)->addDeviceExpression($1); } var_list
                                   | EXPR_STRING ':' EXPR_STRING {
                                         std::string selector = std::string($1 ? $1 : "") + ":" + std::string($3 ? $3 : "");
                                         current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device, OMPC_DEVICE_MODIFIER_unspecified);
@@ -6634,6 +6650,8 @@ parseOpenMP(const char* _input, const OpenMPParseOptions &options) {
     requested_lang = options.base_lang;
     auto_lang = options.base_lang;
     current_normalize_clauses = options.normalize_clauses;
+    current_preserve_expression_whitespace =
+        options.preserve_expression_whitespace;
     std::string input_string;  // Must persist until after start_lexer()
     const char *input = _input;
     current_pragma_raw = (_input != nullptr) ? std::string(_input) : "";

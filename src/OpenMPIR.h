@@ -39,6 +39,7 @@ enum OpenMPExprParseMode {
   OMP_EXPR_PARSE_openmp_declare_mapper_identifier,
   OMP_EXPR_PARSE_openmp_declare_mapper_type,
   OMP_EXPR_PARSE_openmp_declare_mapper_variable,
+  OMP_EXPR_PARSE_openmp_context_name,
   OMP_EXPR_PARSE_verbatim
 };
 
@@ -51,6 +52,10 @@ typedef void *(*OpenMPExprParseCallback)(OpenMPDirectiveKind directive_kind,
 struct OpenMPParseOptions {
   OpenMPBaseLang base_lang = Lang_unknown;
   bool normalize_clauses = true;
+  // Retain interior source whitespace in expression callback payloads.  This
+  // is required by consumers that are parsing the exact, pre-macro directive
+  // spelling rather than the semantic/preprocessed directive.
+  bool preserve_expression_whitespace = false;
   OpenMPExprParseCallback expression_callback = nullptr;
   void *expression_callback_user_data = nullptr;
 };
@@ -1129,16 +1134,7 @@ public:
   const void *getUserDefinedAllocatorNode() const {
     return user_defined_allocator_node;
   }
-  void setAllocatorModifier(const char *_allocator) {
-    if (allocator != OMPC_ALLOCATE_ALLOCATOR_unspecified) {
-      std::cerr << "OMPPARSER_SEMANTIC[allocate-allocator]: allocate clause "
-                   "specifies more than one allocator\n";
-      std::abort();
-    }
-    allocator = OMPC_ALLOCATE_ALLOCATOR_user;
-    setUserDefinedAllocator(_allocator);
-    modifier_order.push_back(ModifierKind::allocator);
-  }
+  void setAllocatorModifier(const char *_allocator);
   void setAlignModifier(const char *_alignment) {
     if (_alignment == nullptr || *_alignment == '\0' || !alignment.empty()) {
       std::cerr << "OMPPARSER_SEMANTIC[allocate-align]: alignment is null, "
@@ -1919,6 +1915,9 @@ public:
 
   OpenMPDeviceClauseModifier getModifier() { return modifier; };
 
+  void addDeviceExpression(const char *expression,
+                           OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space);
+
   static OpenMPClause *addDeviceClause(OpenMPDirective *directive,
                                        OpenMPDeviceClauseModifier modifier);
   std::string toString();
@@ -2340,11 +2339,13 @@ class OpenMPDepobjDirective : public OpenMPDirective {
 
 protected:
   std::string depobj;
+  const void *depobj_node = nullptr;
 
 public:
   OpenMPDepobjDirective() : OpenMPDirective(OMPD_depobj) {}
-  void addDepobj(const char *_depobj) { depobj = std::string(_depobj); };
+  void addDepobj(const char *_depobj);
   std::string getDepobj() { return depobj; };
+  const void *getDepobjNode() const { return depobj_node; }
   void generateDOT(std::ofstream &, int, int, std::string);
 };
 // ordered directive

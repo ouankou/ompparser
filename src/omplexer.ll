@@ -112,6 +112,7 @@ extern int openmp_lex();
 #include <vector>
 
 extern void openmpSetExprParseMode(OpenMPExprParseMode mode);
+extern bool current_preserve_expression_whitespace;
 
 /* Moved from Makefile.am to the source file to work with --with-pch Liao
    12/10/2009 */
@@ -1776,6 +1777,7 @@ cgroup                    { return CGROUP; }
 
 <USES_ALLOCATORS_STATE>"("                                     { uses_allocators_paren_depth++; return '('; }
 <USES_ALLOCATORS_STATE>","                                     { return ','; }
+<USES_ALLOCATORS_STATE>":"                                     { return ':'; }
 <USES_ALLOCATORS_STATE>")"                                     { if (uses_allocators_paren_depth > 0) { uses_allocators_paren_depth--; } if (uses_allocators_paren_depth == 0) { yy_pop_state(); } return ')'; }
 <USES_ALLOCATORS_STATE>omp_default_mem_alloc/{blank}*"("       { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return DEFAULT_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_large_cap_mem_alloc/{blank}*"("     { prepare_expression_capture(); yy_push_state(ALLOC_EXPR_STATE);return LARGE_CAP_MEM_ALLOC; }
@@ -1793,9 +1795,51 @@ cgroup                    { return CGROUP; }
 <USES_ALLOCATORS_STATE>omp_cgroup_mem_alloc        { return CGROUP_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_pteam_mem_alloc         { return PTEAM_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_thread_mem_alloc        { return THREAD_MEM_ALLOC; }
-<USES_ALLOCATORS_STATE>traits                      { return TRAITS; }
+<USES_ALLOCATORS_STATE>traits/{blank}*"("          { return TRAITS; }
+<USES_ALLOCATORS_STATE>{identifier}{blank}*"("     {
+                                                              std::size_t identifier_length = 0;
+                                                              while (identifier_length <
+                                                                         static_cast<std::size_t>(
+                                                                             yyleng) &&
+                                                                     (std::isalnum(
+                                                                          static_cast<unsigned char>(
+                                                                              yytext[identifier_length])) ||
+                                                                      yytext[identifier_length] ==
+                                                                          '_')) {
+                                                                ++identifier_length;
+                                                              }
+                                                              if (identifier_length == 0) {
+                                                                std::fprintf(
+                                                                    stderr,
+                                                                    "REX_OMPPARSER_INVARIANT[uses-allocators]: "
+                                                                    "matched allocator call has no identifier\n");
+                                                                std::abort();
+                                                              }
+                                                              openmp_lval.stype = store_lexeme(
+                                                                  original_token_text(
+                                                                      identifier_length));
+                                                              TRACKED_YYLESS(
+                                                                  static_cast<int>(
+                                                                      identifier_length));
+                                                              prepare_expression_capture();
+                                                              yy_push_state(ALLOC_EXPR_STATE);
+                                                              return EXPR_STRING;
+                                                            }
+<USES_ALLOCATORS_STATE>{identifier}                {
+                                                              openmp_lval.stype = store_lexeme(
+                                                                  original_token_text(
+                                                                      static_cast<std::size_t>(yyleng)));
+                                                              return EXPR_STRING;
+                                                            }
 <USES_ALLOCATORS_STATE>{blank}*                                { ; }
-<USES_ALLOCATORS_STATE>.                                       { yy_push_state(EXPR_STATE); tracked_unput(yytext[0]); }
+<USES_ALLOCATORS_STATE>.                                       {
+                                                              std::fprintf(
+                                                                  stderr,
+                                                                  "OMP_PARSER_INVARIANT[uses-allocators]: "
+                                                                  "allocator must be one base-language "
+                                                                  "identifier\n");
+                                                              std::abort();
+                                                            }
 
 <ALLOC_EXPR_STATE>"("                        { uses_allocators_paren_depth++; return '('; }
 <ALLOC_EXPR_STATE>")"                        { yy_pop_state(); return emit_expr_string_and_unput(')'); }
@@ -1985,7 +2029,16 @@ cgroup                    { return CGROUP; }
                                                     break;
                                                 }
                     case ':': {
-                                                    if (current_string.empty()) {
+                                                    int next_char = tracked_yyinput();
+                                                    if (next_char != EOF) {
+                                                        tracked_unput(next_char);
+                                                    }
+                                                    const bool cxx_scope_operator =
+                                                        (!current_string.empty() && current_string.back() == ':') ||
+                                                        next_char == ':';
+                                                    if (cxx_scope_operator) {
+                                                        current_string.push_back(current_char);
+                                                    } else if (current_string.empty()) {
                                                         clear_expression_buffer();
                                                         return ':';
                                                     } else if (ternary_count > 0) {
@@ -2007,7 +2060,8 @@ cgroup                    { return CGROUP; }
                                                     if (parenthesis_global_count == 0 && !inside_quotes) {
                                                         yy_pop_state();
                                                         return emit_expr_string_no_unput();
-                                                    } else if (inside_quotes) {
+                                                    } else if (inside_quotes ||
+                                                               current_preserve_expression_whitespace) {
                                                         current_string.push_back(current_char);
                                                     }
                                                     break;
@@ -2052,17 +2106,22 @@ cgroup                    { return CGROUP; }
                                                     break;
                                                 }
                                                 case ':': {
-                                                    if (current_string.empty()) {
+                                                    int next_char = tracked_yyinput();
+                                                    if (next_char != EOF) {
+                                                        tracked_unput(next_char);
+                                                    }
+                                                    const bool cxx_scope_operator =
+                                                        (!current_string.empty() && current_string.back() == ':') ||
+                                                        next_char == ':';
+                                                    if (cxx_scope_operator) {
+                                                        current_string.push_back(current_char);
+                                                    } else if (current_string.empty()) {
                                                         clear_expression_buffer();
                                                         return ':';
                                                     } else if (ternary_count > 0) {
                                                         ternary_count--;
                                                         current_string.push_back(current_char);
                                                     } else {
-                                                        int next_char = tracked_yyinput();
-                                                        if (next_char != EOF) {
-                                                            tracked_unput(next_char);
-                                                        }
                                                         bool next_is_paren = (next_char == '(');
                                                         if (bracket_count == 0 && parenthesis_global_count == 0 && !next_is_paren) {
                                                             yy_pop_state();
@@ -2084,7 +2143,8 @@ cgroup                    { return CGROUP; }
                                                         inside_quotes = false;
                                                         return EXPR_STRING;
                                                     }
-                                                    else {
+                                                    else if (inside_quotes ||
+                                                             current_preserve_expression_whitespace) {
                                                         current_string.push_back(current_char);
                                                     }
                                                     break;
@@ -2273,6 +2333,15 @@ static inline int consume_allocate_expression_char(char ch) {
     return 0;
   }
   if (ch == ':') {
+    int next_char = tracked_yyinput();
+    if (next_char != EOF) {
+      tracked_unput(next_char);
+    }
+    if ((!current_string.empty() && current_string.back() == ':') ||
+        next_char == ':') {
+      current_string.push_back(ch);
+      return 0;
+    }
     if (!state.delimiters.empty()) {
       if (state.ternary_depth > 0) {
         --state.ternary_depth;

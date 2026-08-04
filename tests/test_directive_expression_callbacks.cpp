@@ -114,6 +114,9 @@ bool checkRecords(const char *input, OpenMPBaseLang base_lang,
     return flush->getFlushNodes() ==
            std::vector<const void *>(expressions.size(), &capture);
   }
+  if (auto *depobj = dynamic_cast<OpenMPDepobjDirective *>(directive.get())) {
+    return expressions.size() == 1 && depobj->getDepobjNode() == &capture;
+  }
   return false;
 }
 
@@ -161,6 +164,28 @@ bool checkClauseRecords(const char *input, OpenMPBaseLang base_lang,
                 << wanted.expression << "'\n";
       return false;
     }
+  }
+  return true;
+}
+
+bool checkPreservedExpressionWhitespace() {
+  Capture capture;
+  OpenMPParseOptions options;
+  options.base_lang = Lang_Fortran;
+  options.normalize_clauses = false;
+  options.preserve_expression_whitespace = true;
+  options.expression_callback = captureExpression;
+  options.expression_callback_user_data = &capture;
+  auto directive =
+      parseOpenMP("!$omp parallel if(attempt .gt. ATTEMPT_THRESHOLD)", options);
+  const std::vector<Record> expected = {{OMPD_parallel, OMPC_if,
+                                         OMP_EXPR_PARSE_expression,
+                                         "attempt .gt. ATTEMPT_THRESHOLD"}};
+  if (directive == nullptr || directive->getKind() != OMPD_parallel ||
+      capture.records != expected) {
+    std::cerr << "exact-source expression callback did not preserve interior "
+                 "Fortran whitespace\n";
+    return false;
   }
   return true;
 }
@@ -262,16 +287,23 @@ bool checkTypedVariantSelectorRecords() {
     return false;
   }
   const std::vector<Record> expected = {
-      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_verbatim, "\"nvptx\""},
-      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_verbatim, "\"amdgcn\""},
+      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_openmp_context_name,
+       "\"nvptx\""},
+      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_openmp_context_name,
+       "\"amdgcn\""},
       {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_expression, "device_id"},
-      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_verbatim, "\"sm_90\""},
-      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_verbatim, "\"gfx942\""},
-      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_verbatim, "\"device-7\""},
+      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_openmp_context_name,
+       "\"sm_90\""},
+      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_openmp_context_name,
+       "\"gfx942\""},
+      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_openmp_context_name,
+       "\"device-7\""},
       {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_constant_integer, "5"},
       {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_constant_integer, "2"},
-      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_verbatim, "ext_a"},
-      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_verbatim, "ext_b"},
+      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_openmp_context_name,
+       "ext_a"},
+      {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_openmp_context_name,
+       "ext_b"},
       {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_constant_integer, "3"},
       {OMPD_metadirective, OMPC_when, OMP_EXPR_PARSE_verbatim,
        "unified_shared_memory"},
@@ -382,6 +414,7 @@ bool checkOptionalMetadirectiveVariants() {
 
 int main() {
   bool ok = true;
+  ok = checkPreservedExpressionWhitespace() && ok;
   ok = checkTypedVariantSelectorRecords() && ok;
   ok = checkNowaitRejectsSecondExpression() && ok;
   ok = checkMalformedDirectiveAborts(
@@ -400,6 +433,11 @@ int main() {
            Lang_Cplusplus) &&
        ok;
   ok = checkOptionalMetadirectiveVariants() && ok;
+  ok = checkClauseRecords(
+           "#pragma omp target device(*)", Lang_Cplusplus, OMPD_target,
+           {{OMPD_target, OMPC_device, OMP_EXPR_PARSE_verbatim, "*"}},
+           "#pragma omp target device (*)") &&
+       ok;
   ok = checkRecords(
            "#pragma omp declare variant(foo) match(construct={parallel})",
            Lang_Cplusplus, OMPD_declare_variant, {"foo"},
@@ -427,6 +465,9 @@ int main() {
        ok;
   ok = checkRecords("#pragma omp flush(a,b)", Lang_Cplusplus, OMPD_flush,
                     {"a", "b"}, OMP_EXPR_PARSE_variable_list) &&
+       ok;
+  ok = checkRecords("!$omp depobj(obj) depend(inout: value)", Lang_Fortran,
+                    OMPD_depobj, {"obj"}, OMP_EXPR_PARSE_expression) &&
        ok;
   ok = checkRecords("!$omp declare simd(foo)", Lang_Fortran, OMPD_declare_simd,
                     {"foo"}, OMP_EXPR_PARSE_expression) &&

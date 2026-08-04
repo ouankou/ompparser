@@ -1637,6 +1637,22 @@ void OpenMPNowaitClause::addLangExpr(const char *expression,
   }
 }
 
+void OpenMPDepobjDirective::addDepobj(const char *expression) {
+  if (expression == nullptr || depobj_node != nullptr || !depobj.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[depobj-expression]: depobj directive "
+                 "requires exactly one nonnull expression\n";
+    std::abort();
+  }
+  depobj = normalizeClauseExpression(OMPC_unknown, expression);
+  if (depobj.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[depobj-expression]: depobj directive "
+                 "received an empty expression\n";
+    std::abort();
+  }
+  depobj_node = openmpParseExpressionNode(
+      OMPD_depobj, OMPC_unknown, OMP_EXPR_PARSE_expression, depobj.c_str());
+}
+
 OpenMPVariantClause::TraitSetSelector &
 OpenMPVariantClause::requireActiveTraitSet(
     OpenMPContextSelectorSequenceKind expected, const char *invariant_name) {
@@ -1806,7 +1822,12 @@ void OpenMPVariantClause::addExpressionProperty(
       selector.kind == OMPC_TRAIT_condition ||
               selector.kind == OMPC_TRAIT_device_num
           ? OMP_EXPR_PARSE_expression
-          : OMP_EXPR_PARSE_verbatim;
+          : (selector.kind == OMPC_TRAIT_arch ||
+                     selector.kind == OMPC_TRAIT_isa ||
+                     selector.kind == OMPC_TRAIT_uid ||
+                     selector.kind == OMPC_TRAIT_extension
+                 ? OMP_EXPR_PARSE_openmp_context_name
+                 : OMP_EXPR_PARSE_verbatim);
   if (parse_mode != required_mode || selector.kind == OMPC_TRAIT_kind ||
       selector.kind == OMPC_TRAIT_vendor ||
       selector.kind == OMPC_TRAIT_atomic_default_mem_order ||
@@ -3856,6 +3877,43 @@ OpenMPAllocateClause::addAllocateClause(OpenMPDirective *directive,
   return new_clause;
 };
 
+void OpenMPAllocateClause::setAllocatorModifier(const char *_allocator) {
+  if (allocator != OMPC_ALLOCATE_ALLOCATOR_unspecified) {
+    std::cerr << "OMPPARSER_SEMANTIC[allocate-allocator]: allocate clause "
+                 "specifies more than one allocator\n";
+    std::abort();
+  }
+  if (_allocator == nullptr) {
+    std::cerr << "OMPPARSER_INVARIANT[allocate-allocator]: allocator modifier "
+                 "is null\n";
+    std::abort();
+  }
+
+  const std::string spelling =
+      normalizeClauseExpression(OMPC_allocate, _allocator);
+  if (spelling == "omp_default_mem_alloc") {
+    allocator = OMPC_ALLOCATE_ALLOCATOR_default;
+  } else if (spelling == "omp_large_cap_mem_alloc") {
+    allocator = OMPC_ALLOCATE_ALLOCATOR_large_cap;
+  } else if (spelling == "omp_const_mem_alloc") {
+    allocator = OMPC_ALLOCATE_ALLOCATOR_cons_mem;
+  } else if (spelling == "omp_high_bw_mem_alloc") {
+    allocator = OMPC_ALLOCATE_ALLOCATOR_high_bw;
+  } else if (spelling == "omp_low_lat_mem_alloc") {
+    allocator = OMPC_ALLOCATE_ALLOCATOR_low_lat;
+  } else if (spelling == "omp_cgroup_mem_alloc") {
+    allocator = OMPC_ALLOCATE_ALLOCATOR_cgroup;
+  } else if (spelling == "omp_pteam_mem_alloc") {
+    allocator = OMPC_ALLOCATE_ALLOCATOR_pteam;
+  } else if (spelling == "omp_thread_mem_alloc") {
+    allocator = OMPC_ALLOCATE_ALLOCATOR_thread;
+  } else {
+    allocator = OMPC_ALLOCATE_ALLOCATOR_user;
+    setUserDefinedAllocator(spelling.c_str());
+  }
+  modifier_order.push_back(ModifierKind::allocator);
+}
+
 OpenMPClause *
 OpenMPInitializerClause::addInitializerClause(OpenMPDirective *directive,
                                               OpenMPInitializerClausePriv priv,
@@ -3893,6 +3951,24 @@ OpenMPDeviceClause::addDeviceClause(OpenMPDirective *directive,
   }
   return new_clause;
 };
+
+void OpenMPDeviceClause::addDeviceExpression(const char *expression,
+                                             OpenMPClauseSeparator sep) {
+  if (expression == nullptr) {
+    std::cerr << "OMPPARSER_INVARIANT[device-expression]: null device "
+                 "payload\n";
+    std::abort();
+  }
+  const std::string spelling = trimWhitespace(expression);
+  if (spelling.empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[device-expression]: empty device "
+                 "payload\n";
+    std::abort();
+  }
+  addLangExpr(expression, sep, 0, 0,
+              spelling == "*" ? OMP_EXPR_PARSE_verbatim
+                              : OMP_EXPR_PARSE_expression);
+}
 
 OpenMPClause *OpenMPScheduleClause::addScheduleClause(
     OpenMPDirective *directive, OpenMPScheduleClauseModifier modifier1,
