@@ -1578,6 +1578,22 @@ int main() {
     ok = false;
   }
 
+  OpenMPDirective clause_adoption_source(OMPD_target, Lang_C);
+  OpenMPClause *adopted_clause =
+      clause_adoption_source.addOpenMPClause(OMPC_nowait);
+  OpenMPDirective clause_adoption_destination(OMPD_target);
+  clause_adoption_destination.adoptClausesFrom(clause_adoption_source);
+  ompparser::ValidationResult clause_adoption_validation =
+      ompparser::validate(clause_adoption_destination);
+  if (clause_adoption_destination.getBaseLang() != Lang_C ||
+      adopted_clause == nullptr || adopted_clause->getBaseLang() != Lang_C ||
+      !clause_adoption_validation.success() ||
+      !clause_adoption_source.getAllClauses().empty() ||
+      !clause_adoption_source.getClausesInOriginalOrder()->empty()) {
+    std::cerr << "clause adoption did not propagate its exact base language\n";
+    ok = false;
+  }
+
   OpenMPDirective null_clause_ast(OMPD_parallel);
   bool null_clause_threw = false;
   try {

@@ -1585,6 +1585,9 @@ void OpenMPDirective::adoptClausesFrom(OpenMPDirective &source) {
     throw std::logic_error(
         "cannot adopt clauses from a directive in another base language");
   }
+  if (lang == Lang_unknown && source.lang != Lang_unknown) {
+    setBaseLang(source.lang);
+  }
   for (auto &entry : source.clauses) {
     auto &destination = clauses[entry.first];
     destination.insert(destination.end(), entry.second.begin(),
@@ -1611,7 +1614,7 @@ void OpenMPDirective::adoptClausesFrom(OpenMPDirective &source) {
     if (clause == nullptr) {
       throw std::logic_error("cannot adopt a null owned clause");
     }
-    clause->setBaseLang(lang != Lang_unknown ? lang : source.lang);
+    clause->setBaseLang(lang);
     clause_storage.push_back(std::move(clause));
   }
   source.clause_storage.clear();
