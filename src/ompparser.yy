@@ -66,23 +66,43 @@ static thread_local int schedule_clause_column = 0;
 static thread_local OpenMPUsesAllocatorsClauseAllocator usesAllocator;
 static thread_local std::string firstStringParameter;
 static thread_local std::string secondStringParameter;
-static thread_local const char *reduction_modifier_expression = nullptr;
 thread_local OpenMPClauseSeparator current_expr_separator =
     OMPC_CLAUSE_SEP_space;
 thread_local OpenMPClauseSeparator current_apply_transform_separator =
     OMPC_CLAUSE_SEP_comma;
 static thread_local int map_ref_modifier_parameter =
     OMPC_MAP_REF_MODIFIER_unspecified;
-static thread_local std::vector<const char *> iterator_definition;
-static thread_local std::vector<const char *> depend_iterator_definition;
-static thread_local std::vector<std::vector<const char *>>
-    depend_iterators_definition_class;
-static thread_local std::vector<const char *> map_iterator_args;
-static thread_local std::vector<const char *> tofrom_iterator_args;
+static thread_local const char *pending_map_mapper_identifier = nullptr;
+static thread_local std::vector<OpenMPIterator> pending_iterator_definitions;
+static thread_local std::vector<OpenMPIterator> map_iterator_args;
+static void reportParserError(const char *message);
 static inline bool hasMapIteratorModifier() {
   return firstParameter == OMPC_MAP_MODIFIER_iterator ||
          secondParameter == OMPC_MAP_MODIFIER_iterator ||
          thirdParameter == OMPC_MAP_MODIFIER_iterator;
+}
+
+static inline bool hasMapMapperModifier() {
+  return firstParameter == OMPC_MAP_MODIFIER_mapper ||
+         secondParameter == OMPC_MAP_MODIFIER_mapper ||
+         thirdParameter == OMPC_MAP_MODIFIER_mapper;
+}
+
+static bool attachPendingMapMapperIdentifier(OpenMPClause *clause) {
+  const bool has_mapper = hasMapMapperModifier();
+  if (clause == nullptr || clause->getKind() != OMPC_map ||
+      has_mapper != (pending_map_mapper_identifier != nullptr)) {
+    reportParserError(
+        "map mapper modifier has no exact typed identifier payload");
+    pending_map_mapper_identifier = nullptr;
+    return false;
+  }
+  if (has_mapper) {
+    static_cast<OpenMPMapClause *>(clause)->setMapperIdentifier(
+        pending_map_mapper_identifier);
+  }
+  pending_map_mapper_identifier = nullptr;
+  return true;
 }
 
 static inline void resetScheduleClauseLocationState() {
@@ -90,74 +110,88 @@ static inline void resetScheduleClauseLocationState() {
   schedule_clause_column = 0;
 }
 
-static inline int getScheduleClauseLine(int fallback_line) {
-  return schedule_clause_line > 0 ? schedule_clause_line : fallback_line;
+static inline int getScheduleClauseLine() {
+  if (schedule_clause_line <= 0) {
+    std::cerr << "OMPPARSER_INVARIANT[schedule-location]: missing line\n";
+    std::abort();
+  }
+  return schedule_clause_line;
 }
 
-static inline int getScheduleClauseColumn(int fallback_column) {
-  return schedule_clause_column > 0 ? schedule_clause_column : fallback_column;
+static inline int getScheduleClauseColumn() {
+  if (schedule_clause_column <= 0) {
+    std::cerr << "OMPPARSER_INVARIANT[schedule-location]: missing column\n";
+    std::abort();
+  }
+  return schedule_clause_column;
 }
 
-static void addMapIteratorDefinition(OpenMPClause *clause,
-                                     std::vector<const char *> *args) {
-  if (clause == nullptr || args == nullptr) {
-    if (args != nullptr) {
-      args->clear();
+static bool attachPendingIteratorDefinitions(OpenMPClause *clause) {
+  if (clause == nullptr || pending_iterator_definitions.empty()) {
+    return false;
+  }
+  switch (clause->getKind()) {
+  case OMPC_affinity: {
+    auto *typed = static_cast<OpenMPAffinityClause *>(clause);
+    typed->clearIterators();
+    for (const OpenMPIterator &iterator : pending_iterator_definitions) {
+      typed->addIterator(iterator);
     }
-    return;
+    break;
   }
-
-  auto *map_clause = static_cast<OpenMPMapClause *>(clause);
-  map_clause->clearIterators();
-  if (args->size() < 4) {
-    args->clear();
-    return;
+  case OMPC_depend: {
+    auto *typed = static_cast<OpenMPDependClause *>(clause);
+    typed->clearIterators();
+    for (const OpenMPIterator &iterator : pending_iterator_definitions) {
+      typed->addIterator(iterator);
+    }
+    break;
   }
-  std::string qualifier((*args)[0]);
-  std::string var((*args)[1]);
-  std::string begin((*args)[2]);
-  std::string end((*args)[3]);
-  std::string step;
-  if (args->size() > 4) {
-    step = std::string((*args)[4]);
+  case OMPC_map: {
+    auto *typed = static_cast<OpenMPMapClause *>(clause);
+    typed->clearIterators();
+    for (const OpenMPIterator &iterator : pending_iterator_definitions) {
+      typed->addIterator(iterator);
+    }
+    break;
   }
-
-  map_clause->addIterator(qualifier, var, begin, end, step);
-  args->clear();
+  case OMPC_to: {
+    auto *typed = static_cast<OpenMPToClause *>(clause);
+    typed->clearIterators();
+    for (const OpenMPIterator &iterator : pending_iterator_definitions) {
+      typed->addIterator(iterator);
+    }
+    break;
+  }
+  case OMPC_from: {
+    auto *typed = static_cast<OpenMPFromClause *>(clause);
+    typed->clearIterators();
+    for (const OpenMPIterator &iterator : pending_iterator_definitions) {
+      typed->addIterator(iterator);
+    }
+    break;
+  }
+  default:
+    return false;
+  }
+  pending_iterator_definitions.clear();
+  return true;
 }
 
-static void addToFromIteratorDefinition(OpenMPClause *clause,
-                                        std::vector<const char *> *args) {
-  if (clause == nullptr || args == nullptr) {
-    if (args != nullptr) {
-      args->clear();
-    }
-    return;
+static void addMapIteratorDefinition(
+    OpenMPClause *clause, std::vector<OpenMPIterator> *definitions) {
+  if (clause == nullptr || clause->getKind() != OMPC_map ||
+      definitions == nullptr || definitions->empty()) {
+    std::cerr << "OMPPARSER_INVARIANT[iterator-list]: map clause has no "
+                 "complete typed iterator list\n";
+    std::abort();
   }
-  if (args->size() < 4) {
-    args->clear();
-    return;
+  auto *typed = static_cast<OpenMPMapClause *>(clause);
+  typed->clearIterators();
+  for (const OpenMPIterator &iterator : *definitions) {
+    typed->addIterator(iterator);
   }
-
-  std::string qualifier((*args)[0]);
-  std::string var((*args)[1]);
-  std::string begin((*args)[2]);
-  std::string end((*args)[3]);
-  std::string step;
-  if (args->size() > 4) {
-    step = std::string((*args)[4]);
-  }
-
-  if (clause->getKind() == OMPC_to) {
-    auto *to_clause = static_cast<OpenMPToClause *>(clause);
-    to_clause->clearIterators();
-    to_clause->addIterator(qualifier, var, begin, end, step);
-  } else if (clause->getKind() == OMPC_from) {
-    auto *from_clause = static_cast<OpenMPFromClause *>(clause);
-    from_clause->clearIterators();
-    from_clause->addIterator(qualifier, var, begin, end, step);
-  }
-  args->clear();
+  definitions->clear();
 }
 
 static thread_local const char *trait_score = "";
@@ -184,13 +218,14 @@ thread_local OpenMPBaseLang user_set_lang = Lang_unknown;
 thread_local OpenMPBaseLang auto_lang;
 void setLang(OpenMPBaseLang _lang) { user_set_lang = _lang; };
 
-static inline bool isCLikeOpenMPBaseLang(OpenMPBaseLang lang) {
-  return lang == Lang_C || lang == Lang_Cplusplus;
-}
-
-static inline bool parserLanguageIsCLike() {
-  return isCLikeOpenMPBaseLang(user_set_lang) ||
-         isCLikeOpenMPBaseLang(auto_lang);
+static bool isDeviceWildcardSpelling(const char *spelling) {
+  if (spelling == nullptr) {
+    return false;
+  }
+  const std::string text(spelling);
+  const std::size_t begin = text.find_first_not_of(" \t\n\r\f\v");
+  const std::size_t end = text.find_last_not_of(" \t\n\r\f\v");
+  return begin != std::string::npos && begin == end && text[begin] == '*';
 }
 
 // Track whether the next clause should be preceded by a comma (to preserve Fortran spacing)
@@ -211,15 +246,12 @@ static void resetParserState() {
   usesAllocator = OMPC_USESALLOCATORS_ALLOCATOR_unspecified;
   firstStringParameter.clear();
   secondStringParameter.clear();
-  reduction_modifier_expression = nullptr;
   current_expr_separator = OMPC_CLAUSE_SEP_space;
   current_apply_transform_separator = OMPC_CLAUSE_SEP_comma;
   map_ref_modifier_parameter = OMPC_MAP_REF_MODIFIER_unspecified;
-  iterator_definition.clear();
-  depend_iterator_definition.clear();
-  depend_iterators_definition_class.clear();
+  pending_map_mapper_identifier = nullptr;
+  pending_iterator_definitions.clear();
   map_iterator_args.clear();
-  tofrom_iterator_args.clear();
   trait_score = "";
   b_within_variable_list = false;
   clause_separator_comma = false;
@@ -310,6 +342,8 @@ static DirectiveType *makeDirectiveAt(int line, int column, Args &&...args) {
       std::make_unique<DirectiveType>(std::forward<Args>(args)...);
   auto *directive = owned_directive.get();
   if (directive != nullptr) {
+    directive->setBaseLang(user_set_lang != Lang_unknown ? user_set_lang
+                                                          : auto_lang);
     if (line > 0) {
       directive->setLine(line);
     }
@@ -319,6 +353,26 @@ static DirectiveType *makeDirectiveAt(int line, int column, Args &&...args) {
   }
   directive_storage.push_back(std::move(owned_directive));
   return directive;
+}
+
+static bool validateReductionLogicalSpelling(bool fortran_spelling,
+                                             const char *spelling) {
+  const OpenMPBaseLang language =
+      current_directive != nullptr ? current_directive->getBaseLang()
+                                   : Lang_unknown;
+  const bool valid = fortran_spelling ? language == Lang_Fortran
+                                      : language == Lang_C ||
+                                            language == Lang_Cplusplus;
+  if (valid) {
+    return true;
+  }
+  const std::string message =
+      std::string(fortran_spelling ? "Fortran" : "C/C++") +
+      " logical reduction identifier '" +
+      (spelling != nullptr ? spelling : "<null>") +
+      "' is invalid for the directive's base language";
+  reportParserError(message.c_str());
+  return false;
 }
 
 static std::unique_ptr<OpenMPDirective>
@@ -394,14 +448,14 @@ corresponding C type is union name defaults to YYSTYPE.
 %token  FIRSTPRIVATE_MODIFIER_PARALLEL FIRSTPRIVATE_MODIFIER_FOR FIRSTPRIVATE_MODIFIER_DO FIRSTPRIVATE_MODIFIER_DISTRIBUTE FIRSTPRIVATE_MODIFIER_SECTIONS FIRSTPRIVATE_MODIFIER_SINGLE FIRSTPRIVATE_MODIFIER_SCOPE FIRSTPRIVATE_MODIFIER_TARGET FIRSTPRIVATE_MODIFIER_TARGET_DATA FIRSTPRIVATE_MODIFIER_TASK FIRSTPRIVATE_MODIFIER_TASKLOOP FIRSTPRIVATE_MODIFIER_TEAMS
         LINEAR SCHEDULE COLLAPSE NOWAIT ORDER ORDERED MODIFIER_CONDITIONAL MODIFIER_MONOTONIC MODIFIER_NONMONOTONIC STATIC DYNAMIC GUIDED AUTO RUNTIME MODOFIER_VAL MODOFIER_REF MODOFIER_UVAL MODIFIER_SIMD
         SAFELEN SIMDLEN ALIGNED ALIGN NONTEMPORAL UNIFORM INBRANCH NOTINBRANCH DIST_SCHEDULE BIND INCLUSIVE EXCLUSIVE COPYPRIVATE ALLOCATOR INITIALIZER OMP_PRIV IDENTIFIER_DEFAULT WORKSHARE/*YAYING*/
-        NONE MASTER PRIMARY CLOSE SPREAD MODIFIER_INSCAN MODIFIER_TASK MODIFIER_DEFAULT 
-        PLUS MINUS STAR BITAND BITOR BITXOR LOGAND LOGOR EQV NEQV MAX MIN
+        NONE MASTER PRIMARY CLOSE SPREAD MODIFIER_INSCAN MODIFIER_TASK MODIFIER_DEFAULT MODIFIER_ORIGINAL_PRIVATE
+        PLUS MINUS STAR BITAND BITOR BITXOR LOGAND LOGOR FORTRAN_LOGAND FORTRAN_LOGOR EQV NEQV MAX MIN
         DEFAULT_MEM_ALLOC LARGE_CAP_MEM_ALLOC CONST_MEM_ALLOC HIGH_BW_MEM_ALLOC LOW_LAT_MEM_ALLOC CGROUP_MEM_ALLOC
         PTEAM_MEM_ALLOC THREAD_MEM_ALLOC
         TEAMS
         NUM_TEAMS THREAD_LIMIT DOUBLE_COLON
         END USER CONSTRUCT DEVICE IMPLEMENTATION CONDITION SCORE VENDOR
-        KIND HOST NOHOST ANY CPU GPU FPGA ISA ARCH EXTENSION
+        KIND HOST NOHOST ANY CPU GPU FPGA ISA ARCH UID EXTENSION
         AMD ARM BSC CRAY FUJITSU GNU IBM INTEL LLVM NVIDIA PGI TI UNKNOWN
         FINAL UNTIED MERGEABLE IN_REDUCTION DEPEND PRIORITY AFFINITY DETACH MODIFIER_ITERATOR DEPOBJ FINAL_CLAUSE IN INOUT INOUTSET MUTEXINOUTSET OUT
 	        TASKLOOP GRAINSIZE NUM_TASKS NOGROUP TASKYIELD REQUIRES REVERSE_OFFLOAD UNIFIED_ADDRESS UNIFIED_SHARED_MEMORY ATOMIC_DEFAULT_MEM_ORDER DYNAMIC_ALLOCATORS SELF_MAPS SEQ_CST ACQ_REL RELAXED UNROLL TILE
@@ -416,9 +470,9 @@ corresponding C type is union name defaults to YYSTYPE.
         DOACROSS ABSENT PRESENT CONTAINS HOLDS OTHERWISE
 	        GRAPH_ID GRAPH_RESET TRANSPARENT REPLAYABLE THREADSET INDIRECT LOCAL INIT PREFER_TYPE INIT_COMPLETE SAFESYNC DEVICE_SAFESYNC MEMSCOPE
 	        LOOPRANGE PERMUTATION COUNTS INDUCTOR COLLECTOR COMBINER NEED_DEVICE_ADDR NEED_DEVICE_PTR ADJUST_ARGS APPEND_ARGS APPLY STEP
-	        NO_OPENMP NO_OPENMP_CONSTRUCTS NO_OPENMP_ROUTINES NO_PARALLELISM NOCONTEXT NOVARIANTS USE ALL CGROUP
+	        NO_OPENMP NO_OPENMP_CONSTRUCTS NO_OPENMP_ROUTINES NO_PARALLELISM NOCONTEXT NOVARIANTS USE ALL CGROUP INVALID_TOKEN
 %token <itype> ICONSTANT
-%token <stype> EXPRESSION ID_EXPRESSION EXPR_STRING VAR_STRING TASK_REDUCTION ALLOCATOR_IDENTIFIER
+%token <stype> EXPRESSION ID_EXPRESSION EXPR_STRING VAR_STRING TASK_REDUCTION ALLOCATOR_IDENTIFIER ALLOCATOR_MODIFIER ALIGN_MODIFIER
 /* associativity and precedence */
 %left '<' '>' '='
 %left '+' '-'
@@ -431,13 +485,15 @@ corresponding C type is union name defaults to YYSTYPE.
 %nonassoc ':'
 
 %type <stype> expression
+%type <stype> requirement_optional_expression
 %type <itype> init_depinfo_kind
 %type <itype> directive_name
 %type <itype> firstprivate_directive_name_modifier
+%type <itype> context_atomic_default_mem_order_value
 %type <stype> allocators_list_parameter_user
 
 /* start point for the parsing */
-%start openmp_directive
+%start openmp_parse_result
 
 %%
 
@@ -572,13 +628,26 @@ directive_name_list : directive_name {
                     }
                     ;
 
-/*expr_list : expression
-        | expr_list ',' expression
-        ;
-*/
+expression_list : expression
+                | expression_list ',' {
+                    current_expr_separator = OMPC_CLAUSE_SEP_comma;
+                  } expression
+                ;
 var_list : variable
         | var_list ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } variable
         ;
+
+openmp_parse_result : openmp_directive {
+                        /* A successful parse must never carry a recovered
+                         * syntax error.  Besides making that invariant
+                         * explicit, this consumes Bison's local error count
+                         * in pure-parser builds where no error productions
+                         * otherwise reference it. */
+                        if (yynerrs != 0) {
+                          YYABORT;
+                        }
+                      }
+                    ;
 
 openmp_directive : parallel_directive
                  | metadirective_directive
@@ -963,7 +1032,6 @@ when_variant_directive : variant_directive {
                 ;
 
 context_selector_specification : trait_set_selector
-                | context_selector_specification trait_set_selector
                 | context_selector_specification ',' trait_set_selector
                 ;
 
@@ -974,25 +1042,41 @@ trait_set_selector : trait_set_selector_name { } '=' '{' trait_selector_list {
                             current_parent_directive = nullptr;
                             current_parent_clause = nullptr;
                         };
+                        static_cast<OpenMPVariantClause *>(current_clause)
+                            ->endTraitSet();
                      } '}'
                    ;
 
-trait_set_selector_name : USER { ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_user); }
-                | CONSTRUCT { ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_construct); current_parent_directive = current_directive;
+trait_set_selector_name : USER {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->beginTraitSet(OMPC_SELECTOR_user);
+                  }
+                | CONSTRUCT {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->beginTraitSet(OMPC_SELECTOR_construct);
+                    current_parent_directive = current_directive;
                     current_parent_clause = current_clause; }
-                | DEVICE { ((OpenMPVariantClause*)current_clause)->setIsTargetDeviceSelector(false); ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_device); }
-                | TARGET_DEVICE { ((OpenMPVariantClause*)current_clause)->setIsTargetDeviceSelector(true); ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_target_device); }
-                | IMPLEMENTATION { ((OpenMPVariantClause*)current_clause)->addSelectorKind(OMPC_SELECTOR_implementation); }
+                | DEVICE {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->beginTraitSet(OMPC_SELECTOR_device);
+                  }
+                | TARGET_DEVICE {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->beginTraitSet(OMPC_SELECTOR_target_device);
+                  }
+                | IMPLEMENTATION {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->beginTraitSet(OMPC_SELECTOR_implementation);
+                  }
                 ;
 
 trait_selector_list : trait_selector { trait_score = ""; }
-                | trait_selector_list trait_selector { trait_score = ""; }
                 | trait_selector_list ',' trait_selector { trait_score = ""; }
                 ;
 
 trait_selector : condition_selector
                 | construct_selector {
-                    ((OpenMPVariantClause*)current_parent_clause)
+                    static_cast<OpenMPVariantClause *>(current_parent_clause)
                         ->addConstructDirective(
                             trait_score, takeDirectiveOwnership(current_directive));
                 }
@@ -1001,7 +1085,17 @@ trait_selector : condition_selector
                 | implementation_selector
                 ;
 
-condition_selector : CONDITION '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setUserCondition(trait_score, $4); } ')'
+condition_selector : CONDITION '(' trait_score {
+                       static_cast<OpenMPVariantClause *>(current_clause)
+                           ->beginTraitSelector(OMPC_TRAIT_condition,
+                                                trait_score);
+                     } EXPR_STRING {
+                       static_cast<OpenMPVariantClause *>(current_clause)
+                           ->addExpressionProperty(
+                               $5, OMP_EXPR_PARSE_expression);
+                       static_cast<OpenMPVariantClause *>(current_clause)
+                           ->endTraitSelector();
+                     } ')'
                 ;
 
 device_selector : context_kind
@@ -1010,51 +1104,232 @@ device_selector : context_kind
                 ;
 
 target_device_selector : context_device_num
+                       | context_uid
                        ;
 
-context_kind : KIND '(' trait_score context_kind_name ')'
+context_kind : KIND '(' trait_score {
+                 static_cast<OpenMPVariantClause *>(current_clause)
+                     ->beginTraitSelector(OMPC_TRAIT_kind, trait_score);
+               } context_kind_list {
+                 static_cast<OpenMPVariantClause *>(current_clause)
+                     ->endTraitSelector();
+               } ')'
              ;
 
-context_device_num : DEVICE_NUM '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setDeviceNumExpression(trait_score, $4); } ')'
+context_device_num : DEVICE_NUM '(' trait_score {
+                       static_cast<OpenMPVariantClause *>(current_clause)
+                           ->beginTraitSelector(OMPC_TRAIT_device_num,
+                                                trait_score);
+                     } EXPR_STRING {
+                       static_cast<OpenMPVariantClause *>(current_clause)
+                           ->addExpressionProperty(
+                               $5, OMP_EXPR_PARSE_expression);
+                       static_cast<OpenMPVariantClause *>(current_clause)
+                           ->endTraitSelector();
+                     } ')'
                    ;
 
-context_kind_name : HOST { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_host); }
-                  | NOHOST { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_nohost); }
-                  | ANY { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_any); }
-                  | CPU { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_cpu); }
-                  | GPU { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_gpu); }
-                  | FPGA { ((OpenMPVariantClause*)current_clause)->setContextKind(trait_score, OMPC_CONTEXT_KIND_fpga); }
+context_kind_list : context_kind_name
+                  | context_kind_list ',' context_kind_name
                   ;
 
-context_isa : ISA '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setIsaExpression(trait_score, $4); } ')'
+context_kind_name : HOST { static_cast<OpenMPVariantClause *>(current_clause)->addContextKindProperty(OMPC_CONTEXT_KIND_host); }
+                  | NOHOST { static_cast<OpenMPVariantClause *>(current_clause)->addContextKindProperty(OMPC_CONTEXT_KIND_nohost); }
+                  | ANY { static_cast<OpenMPVariantClause *>(current_clause)->addContextKindProperty(OMPC_CONTEXT_KIND_any); }
+                  | CPU { static_cast<OpenMPVariantClause *>(current_clause)->addContextKindProperty(OMPC_CONTEXT_KIND_cpu); }
+                  | GPU { static_cast<OpenMPVariantClause *>(current_clause)->addContextKindProperty(OMPC_CONTEXT_KIND_gpu); }
+                  | FPGA { static_cast<OpenMPVariantClause *>(current_clause)->addContextKindProperty(OMPC_CONTEXT_KIND_fpga); }
+                  | EXPR_STRING {
+                      static_cast<OpenMPVariantClause *>(current_clause)
+                          ->addExpressionProperty(
+                              $1, OMP_EXPR_PARSE_openmp_context_name);
+                    }
+                  ;
+
+context_isa : ISA '(' trait_score {
+                static_cast<OpenMPVariantClause *>(current_clause)
+                    ->beginTraitSelector(OMPC_TRAIT_isa, trait_score);
+              } context_name_property_list {
+                static_cast<OpenMPVariantClause *>(current_clause)
+                    ->endTraitSelector();
+              } ')'
             ;
 
-context_arch : ARCH '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setArchExpression(trait_score, $4); } ')'
+context_arch : ARCH '(' trait_score {
+                 static_cast<OpenMPVariantClause *>(current_clause)
+                     ->beginTraitSelector(OMPC_TRAIT_arch, trait_score);
+               } context_name_property_list {
+                 static_cast<OpenMPVariantClause *>(current_clause)
+                     ->endTraitSelector();
+               } ')'
              ;
 
-implementation_selector : VENDOR '(' trait_score context_vendor_name ')'
-                        | EXTENSION '(' trait_score EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setExtensionExpression(trait_score, $4); } ')'
-                        | REQUIRES '(' trait_score EXPR_STRING {
-                            ((OpenMPVariantClause*)current_clause)->setImplementationRequiresExpression(trait_score, $4);
+context_uid : UID '(' trait_score {
+                static_cast<OpenMPVariantClause *>(current_clause)
+                    ->beginTraitSelector(OMPC_TRAIT_uid, trait_score);
+              } EXPR_STRING {
+                static_cast<OpenMPVariantClause *>(current_clause)
+                    ->addExpressionProperty(
+                        $5, OMP_EXPR_PARSE_openmp_context_name);
+                static_cast<OpenMPVariantClause *>(current_clause)
+                    ->endTraitSelector();
+              } ')'
+            ;
+
+context_name_property_list : EXPR_STRING {
+                               static_cast<OpenMPVariantClause *>(current_clause)
+                                   ->addExpressionProperty(
+                                       $1,
+                                       OMP_EXPR_PARSE_openmp_context_name);
+                             }
+                           | context_name_property_list ',' EXPR_STRING {
+                               static_cast<OpenMPVariantClause *>(current_clause)
+                                   ->addExpressionProperty(
+                                       $3,
+                                       OMP_EXPR_PARSE_openmp_context_name);
+                             }
+                           ;
+
+context_verbatim_property_list : EXPR_STRING {
+                                   static_cast<OpenMPVariantClause *>(current_clause)
+                                       ->addExpressionProperty(
+                                           $1, OMP_EXPR_PARSE_verbatim);
+                                 }
+                               | context_verbatim_property_list ',' EXPR_STRING {
+                                   static_cast<OpenMPVariantClause *>(current_clause)
+                                       ->addExpressionProperty(
+                                           $3, OMP_EXPR_PARSE_verbatim);
+                                 }
+                               ;
+
+implementation_selector : VENDOR '(' trait_score {
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->beginTraitSelector(OMPC_TRAIT_vendor,
+                                                     trait_score);
+                          } context_vendor_list {
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->endTraitSelector();
                           } ')'
-                        | EXPR_STRING { ((OpenMPVariantClause*)current_clause)->setImplementationUserExpression(trait_score, $1); }
-                        | EXPR_STRING '(' trait_score ')' { ((OpenMPVariantClause*)current_clause)->setImplementationUserExpression(trait_score, $1); }
+                        | EXTENSION '(' trait_score {
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->beginTraitSelector(OMPC_TRAIT_extension,
+                                                     trait_score);
+                          } context_name_property_list {
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->endTraitSelector();
+                          } ')'
+                        | REQUIRES '(' trait_score {
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->beginTraitSelector(OMPC_TRAIT_requires,
+                                                     trait_score);
+                          } context_requires_property_list {
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->endTraitSelector();
+                          } ')'
+                        | ATOMIC_DEFAULT_MEM_ORDER '(' trait_score {
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->beginTraitSelector(
+                                    OMPC_TRAIT_atomic_default_mem_order,
+                                    trait_score);
+                          } context_atomic_default_mem_order_property {
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->endTraitSelector();
+                          } ')'
+                        | EXPR_STRING {
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->beginTraitSelector(
+                                    OMPC_TRAIT_implementation_user, "", $1);
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->endTraitSelector();
+                          }
+                        | EXPR_STRING '(' trait_score {
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->beginTraitSelector(
+                                    OMPC_TRAIT_implementation_user,
+                                    trait_score, $1);
+                          } context_verbatim_property_list {
+                            static_cast<OpenMPVariantClause *>(current_clause)
+                                ->endTraitSelector();
+                          } ')'
                         ;
 
-context_vendor_name : AMD { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_amd); }
-                    | ARM { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_arm); }
-                    | BSC { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_bsc); }
-                    | CRAY { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_cray); }
-                    | FUJITSU { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_fujitsu); }
-                    | GNU { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_gnu); }
-                    | IBM { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_ibm); }
-                    | INTEL { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_intel); }
-                    | LLVM { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_llvm); }
-                    | NVIDIA { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_nvidia); }
-                    | PGI { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_pgi); }
-                    | TI { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_ti); }
-                    | UNKNOWN { ((OpenMPVariantClause*)current_clause)->setImplementationKind(trait_score, OMPC_CONTEXT_VENDOR_unknown); }
+context_vendor_list : context_vendor_name
+                    | context_vendor_list ',' context_vendor_name
                     ;
+
+context_vendor_name : AMD { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_amd); }
+                    | ARM { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_arm); }
+                    | BSC { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_bsc); }
+                    | CRAY { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_cray); }
+                    | FUJITSU { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_fujitsu); }
+                    | GNU { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_gnu); }
+                    | IBM { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_ibm); }
+                    | INTEL { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_intel); }
+                    | LLVM { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_llvm); }
+                    | NVIDIA { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_nvidia); }
+                    | PGI { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_pgi); }
+                    | TI { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_ti); }
+                    | USER { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_user); }
+                    | UNKNOWN { static_cast<OpenMPVariantClause *>(current_clause)->addContextVendorProperty(OMPC_CONTEXT_VENDOR_unknown); }
+                    | EXPR_STRING {
+                        static_cast<OpenMPVariantClause *>(current_clause)
+                            ->addExpressionProperty(
+                                $1, OMP_EXPR_PARSE_openmp_context_name);
+                      }
+                    ;
+
+context_atomic_default_mem_order_property : context_atomic_default_mem_order_value {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->addAtomicDefaultMemOrderProperty(
+                            static_cast<OpenMPAtomicDefaultMemOrderClauseKind>($1));
+                  }
+                ;
+
+context_atomic_default_mem_order_value : SEQ_CST { $$ = OMPC_ATOMIC_DEFAULT_MEM_ORDER_seq_cst; }
+                | ACQ_REL { $$ = OMPC_ATOMIC_DEFAULT_MEM_ORDER_acq_rel; }
+                | ACQUIRE { $$ = OMPC_ATOMIC_DEFAULT_MEM_ORDER_acquire; }
+                | RELEASE { $$ = OMPC_ATOMIC_DEFAULT_MEM_ORDER_release; }
+                | RELAXED { $$ = OMPC_ATOMIC_DEFAULT_MEM_ORDER_relaxed; }
+                ;
+
+context_requires_property_list : context_requires_property
+                | context_requires_property_list ',' context_requires_property
+                ;
+
+context_requires_property : REVERSE_OFFLOAD requirement_optional_expression {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->addRequiresProperty(OMPC_reverse_offload, $2);
+                  }
+                | UNIFIED_ADDRESS requirement_optional_expression {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->addRequiresProperty(OMPC_unified_address, $2);
+                  }
+                | UNIFIED_SHARED_MEMORY requirement_optional_expression {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->addRequiresProperty(OMPC_unified_shared_memory, $2);
+                  }
+                | DYNAMIC_ALLOCATORS requirement_optional_expression {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->addRequiresProperty(OMPC_dynamic_allocators, $2);
+                  }
+                | SELF_MAPS requirement_optional_expression {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->addRequiresProperty(OMPC_self_maps, $2);
+                  }
+                | DEVICE_SAFESYNC requirement_optional_expression {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->addRequiresProperty(OMPC_device_safesync, $2);
+                  }
+                | ATOMIC_DEFAULT_MEM_ORDER '(' context_atomic_default_mem_order_value ')' {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->addRequiresAtomicDefaultMemOrderProperty(
+                            static_cast<OpenMPAtomicDefaultMemOrderClauseKind>($3));
+                  }
+                | EXT_ EXPR_STRING {
+                    static_cast<OpenMPVariantClause *>(current_clause)
+                        ->addRequiresExtensionProperty($2);
+                  }
+                ;
 
 construct_selector : parallel_selector
                    | dispatch_selector
@@ -1741,12 +2016,12 @@ doacross_source_arg : /* empty */
                         current_expr_separator = OMPC_CLAUSE_SEP_space;
                       }
                     ;
-doacross_sink_args : expression {
+doacross_sink_args : EXPR_STRING {
                          auto *doacross_clause = static_cast<OpenMPDoacrossClause *>(current_clause);
                          doacross_clause->addSinkArg($1, current_expr_separator);
                          current_expr_separator = OMPC_CLAUSE_SEP_space;
                      }
-                   | doacross_sink_args ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } expression {
+                   | doacross_sink_args ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } EXPR_STRING {
                          auto *doacross_clause = static_cast<OpenMPDoacrossClause *>(current_clause);
                          doacross_clause->addSinkArg($4, current_expr_separator);
                          current_expr_separator = OMPC_CLAUSE_SEP_space;
@@ -1919,9 +2194,19 @@ nocontext_parameter : expression
                    ;
 looprange_clause : LOOPRANGE {
                      current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_looprange);
-                   } '(' var_list ')' {
+                     current_expr_separator = OMPC_CLAUSE_SEP_space;
+                   } '(' looprange_expression_list ')' {
                    }
                  ;
+looprange_expression_list : expression {
+                              current_expr_separator = OMPC_CLAUSE_SEP_space;
+                            }
+                          | looprange_expression_list ',' {
+                              current_expr_separator = OMPC_CLAUSE_SEP_comma;
+                            } expression {
+                              current_expr_separator = OMPC_CLAUSE_SEP_space;
+                            }
+                          ;
 permutation_clause : PERMUTATION {
                        current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_permutation);
                      } '(' var_list ')' {
@@ -2135,9 +2420,11 @@ combiner_clause : COMBINER {
                           current_directive->getKind() == OMPD_declare_reduction) {
                         auto *declare_reduction_directive =
                             static_cast<OpenMPDeclareReductionDirective *>(current_directive);
-                        auto *expressions = current_clause->getExpressions();
-                        if (expressions != nullptr && !expressions->empty()) {
-                          declare_reduction_directive->setCombiner(expressions->back());
+                        const auto &expressions =
+                            current_clause->getExpressionItems();
+                        if (!expressions.empty()) {
+                          declare_reduction_directive->setCombiner(
+                              expressions.back().fragment.spelling.c_str());
                         }
                       }
                     }
@@ -2571,7 +2858,7 @@ dispatch_clause : device_clause
 dispatch_interop_clause : INTEROP {
                            current_clause =
                                addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_interop);
-                           if (!current_clause->getExpressions()->empty()) {
+                           if (!current_clause->getExpressionItems().empty()) {
                              current_expr_separator = OMPC_CLAUSE_SEP_comma;
                            } else {
                              current_expr_separator = OMPC_CLAUSE_SEP_space;
@@ -2825,8 +3112,32 @@ in_reduction_enum_identifier :  '+'{ current_clause = addClauseAt(current_direct
                              | '&'{ current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_bitand); }
                              | '|'{ current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_bitor); }
                              | '^'{ current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_bitxor); }
-                             | LOGAND{ current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_logand); }
-                             | LOGOR{ current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_logor); }
+                             | LOGAND {
+                                 if (!validateReductionLogicalSpelling(false, "&&")) {
+                                   YYERROR;
+                                 }
+                                 current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_logand);
+                               }
+                             | LOGOR {
+                                 if (!validateReductionLogicalSpelling(false, "||")) {
+                                   YYERROR;
+                                 }
+                                 current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_logor);
+                               }
+                             | FORTRAN_LOGAND {
+                                 if (!validateReductionLogicalSpelling(true, ".and.")) {
+                                   YYERROR;
+                                 }
+                                 current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_logand);
+                               }
+                             | FORTRAN_LOGOR {
+                                 if (!validateReductionLogicalSpelling(true, ".or.")) {
+                                   YYERROR;
+                                 }
+                                 current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_logor);
+                               }
+                             | EQV{ current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_eqv); }
+                             | NEQV{ current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_neqv); }
                              | MAX{ current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_max); }
                              | MIN{ current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_in_reduction,OMPC_IN_REDUCTION_IDENTIFIER_min); }
                              ;
@@ -2836,64 +3147,38 @@ depend_with_modifier_clause : DEPEND { firstParameter = OMPC_DEPEND_MODIFIER_uns
 
 depend_parameter : dependence_type
                  | depend_modifier ',' dependence_type {
-                     auto *depend_clause =
-                         static_cast<OpenMPDependClause *>(current_clause);
-                     if (depend_clause != nullptr) {
-                       depend_clause->setDependIteratorsDefinitionClass(
-                           depend_iterators_definition_class);
+                     if (!attachPendingIteratorDefinitions(current_clause)) {
+                       reportParserError("iterator modifier has no typed depend-clause owner");
+                       YYABORT;
                      }
-                     depend_iterators_definition_class.clear();
                    }
                  ;
 dependence_type : depend_enum_type 
                 ;
 depend_modifier : MODIFIER_ITERATOR {
-                   depend_iterators_definition_class.clear();
-                   depend_iterator_definition.clear();
+                   pending_iterator_definitions.clear();
                    firstParameter = OMPC_DEPEND_MODIFIER_iterator;
-                 } '(' depend_iterators_definition ')'
+                 } '(' EXPR_STRING ')' {
+                   std::string error;
+                   if (!parseOpenMPIteratorDefinitions(
+                           $4, pending_iterator_definitions, error)) {
+                     reportParserError(error.c_str());
+                     YYABORT;
+                   }
+                 }
                 ;
-depend_iterators_definition : depend_iterator_specifier
-                            | depend_iterators_definition ',' depend_iterator_specifier
-                            ;
-depend_iterator_specifier : EXPR_STRING EXPR_STRING {
-                            depend_iterator_definition.push_back($1);
-                            depend_iterator_definition.push_back($2);
-                          } '=' depend_range_specification
-                          | EXPR_STRING {
-                            depend_iterator_definition.push_back("");
-                            depend_iterator_definition.push_back($1);
-                          } '=' depend_range_specification
-                          ;
-depend_range_specification : EXPR_STRING { depend_iterator_definition.push_back($1); }
-                             ':' EXPR_STRING { depend_iterator_definition.push_back($4); }
-                             depend_range_step
-                           ;
-depend_range_step : /*empty*/ {
-                     depend_iterator_definition.push_back("");
-                     depend_iterators_definition_class.push_back(
-                         depend_iterator_definition);
-                     depend_iterator_definition.clear();
-                   }
-                  | ':' EXPR_STRING {
-                     depend_iterator_definition.push_back($2);
-                     depend_iterators_definition_class.push_back(
-                         depend_iterator_definition);
-                     depend_iterator_definition.clear();
-                   }
-                  ;
 depend_enum_type : IN { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_in);
-                        if (!current_clause->getExpressions()->empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
+                        if (!current_clause->getExpressionItems().empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
                  | OUT { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_out);
-                        if (!current_clause->getExpressions()->empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
+                        if (!current_clause->getExpressionItems().empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
                  | INOUT { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_inout);
-                        if (!current_clause->getExpressions()->empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
+                        if (!current_clause->getExpressionItems().empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
                  | INOUTSET { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_inoutset);
-                        if (!current_clause->getExpressions()->empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
+                        if (!current_clause->getExpressionItems().empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
                  | MUTEXINOUTSET { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_mutexinoutset);
-                        if (!current_clause->getExpressions()->empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
+                        if (!current_clause->getExpressionItems().empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
                  | DEPOBJ { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_depend, firstParameter, OMPC_DEPENDENCE_TYPE_depobj);
-                        if (!current_clause->getExpressions()->empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
+                        if (!current_clause->getExpressionItems().empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; } }
                  ;
 
 depend_depobj_clause : DEPEND { firstParameter = OMPC_DEPEND_MODIFIER_unspecified; }'(' dependence_depobj_parameter ')' {
@@ -2928,44 +3213,23 @@ affinity_parameter : EXPR_STRING { current_clause = addClauseAt(current_directiv
                    | affinity_modifier ':' var_list
                    ;
 
-affinity_modifier : MODIFIER_ITERATOR { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_affinity, OMPC_AFFINITY_MODIFIER_iterator); 
-                              }'('iterators_definition')'{}
+affinity_modifier : MODIFIER_ITERATOR {
+                      current_clause = addClauseAt(
+                          current_directive, @1.first_line, @1.first_column,
+                          OMPC_affinity, OMPC_AFFINITY_MODIFIER_iterator);
+                      pending_iterator_definitions.clear();
+                    } '(' EXPR_STRING ')' {
+                      std::string error;
+                      if (!parseOpenMPIteratorDefinitions(
+                              $4, pending_iterator_definitions, error) ||
+                          !attachPendingIteratorDefinitions(current_clause)) {
+                        reportParserError(error.empty()
+                                              ? "iterator modifier has no typed affinity-clause owner"
+                                              : error.c_str());
+                        YYABORT;
+                      }
+                    }
                   ;
-iterators_definition : iterator_specifier
-                     | iterators_definition ',' iterator_specifier
-                     ;
-iterator_specifier : EXPR_STRING EXPR_STRING {
-                      iterator_definition.push_back($1);
-                      iterator_definition.push_back($2);
-                    } '=' range_specification
-                   | EXPR_STRING {
-                      iterator_definition.push_back("");
-                      iterator_definition.push_back($1);
-                    } '=' range_specification
-                   ;
-range_specification : EXPR_STRING { iterator_definition.push_back($1); }
-                      ':' EXPR_STRING { iterator_definition.push_back($4); }
-                      range_step
-                    ;
-range_step : /*empty*/ {
-             iterator_definition.push_back("");
-             auto *affinity_clause =
-                 static_cast<OpenMPAffinityClause *>(current_clause);
-             if (affinity_clause != nullptr) {
-               affinity_clause->addIteratorsDefinitionClass(iterator_definition);
-             }
-             iterator_definition.clear();
-           }
-           | ':' EXPR_STRING {
-             iterator_definition.push_back($2);
-             auto *affinity_clause =
-                 static_cast<OpenMPAffinityClause *>(current_clause);
-             if (affinity_clause != nullptr) {
-               affinity_clause->addIteratorsDefinitionClass(iterator_definition);
-             }
-             iterator_definition.clear();
-           }
-           ;
 
 detach_clause: DETACH {
                             current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_detach);
@@ -2995,41 +3259,59 @@ nogroup_clause: NOGROUP {
                             current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_nogroup);
                          } 
               ;
+requirement_optional_expression : /* empty */ { $$ = nullptr; }
+                                | '(' EXPR_STRING ')' { $$ = $2; }
+                                ;
+
 reverse_offload_clause: REVERSE_OFFLOAD {
                             current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_reverse_offload);
-                         } 
+                         } requirement_optional_expression {
+                            if ($3 != nullptr)
+                              current_clause->addLangExpr($3, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression);
+                         }
                       ;
 unified_address_clause: UNIFIED_ADDRESS {
                             current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_unified_address);
-                         } 
+                         } requirement_optional_expression {
+                            if ($3 != nullptr)
+                              current_clause->addLangExpr($3, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression);
+                         }
                       ;
 unified_shared_memory_clause: UNIFIED_SHARED_MEMORY {
                             current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_unified_shared_memory);
-                         } 
+                         } requirement_optional_expression {
+                            if ($3 != nullptr)
+                              current_clause->addLangExpr($3, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression);
+                         }
                       ;
-atomic_default_mem_order_clause : ATOMIC_DEFAULT_MEM_ORDER '(' atomic_default_mem_order_parameter ')' { } ;
-
-atomic_default_mem_order_parameter : SEQ_CST { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_atomic_default_mem_order, OMPC_ATOMIC_DEFAULT_MEM_ORDER_seq_cst); }
-                                   | ACQ_REL { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_atomic_default_mem_order, OMPC_ATOMIC_DEFAULT_MEM_ORDER_acq_rel); }
-                                   | RELAXED { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_atomic_default_mem_order, OMPC_ATOMIC_DEFAULT_MEM_ORDER_relaxed); }
-                                   ;
+atomic_default_mem_order_clause : ATOMIC_DEFAULT_MEM_ORDER '(' context_atomic_default_mem_order_value ')' {
+                            current_clause = addClauseAt(
+                                current_directive, @1.first_line, @1.first_column,
+                                OMPC_atomic_default_mem_order, $3);
+                         }
+                       ;
 dynamic_allocators_clause: DYNAMIC_ALLOCATORS {
                             current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_dynamic_allocators);
+                         } requirement_optional_expression {
+                            if ($3 != nullptr)
+                              current_clause->addLangExpr($3, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression);
                          }
                          ;
 self_maps_clause: SELF_MAPS {
                             current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_self_maps);
+                         } requirement_optional_expression {
+                            if ($3 != nullptr)
+                              current_clause->addLangExpr($3, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression);
                          }
                          ;
 ext_implementation_defined_requirement_clause: EXT_ EXPR_STRING {
                                                current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_ext_implementation_defined_requirement);
                                                ((OpenMPExtImplementationDefinedRequirementClause*)current_clause)->setImplementationDefinedRequirement($2);
-                                               current_clause->addLangExpr($2, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression);
                                              }
                                              ;
 device_clause : DEVICE '(' device_parameter ')' ;
 
-device_parameter : EXPR_STRING  { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device, OMPC_DEVICE_MODIFIER_unspecified); current_clause->addLangExpr($1, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression); }
+device_parameter : EXPR_STRING  { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device, OMPC_DEVICE_MODIFIER_unspecified); current_clause->addLangExpr($1, OMPC_CLAUSE_SEP_space, 0, 0, isDeviceWildcardSpelling($1) ? OMP_EXPR_PARSE_verbatim : OMP_EXPR_PARSE_expression); }
                  | EXPR_STRING ',' { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device, OMPC_DEVICE_MODIFIER_unspecified); current_expr_separator = OMPC_CLAUSE_SEP_comma; current_clause->addLangExpr($1, OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_expression); } var_list
                  | EXPR_STRING ':' EXPR_STRING {
                        std::string selector = std::string($1 ? $1 : "") + ":" + std::string($3 ? $3 : "");
@@ -3042,7 +3324,7 @@ device_parameter : EXPR_STRING  { current_clause = addClauseAt(current_directive
                        current_clause->addLangExpr(selector.c_str(), OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim);
                        current_expr_separator = OMPC_CLAUSE_SEP_comma;
                    } var_list
-                 | device_modifier_parameter ':' var_list
+                 | device_modifier_parameter ':' expression
                  ;
 
 device_modifier_parameter : ANCESTOR { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device, OMPC_DEVICE_MODIFIER_ancestor); }
@@ -3073,7 +3355,7 @@ use_device_ptr_clause : USE_DEVICE_PTR {
             
 sizes_clause : SIZES {
                 current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_sizes);
-} '(' var_list ')'
+} '(' expression_list ')'
                       ;
 
 use_device_addr_clause : USE_DEVICE_ADDR {
@@ -3152,8 +3434,21 @@ to_mapper : TO_MAPPER { current_clause = addClauseAt(current_directive, @1.first
                                 ((OpenMPToClause*)current_clause)->setMapperIdentifier($4);
                               }
           ;
-to_iterator : TO_ITERATOR { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_to, OMPC_TO_iterator); tofrom_iterator_args.clear();
-                                }'(' to_iterator_args ')' { addToFromIteratorDefinition(current_clause, &tofrom_iterator_args); }
+to_iterator : TO_ITERATOR {
+                current_clause = addClauseAt(current_directive, @1.first_line,
+                    @1.first_column, OMPC_to, OMPC_TO_iterator);
+                pending_iterator_definitions.clear();
+              } '(' EXPR_STRING ')' {
+                std::string error;
+                if (!parseOpenMPIteratorDefinitions(
+                        $4, pending_iterator_definitions, error) ||
+                    !attachPendingIteratorDefinitions(current_clause)) {
+                  reportParserError(error.empty()
+                                        ? "iterator modifier has no typed to-clause owner"
+                                        : error.c_str());
+                  YYABORT;
+                }
+              }
             ;
 to_var_list : to_var
             | to_var_list ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } to_var
@@ -3165,26 +3460,6 @@ to_var : EXPR_STRING {
            current_expr_separator = OMPC_CLAUSE_SEP_space;
          }
        ;
-to_iterator_args : to_iterator_declarator '=' to_iterator_range to_iterator_step
-                 ;
-to_iterator_declarator : EXPR_STRING EXPR_STRING {
-                           tofrom_iterator_args.push_back($1);
-                           tofrom_iterator_args.push_back($2);
-                         }
-                       | EXPR_STRING {
-                           tofrom_iterator_args.push_back("");
-                           tofrom_iterator_args.push_back($1);
-                         }
-                       ;
-to_iterator_range : EXPR_STRING ':' EXPR_STRING {
-                      tofrom_iterator_args.push_back($1);
-                      tofrom_iterator_args.push_back($3);
-                    }
-                  ;
-to_iterator_step : /* empty */
-                 | ':' EXPR_STRING { tofrom_iterator_args.push_back($2); }
-                 ;
-
 from_clause: FROM { current_expr_separator = OMPC_CLAUSE_SEP_space; } '(' from_parameter ')' ;
 from_parameter : EXPR_STRING { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_from, OMPC_FROM_unspecified); static_cast<OpenMPFromClause*>(current_clause)->addItem($1);  }
                | EXPR_STRING ',' { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_from, OMPC_FROM_unspecified); current_expr_separator = OMPC_CLAUSE_SEP_comma; static_cast<OpenMPFromClause*>(current_clause)->addItem($1); } from_var_list
@@ -3197,8 +3472,22 @@ from_mapper : FROM_MAPPER { current_clause = addClauseAt(current_directive, @1.f
                                 ((OpenMPFromClause*)current_clause)->setMapperIdentifier($4);
                               }
             ;
-from_iterator : FROM_ITERATOR { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_from, OMPC_FROM_iterator); tofrom_iterator_args.clear();
-                                  } '(' to_iterator_args ')' { addToFromIteratorDefinition(current_clause, &tofrom_iterator_args); }
+from_iterator : FROM_ITERATOR {
+                  current_clause = addClauseAt(current_directive,
+                      @1.first_line, @1.first_column, OMPC_from,
+                      OMPC_FROM_iterator);
+                  pending_iterator_definitions.clear();
+                } '(' EXPR_STRING ')' {
+                  std::string error;
+                  if (!parseOpenMPIteratorDefinitions(
+                          $4, pending_iterator_definitions, error) ||
+                      !attachPendingIteratorDefinitions(current_clause)) {
+                    reportParserError(error.empty()
+                                          ? "iterator modifier has no typed from-clause owner"
+                                          : error.c_str());
+                    YYABORT;
+                  }
+                }
             ;
 from_var_list : from_var
               | from_var_list ',' { current_expr_separator = OMPC_CLAUSE_SEP_comma; } from_var
@@ -3237,22 +3526,22 @@ map_clause : MAP {
              secondParameter = OMPC_MAP_MODIFIER_unspecified;
              thirdParameter = OMPC_MAP_MODIFIER_unspecified;
              map_ref_modifier_parameter = OMPC_MAP_REF_MODIFIER_unspecified;
-             firstStringParameter.clear();
+             pending_map_mapper_identifier = nullptr;
              current_expr_separator = OMPC_CLAUSE_SEP_space;
            }'(' map_parameter')';
 
 map_parameter : EXPR_STRING {
                  current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                      OMPC_map, firstParameter, secondParameter, thirdParameter,
-                     OMPC_MAP_TYPE_unspecified, map_ref_modifier_parameter,
-                     firstStringParameter.c_str());
+                     OMPC_MAP_TYPE_unspecified, map_ref_modifier_parameter);
+                 if (!attachPendingMapMapperIdentifier(current_clause)) YYABORT;
                  static_cast<OpenMPMapClause *>(current_clause)->addItem($1);
                }
               | EXPR_STRING ',' {
                   current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                       OMPC_map, firstParameter, secondParameter, thirdParameter,
-                      OMPC_MAP_TYPE_unspecified, map_ref_modifier_parameter,
-                      firstStringParameter.c_str());
+                      OMPC_MAP_TYPE_unspecified, map_ref_modifier_parameter);
+                  if (!attachPendingMapMapperIdentifier(current_clause)) YYABORT;
                   current_expr_separator = OMPC_CLAUSE_SEP_comma;
                   static_cast<OpenMPMapClause *>(current_clause)->addItem($1);
                 } map_var_list
@@ -3319,8 +3608,8 @@ map_modifier3 : MAP_MODIFIER_ALWAYS { if (firstParameter == OMPC_MAP_MODIFIER_al
 map_type : MAP_TYPE_TO {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
-                 OMPC_MAP_TYPE_to, map_ref_modifier_parameter,
-                 firstStringParameter.c_str());
+                 OMPC_MAP_TYPE_to, map_ref_modifier_parameter);
+             if (!attachPendingMapMapperIdentifier(current_clause)) YYABORT;
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3328,8 +3617,8 @@ map_type : MAP_TYPE_TO {
          | MAP_TYPE_FROM {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
-                 OMPC_MAP_TYPE_from, map_ref_modifier_parameter,
-                 firstStringParameter.c_str());
+                 OMPC_MAP_TYPE_from, map_ref_modifier_parameter);
+             if (!attachPendingMapMapperIdentifier(current_clause)) YYABORT;
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3337,8 +3626,8 @@ map_type : MAP_TYPE_TO {
          | MAP_TYPE_TOFROM {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
-                 OMPC_MAP_TYPE_tofrom, map_ref_modifier_parameter,
-                 firstStringParameter.c_str());
+                 OMPC_MAP_TYPE_tofrom, map_ref_modifier_parameter);
+             if (!attachPendingMapMapperIdentifier(current_clause)) YYABORT;
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3346,8 +3635,8 @@ map_type : MAP_TYPE_TO {
          | MAP_TYPE_STORAGE {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
-                 OMPC_MAP_TYPE_storage, map_ref_modifier_parameter,
-                 firstStringParameter.c_str());
+                 OMPC_MAP_TYPE_storage, map_ref_modifier_parameter);
+             if (!attachPendingMapMapperIdentifier(current_clause)) YYABORT;
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3355,8 +3644,8 @@ map_type : MAP_TYPE_TO {
          | MAP_TYPE_ALLOC {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
-                 OMPC_MAP_TYPE_alloc, map_ref_modifier_parameter,
-                 firstStringParameter.c_str());
+                 OMPC_MAP_TYPE_alloc, map_ref_modifier_parameter);
+             if (!attachPendingMapMapperIdentifier(current_clause)) YYABORT;
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3364,8 +3653,8 @@ map_type : MAP_TYPE_TO {
          | MAP_TYPE_RELEASE {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
-                 OMPC_MAP_TYPE_release, map_ref_modifier_parameter,
-                 firstStringParameter.c_str());
+                 OMPC_MAP_TYPE_release, map_ref_modifier_parameter);
+             if (!attachPendingMapMapperIdentifier(current_clause)) YYABORT;
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3373,8 +3662,8 @@ map_type : MAP_TYPE_TO {
          | MAP_TYPE_DELETE {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
-                 OMPC_MAP_TYPE_delete, map_ref_modifier_parameter,
-                 firstStringParameter.c_str());
+                 OMPC_MAP_TYPE_delete, map_ref_modifier_parameter);
+             if (!attachPendingMapMapperIdentifier(current_clause)) YYABORT;
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3382,8 +3671,8 @@ map_type : MAP_TYPE_TO {
          | MAP_TYPE_PRESENT {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
-                 OMPC_MAP_TYPE_present, map_ref_modifier_parameter,
-                 firstStringParameter.c_str());
+                 OMPC_MAP_TYPE_present, map_ref_modifier_parameter);
+             if (!attachPendingMapMapperIdentifier(current_clause)) YYABORT;
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
@@ -3391,38 +3680,28 @@ map_type : MAP_TYPE_TO {
          | MAP_TYPE_SELF {
              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                  OMPC_map, firstParameter, secondParameter, thirdParameter,
-                 OMPC_MAP_TYPE_self, map_ref_modifier_parameter,
-                 firstStringParameter.c_str());
+                 OMPC_MAP_TYPE_self, map_ref_modifier_parameter);
+             if (!attachPendingMapMapperIdentifier(current_clause)) YYABORT;
              if (hasMapIteratorModifier()) {
                addMapIteratorDefinition(current_clause, &map_iterator_args);
              }
            }
          ;
-map_modifier_mapper : MAP_MODIFIER_MAPPER '('EXPR_STRING')' { firstStringParameter = $3 ? $3 : ""; }
+map_modifier_mapper : MAP_MODIFIER_MAPPER '('EXPR_STRING')' {
+                        pending_map_mapper_identifier = $3;
+                      }
                    ;
 map_modifier_iterator : MAP_MODIFIER_ITERATOR {
                           firstParameter = OMPC_MAP_MODIFIER_iterator;
                           map_iterator_args.clear();
-                        } '(' map_iterator_argument_list ')'
-                      ;
-map_iterator_argument_list : map_iterator_declarator '=' map_iterator_range map_iterator_step
-                           ;
-map_iterator_declarator : EXPR_STRING EXPR_STRING {
-                            map_iterator_args.push_back($1);
-                            map_iterator_args.push_back($2);
+                        } '(' EXPR_STRING ')' {
+                          std::string error;
+                          if (!parseOpenMPIteratorDefinitions(
+                                  $4, map_iterator_args, error)) {
+                            reportParserError(error.c_str());
+                            YYABORT;
                           }
-                        | EXPR_STRING {
-                            map_iterator_args.push_back("");
-                            map_iterator_args.push_back($1);
-                          }
-                        ;
-map_iterator_range : EXPR_STRING ':' EXPR_STRING {
-                       map_iterator_args.push_back($1);
-                       map_iterator_args.push_back($3);
-                     }
-                   ;
-map_iterator_step : /* empty */
-                  | ':' EXPR_STRING { map_iterator_args.push_back($2); }
+                        }
                   ;
 
 task_reduction_clause : TASK_REDUCTION '(' task_reduction_identifier ':' var_list ')' {
@@ -3438,8 +3717,32 @@ task_reduction_enum_identifier : '+' { current_clause = addClauseAt(current_dire
                                | '&' { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_bitand); }
                                | '|' { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_bitor); }
                                | '^' { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_bitxor); }
-                               | LOGAND { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_logand); }
-                               | LOGOR { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_logor); }
+                               | LOGAND {
+                                   if (!validateReductionLogicalSpelling(false, "&&")) {
+                                     YYERROR;
+                                   }
+                                   current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_logand);
+                                 }
+                               | LOGOR {
+                                   if (!validateReductionLogicalSpelling(false, "||")) {
+                                     YYERROR;
+                                   }
+                                   current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_logor);
+                                 }
+                               | FORTRAN_LOGAND {
+                                   if (!validateReductionLogicalSpelling(true, ".and.")) {
+                                     YYERROR;
+                                   }
+                                   current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_logand);
+                                 }
+                               | FORTRAN_LOGOR {
+                                   if (!validateReductionLogicalSpelling(true, ".or.")) {
+                                     YYERROR;
+                                   }
+                                   current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_logor);
+                                 }
+                               | EQV { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_eqv); }
+                               | NEQV { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_neqv); }
                                | MAX { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_max); }
                                | MIN { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_task_reduction,OMPC_TASK_REDUCTION_IDENTIFIER_min); }
                                ;
@@ -4909,8 +5212,42 @@ reduction_identifiers : '+'{ ((OpenMPDeclareReductionDirective*)current_directiv
                       | '&'{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("&"); }
                       | '|'{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("|"); }
                       | '^'{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("^"); }
-                      | LOGAND{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("&&"); }
-                      | LOGOR{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("||"); }
+                      | LOGAND {
+                          if (!validateReductionLogicalSpelling(false, "&&")) {
+                            YYERROR;
+                          }
+                          ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("&&");
+                        }
+                      | LOGOR {
+                          if (!validateReductionLogicalSpelling(false, "||")) {
+                            YYERROR;
+                          }
+                          ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("||");
+                        }
+                      | FORTRAN_LOGAND {
+                          if (!validateReductionLogicalSpelling(true, ".and.")) {
+                            YYERROR;
+                          }
+                          ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier(".and.");
+                        }
+                      | FORTRAN_LOGOR {
+                          if (!validateReductionLogicalSpelling(true, ".or.")) {
+                            YYERROR;
+                          }
+                          ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier(".or.");
+                        }
+                      | EQV {
+                          if (!validateReductionLogicalSpelling(true, ".eqv.")) {
+                            YYERROR;
+                          }
+                          ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier(".eqv.");
+                        }
+                      | NEQV {
+                          if (!validateReductionLogicalSpelling(true, ".neqv.")) {
+                            YYERROR;
+                          }
+                          ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier(".neqv.");
+                        }
                       | MIN{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("min"); }
                       | MAX{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier("max"); }
                       | EXPR_STRING{ ((OpenMPDeclareReductionDirective*)current_directive)->setIdentifier($1); }
@@ -4925,66 +5262,30 @@ typername_variable : {
 typername_list : typername_variable
                | typername_list ',' typername_variable
                ;
-declare_mapper_directive : DECLARE MAPPER { current_directive = makeDirectiveAt<OpenMPDeclareMapperDirective>(@1.first_line, @1.first_column, OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified); } '(' mapper_list ')' declare_mapper_clause_optseq
+declare_mapper_directive : DECLARE MAPPER {
+                             current_directive =
+                                 makeDirectiveAt<OpenMPDeclareMapperDirective>(
+                                     @1.first_line, @1.first_column,
+                                     OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified);
+                           } '(' EXPR_STRING ')' {
+                             OpenMPBaseLang resolved_language = Lang_unknown;
+                             std::string error;
+                             if (!static_cast<OpenMPDeclareMapperDirective *>(
+                                      current_directive)
+                                      ->setSpecification(
+                                          $5,
+                                          user_set_lang != Lang_unknown
+                                              ? user_set_lang
+                                              : auto_lang,
+                                          resolved_language, error)) {
+                               reportParserError(error.c_str());
+                               YYABORT;
+                             }
+                             if (auto_lang == Lang_unknown) {
+                               auto_lang = resolved_language;
+                             }
+                           } declare_mapper_clause_optseq
                          ;
-
-mapper_list : mapper_identifier_optseq 
-            ;
-
-mapper_identifier_optseq : type_var
-                         | mapper_identifier ':' type_var
-                         ;
- 
-mapper_identifier : IDENTIFIER_DEFAULT { ((OpenMPDeclareMapperDirective*)current_directive)->setIdentifier(OMPD_DECLARE_MAPPER_IDENTIFIER_default); }
-                  | EXPR_STRING { ((OpenMPDeclareMapperDirective*)current_directive)->setIdentifier(OMPD_DECLARE_MAPPER_IDENTIFIER_user); ((OpenMPDeclareMapperDirective*)current_directive)->setUserDefinedIdentifier($1); }
-                  ;
-         
-type_var : EXPR_STRING { 
-               const char * _type_var = $1;
-               std::string type_var = std::string(_type_var);
-               // Handle Fortran style embedded "::" if present
-               size_t dc_pos = type_var.find("::");
-               if (dc_pos != std::string::npos && (user_set_lang == Lang_Fortran || auto_lang == Lang_Fortran || user_set_lang == Lang_unknown)) {
-                   std::string _type = type_var.substr(0, dc_pos);
-                   // Skip following spaces
-                   size_t var_start = dc_pos + 2;
-                   while (var_start < type_var.size() && (type_var[var_start] == ' ' || type_var[var_start] == '\t')) {
-                       ++var_start;
-                   }
-                   std::string _var = type_var.substr(var_start);
-                   ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperType(_type.c_str());
-                   ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperVar(_var.c_str());
-                   ((OpenMPDeclareMapperDirective*)current_directive)->setTypeVarHasSpace(true);
-                   if (auto_lang == Lang_unknown) {
-                       auto_lang = Lang_Fortran;
-                   }
-               } else if (parserLanguageIsCLike()) {
-                   int length = type_var.length() - 1;
-                   for (int i = length; i >= 0; i--) {
-                       if (type_var[i] == ' ' || type_var[i] == '*') { 
-                           std::string _type = type_var.substr(0, i + 1);
-                           std::string _var = type_var.substr(i + 1, length - i);
-                           const char* type = _type.c_str();
-                           const char* var = _var.c_str();
-                           ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperType(type);
-                           ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperVar(var);
-                           ((OpenMPDeclareMapperDirective*)current_directive)->setTypeVarHasSpace(type_var[i] == ' ');
-                           break;
-                       }
-                   }
-               } else {
-                   reportParserError("The syntax should be \"type :: var\" in Fortran");
-                   YYABORT; 
-               }
-         } 
-         | declare_mapper_type DOUBLE_COLON declare_mapper_var { if (parserLanguageIsCLike()) reportParserError("The syntax should be \"type var\" in C"); YYABORT; }
-         ;
-         
-declare_mapper_type : EXPR_STRING { ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperType($1); }
-                    ;
-                    
-declare_mapper_var : EXPR_STRING { ((OpenMPDeclareMapperDirective*)current_directive)->setDeclareMapperVar($1); }
-                   ;
 
 parallel_clause_optseq : /* empty */
                        | parallel_clause_seq
@@ -6084,20 +6385,17 @@ memscope_kind : DEVICE {
                }
               ;
 
-device_safesync_clause : DEVICE_SAFESYNC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_device_safesync); } opt_device_safesync_parens
+device_safesync_clause : DEVICE_SAFESYNC {
+                          current_clause = addClauseAt(
+                              current_directive, @1.first_line,
+                              @1.first_column, OMPC_device_safesync);
+                        } requirement_optional_expression {
+                          if ($3 != nullptr)
+                            current_clause->addLangExpr(
+                                $3, OMPC_CLAUSE_SEP_space, 0, 0,
+                                OMP_EXPR_PARSE_expression);
+                        }
                        ;
-
-opt_device_safesync_parens : /* empty */
-                           | '(' device_safesync_arg ')'
-                           ;
-
-device_safesync_arg : EXPR_STRING {
-                        if (current_clause)
-                          current_clause->addLangExpr($1, OMPC_CLAUSE_SEP_space,
-                                                      0, 0,
-                                                      OMP_EXPR_PARSE_expression);
-                      }
-                    ;
 
 safesync_clause: SAFESYNC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_safesync); } '(' expression ')'
                ;
@@ -6197,7 +6495,8 @@ allocate_clause : ALLOCATE {
                     current_clause = nullptr;
                   } '(' allocate_parameter ')' ;
 
-allocate_parameter : allocator_parameter_list ':' var_list
+allocate_parameter : legacy_allocator_parameter ':' var_list
+                   | allocate_modifier_parameter_list ':' var_list
                    | allocate_parameter_no_allocator
                    ;
 
@@ -6208,30 +6507,53 @@ allocate_parameter_no_allocator : {
                                     }
                                   } var_list
                                 ;
-allocator_parameter_list : allocator_parameter
-                         | allocator_parameter_list ',' allocator_parameter
-                         ;
-allocator_parameter : DEFAULT_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_default); }
-                    | LARGE_CAP_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_large_cap); }
-                    | CONST_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_cons_mem); }
-                    | HIGH_BW_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_high_bw); }
-                    | LOW_LAT_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_low_lat); }
-                    | CGROUP_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_cgroup); }
-                    | PTEAM_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_pteam); }
-                    | THREAD_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_thread); }
-                    | ALLOCATOR_IDENTIFIER {
-                        if (current_clause == nullptr) {
-                          current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_user, $1);
-                        }
-                        if (current_clause) {
-                          ((OpenMPAllocateClause*)current_clause)->setUserDefinedAllocator($1);
-                        }
-                      }
-                    ;
+legacy_allocator_parameter : DEFAULT_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_default); }
+                           | LARGE_CAP_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_large_cap); }
+                           | CONST_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_cons_mem); }
+                           | HIGH_BW_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_high_bw); }
+                           | LOW_LAT_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_low_lat); }
+                           | CGROUP_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_cgroup); }
+                           | PTEAM_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_pteam); }
+                           | THREAD_MEM_ALLOC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_allocate, OMPC_ALLOCATE_ALLOCATOR_thread); }
+                           | ALLOCATOR_IDENTIFIER {
+                               current_clause = addClauseAt(
+                                   current_directive, @1.first_line,
+                                   @1.first_column, OMPC_allocate,
+                                   OMPC_ALLOCATE_ALLOCATOR_user, $1);
+                             }
+                           ;
+
+allocate_modifier_parameter_list : allocate_modifier_parameter
+                                 | allocate_modifier_parameter_list ',' allocate_modifier_parameter
+                                 ;
+
+allocate_modifier_parameter : ALLOCATOR_MODIFIER {
+                                if (current_clause == nullptr) {
+                                  current_clause = addClauseAt(
+                                      current_directive, @1.first_line,
+                                      @1.first_column, OMPC_allocate,
+                                      OMPC_ALLOCATE_ALLOCATOR_unspecified);
+                                }
+                                static_cast<OpenMPAllocateClause *>(
+                                    current_clause)
+                                    ->setAllocatorModifier($1);
+                              }
+                            | ALIGN_MODIFIER {
+                                if (current_clause == nullptr) {
+                                  current_clause = addClauseAt(
+                                      current_directive, @1.first_line,
+                                      @1.first_column, OMPC_allocate,
+                                      OMPC_ALLOCATE_ALLOCATOR_unspecified);
+                                }
+                                static_cast<OpenMPAllocateClause *>(
+                                    current_clause)
+                                    ->setAlignModifier($1);
+                              }
+                            ;
 
 private_clause : PRIVATE {
                 current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_private);
-                if (!current_clause->getExpressions()->empty()) {
+                if (!current_clause->getExpressionItems().empty()) {
                   current_expr_separator = OMPC_CLAUSE_SEP_comma;
                 } else {
                   current_expr_separator = OMPC_CLAUSE_SEP_space;
@@ -6247,7 +6569,7 @@ firstprivate_clause : FIRSTPRIVATE {
                          if (firstprivate_clause != nullptr) {
                            firstprivate_clause->clearCurrentDirectiveNameModifier();
                          }
-                         if (!current_clause->getExpressions()->empty()) {
+                         if (!current_clause->getExpressionItems().empty()) {
                            current_expr_separator = OMPC_CLAUSE_SEP_comma;
                          } else {
                            current_expr_separator = OMPC_CLAUSE_SEP_space;
@@ -6365,12 +6687,12 @@ linear_clause : LINEAR '(' linear_parameter ')'
               ;
 
 linear_parameter : EXPR_STRING  { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_linear, OMPC_LINEAR_MODIFIER_unspecified);
-                                  if (!current_clause->getExpressions()->empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; }
+                                  if (!current_clause->getExpressionItems().empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; }
                                   current_clause->addLangExpr($1, current_expr_separator, 0, 0, OMP_EXPR_PARSE_variable_list);
                                   current_expr_separator = OMPC_CLAUSE_SEP_space;
                                 }
                  | EXPR_STRING ',' { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_linear, OMPC_LINEAR_MODIFIER_unspecified);
-                                      if (!current_clause->getExpressions()->empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; }
+                                      if (!current_clause->getExpressionItems().empty()) { current_expr_separator = OMPC_CLAUSE_SEP_comma; } else { current_expr_separator = OMPC_CLAUSE_SEP_space; }
                                       current_clause->addLangExpr($1, current_expr_separator, 0, 0, OMP_EXPR_PARSE_variable_list);
                                       current_expr_separator = OMPC_CLAUSE_SEP_comma; } var_list
                  | linear_modifier '(' var_list ')' { ((OpenMPLinearClause*)current_clause)->setModifierFirstSyntax(true); }
@@ -6402,11 +6724,11 @@ initializer_clause : INITIALIZER '(' {
                      }
                    ;
 
-safelen_clause: SAFELEN { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_safelen); } '(' var_list ')' {
+safelen_clause: SAFELEN { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_safelen); } '(' expression ')' {
                         }
               ;
 
-simdlen_clause: SIMDLEN { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_simdlen); } '(' var_list ')' {
+simdlen_clause: SIMDLEN { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_simdlen); } '(' expression ')' {
                         }
               ;
 
@@ -6415,7 +6737,7 @@ nontemporal_clause: NONTEMPORAL { current_clause = addClauseAt(current_directive
                       ;
 
 collapse_clause: COLLAPSE { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_collapse);
-                            if (!current_clause->getExpressions()->empty()) {
+                            if (!current_clause->getExpressionItems().empty()) {
                               current_expr_separator = OMPC_CLAUSE_SEP_comma;
                             } else {
                               current_expr_separator = OMPC_CLAUSE_SEP_space;
@@ -6532,8 +6854,7 @@ schedule_enum_kind : STATIC {
                       if (current_directive != nullptr)
                         current_clause = addClauseAt(
                             current_directive,
-                            getScheduleClauseLine(@1.first_line),
-                            getScheduleClauseColumn(@1.first_column),
+                            getScheduleClauseLine(), getScheduleClauseColumn(),
                             OMPC_schedule, firstParameter, secondParameter,
                             OMPC_SCHEDULE_KIND_static);
                     }
@@ -6541,8 +6862,7 @@ schedule_enum_kind : STATIC {
                       if (current_directive != nullptr)
                         current_clause = addClauseAt(
                             current_directive,
-                            getScheduleClauseLine(@1.first_line),
-                            getScheduleClauseColumn(@1.first_column),
+                            getScheduleClauseLine(), getScheduleClauseColumn(),
                             OMPC_schedule, firstParameter, secondParameter,
                             OMPC_SCHEDULE_KIND_dynamic);
                     }
@@ -6550,8 +6870,7 @@ schedule_enum_kind : STATIC {
                       if (current_directive != nullptr)
                         current_clause = addClauseAt(
                             current_directive,
-                            getScheduleClauseLine(@1.first_line),
-                            getScheduleClauseColumn(@1.first_column),
+                            getScheduleClauseLine(), getScheduleClauseColumn(),
                             OMPC_schedule, firstParameter, secondParameter,
                             OMPC_SCHEDULE_KIND_guided);
                     }
@@ -6559,8 +6878,7 @@ schedule_enum_kind : STATIC {
                       if (current_directive != nullptr)
                         current_clause = addClauseAt(
                             current_directive,
-                            getScheduleClauseLine(@1.first_line),
-                            getScheduleClauseColumn(@1.first_column),
+                            getScheduleClauseLine(), getScheduleClauseColumn(),
                             OMPC_schedule, firstParameter, secondParameter,
                             OMPC_SCHEDULE_KIND_auto);
                     }
@@ -6568,15 +6886,14 @@ schedule_enum_kind : STATIC {
                       if (current_directive != nullptr)
                         current_clause = addClauseAt(
                             current_directive,
-                            getScheduleClauseLine(@1.first_line),
-                            getScheduleClauseColumn(@1.first_column),
+                            getScheduleClauseLine(), getScheduleClauseColumn(),
                             OMPC_schedule, firstParameter, secondParameter,
                             OMPC_SCHEDULE_KIND_runtime);
                     }
                    ;  
 shared_clause : SHARED {
                 current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_shared);
-                if (!current_clause->getExpressions()->empty()) {
+                if (!current_clause->getExpressionItems().empty()) {
                   current_expr_separator = OMPC_CLAUSE_SEP_comma;
                 } else {
                   current_expr_separator = OMPC_CLAUSE_SEP_space;
@@ -6584,11 +6901,8 @@ shared_clause : SHARED {
                     } '(' var_list ')'
               ;
 
-reduction_clause : REDUCTION { firstParameter = OMPC_REDUCTION_MODIFIER_unspecified;
-                               reduction_modifier_expression = nullptr;
-                             } '(' reduction_parameter ':' reduction_var_list ')' {
-                               reduction_modifier_expression = nullptr;
-                             }
+reduction_clause : REDUCTION { firstParameter = OMPC_REDUCTION_MODIFIER_unspecified; }
+                   '(' reduction_parameter ':' reduction_var_list ')'
                  ;
 
 reduction_parameter : reduction_identifier {}
@@ -6597,18 +6911,28 @@ reduction_parameter : reduction_identifier {}
 
 reduction_identifier : reduction_enum_identifier {}
                      | EXPR_STRING {
+                         ompparser::SourceRange identifier_range;
+                         if (!openmpGetLexemeSourceRange($1, identifier_range)) {
+                           reportParserError("user-defined reduction identifier has no exact source range");
+                           YYERROR;
+                         }
                          current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                              OMPC_reduction, firstParameter,
-                             OMPC_REDUCTION_IDENTIFIER_user,
-                             reduction_modifier_expression, $1);
-                         reduction_modifier_expression = nullptr;
+                             OMPC_REDUCTION_IDENTIFIER_user, $1);
+                         auto *reduction_clause =
+                             dynamic_cast<OpenMPReductionClause *>(current_clause);
+                         if (reduction_clause == nullptr) {
+                           reportParserError("user-defined reduction identifier has no typed clause owner");
+                           YYERROR;
+                         }
+                         reduction_clause->setUserDefinedIdentifierSourceRange(identifier_range);
                        }
                      ;
 
 reduction_modifier : MODIFIER_INSCAN { firstParameter = OMPC_REDUCTION_MODIFIER_inscan; }
                    | MODIFIER_TASK { firstParameter = OMPC_REDUCTION_MODIFIER_task; }
                    | MODIFIER_DEFAULT { firstParameter = OMPC_REDUCTION_MODIFIER_default; }
-                   | reduction_user_modifier
+                   | MODIFIER_ORIGINAL_PRIVATE { firstParameter = OMPC_REDUCTION_MODIFIER_original_private; }
                    ;
 
 reduction_var_list : reduction_var
@@ -6625,80 +6949,86 @@ reduction_var : EXPR_STRING {
 reduction_enum_identifier : '+'{
                               current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                                   OMPC_reduction, firstParameter,
-                                  OMPC_REDUCTION_IDENTIFIER_plus,
-                                  reduction_modifier_expression, (char *)nullptr);
-                              reduction_modifier_expression = nullptr;
+                                  OMPC_REDUCTION_IDENTIFIER_plus);
                             }
                           | '-'{
                               current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                                   OMPC_reduction, firstParameter,
-                                  OMPC_REDUCTION_IDENTIFIER_minus,
-                                  reduction_modifier_expression, (char *)nullptr);
-                              reduction_modifier_expression = nullptr;
+                                  OMPC_REDUCTION_IDENTIFIER_minus);
                             }
                           | '*'{
                               current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                                   OMPC_reduction, firstParameter,
-                                  OMPC_REDUCTION_IDENTIFIER_mul,
-                                  reduction_modifier_expression, (char *)nullptr);
-                              reduction_modifier_expression = nullptr;
+                                  OMPC_REDUCTION_IDENTIFIER_mul);
                             }
                           | '&'{
                               current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                                   OMPC_reduction, firstParameter,
-                                  OMPC_REDUCTION_IDENTIFIER_bitand,
-                                  reduction_modifier_expression, (char *)nullptr);
-                              reduction_modifier_expression = nullptr;
+                                  OMPC_REDUCTION_IDENTIFIER_bitand);
                             }
                           | '|'{
                               current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                                   OMPC_reduction, firstParameter,
-                                  OMPC_REDUCTION_IDENTIFIER_bitor,
-                                  reduction_modifier_expression, (char *)nullptr);
-                              reduction_modifier_expression = nullptr;
+                                  OMPC_REDUCTION_IDENTIFIER_bitor);
                             }
                           | '^'{
                               current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                                   OMPC_reduction, firstParameter,
-                                  OMPC_REDUCTION_IDENTIFIER_bitxor,
-                                  reduction_modifier_expression, (char *)nullptr);
-                              reduction_modifier_expression = nullptr;
+                                  OMPC_REDUCTION_IDENTIFIER_bitxor);
                             }
-                          | LOGAND{
+                          | LOGAND {
+                              if (!validateReductionLogicalSpelling(false, "&&")) {
+                                YYERROR;
+                              }
                               current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                                   OMPC_reduction, firstParameter,
-                                  OMPC_REDUCTION_IDENTIFIER_logand,
-                                  reduction_modifier_expression, (char *)nullptr);
-                              reduction_modifier_expression = nullptr;
+                                  OMPC_REDUCTION_IDENTIFIER_logand);
                             }
-                          | LOGOR{
+                          | LOGOR {
+                              if (!validateReductionLogicalSpelling(false, "||")) {
+                                YYERROR;
+                              }
                               current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                                   OMPC_reduction, firstParameter,
-                                  OMPC_REDUCTION_IDENTIFIER_logor,
-                                  reduction_modifier_expression, (char *)nullptr);
-                              reduction_modifier_expression = nullptr;
+                                  OMPC_REDUCTION_IDENTIFIER_logor);
+                            }
+                          | FORTRAN_LOGAND {
+                              if (!validateReductionLogicalSpelling(true, ".and.")) {
+                                YYERROR;
+                              }
+                              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column,
+                                  OMPC_reduction, firstParameter,
+                                  OMPC_REDUCTION_IDENTIFIER_logand);
+                            }
+                          | FORTRAN_LOGOR {
+                              if (!validateReductionLogicalSpelling(true, ".or.")) {
+                                YYERROR;
+                              }
+                              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column,
+                                  OMPC_reduction, firstParameter,
+                                  OMPC_REDUCTION_IDENTIFIER_logor);
+                            }
+                          | EQV{
+                              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column,
+                                  OMPC_reduction, firstParameter,
+                                  OMPC_REDUCTION_IDENTIFIER_eqv);
+                            }
+                          | NEQV{
+                              current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column,
+                                  OMPC_reduction, firstParameter,
+                                  OMPC_REDUCTION_IDENTIFIER_neqv);
                             }
                           | MAX{
                               current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                                   OMPC_reduction, firstParameter,
-                                  OMPC_REDUCTION_IDENTIFIER_max,
-                                  reduction_modifier_expression, (char *)nullptr);
-                              reduction_modifier_expression = nullptr;
+                                  OMPC_REDUCTION_IDENTIFIER_max);
                             }
                           | MIN{
                               current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, 
                                   OMPC_reduction, firstParameter,
-                                  OMPC_REDUCTION_IDENTIFIER_min,
-                                  reduction_modifier_expression, (char *)nullptr);
-                              reduction_modifier_expression = nullptr;
+                                  OMPC_REDUCTION_IDENTIFIER_min);
                             }
                           ;
-
-reduction_user_modifier : EXPR_STRING {
-                             reduction_modifier_expression = $1;
-                             firstParameter = OMPC_REDUCTION_MODIFIER_unknown;
-                           }
-                         ;
 
 reduction_default_only_clause : REDUCTION { firstParameter = OMPC_REDUCTION_MODIFIER_unspecified; } '(' reduction_default_only_parameter ':' var_list ')' {
                               }

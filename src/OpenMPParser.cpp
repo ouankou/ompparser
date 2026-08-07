@@ -13,6 +13,7 @@
 #include "OpenMPSchema.h"
 
 #include <algorithm>
+#include <cctype>
 #include <initializer_list>
 #include <iterator>
 #include <numeric>
@@ -39,12 +40,13 @@ void visitImmediateNestedDirectives(const OpenMPDirective &directive,
     if (clause == nullptr) {
       continue;
     }
-
     if (const auto *variant =
             dynamic_cast<const OpenMPVariantClause *>(clause)) {
-      for (const auto &construct : variant->getConstructDirective()) {
-        if (construct.directive != nullptr) {
-          visitor(*construct.directive);
+      for (const auto &set : variant->getTraitSets()) {
+        for (const auto &selector : set.selectors) {
+          if (selector.construct_directive != nullptr) {
+            visitor(*selector.construct_directive);
+          }
         }
       }
     }
@@ -71,9 +73,7 @@ void applyHostLanguageHooks(OpenMPDirective &directive,
                             const ompparser::HostLanguageHooks &hooks,
                             std::vector<ompparser::Diagnostic> &diagnostics) {
   directive.visitHostFragments([&](ompparser::HostFragment &fragment) {
-    if (fragment.role != ompparser::HostFragmentRole::Verbatim) {
-      fragment.semantic = hooks.parse(fragment, diagnostics);
-    }
+    fragment.semantic = hooks.parse(fragment, diagnostics);
   });
 }
 
@@ -104,6 +104,22 @@ void validateExtensionPolicyImpl(
     if (clause->getKind() == OMPC_ext_implementation_defined_requirement) {
       report("implementation-defined OpenMP clauses require the registered "
              "extension policy");
+    }
+    const auto *variant_clause =
+        dynamic_cast<const OpenMPVariantClause *>(clause);
+    if (variant_clause != nullptr) {
+      for (const auto &set : variant_clause->getTraitSets()) {
+        for (const auto &selector : set.selectors) {
+          for (const auto &property : selector.properties) {
+            if (property.requirement != nullptr &&
+                property.requirement->OpenMPClause::getKind() ==
+                    OMPC_ext_implementation_defined_requirement) {
+              report("implementation-defined OpenMP clauses require the "
+                     "registered extension policy");
+            }
+          }
+        }
+      }
     }
     const auto *map_clause = dynamic_cast<const OpenMPMapClause *>(clause);
     if (map_clause) {
@@ -141,6 +157,95 @@ void addStructureDiagnostic(std::vector<ompparser::Diagnostic> &diagnostics,
   diagnostics.push_back(std::move(diagnostic));
 }
 
+bool isOpenMPIdentifier(const std::string &spelling) {
+  if (spelling.empty() ||
+      (!std::isalpha(static_cast<unsigned char>(spelling.front())) &&
+       spelling.front() != '_')) {
+    return false;
+  }
+  return std::all_of(spelling.begin() + 1, spelling.end(),
+                     [](unsigned char character) {
+                       return std::isalnum(character) || character == '_';
+                     });
+}
+
+bool isFortranDefinedOperator(const std::string &spelling) {
+  return spelling.size() >= 3 && spelling.front() == '.' &&
+         spelling.back() == '.' &&
+         std::all_of(
+             spelling.begin() + 1, spelling.end() - 1,
+             [](unsigned char character) { return std::isalpha(character); });
+}
+
+bool isCxxReductionIdExpression(const std::string &spelling) {
+  if (spelling.empty()) {
+    return false;
+  }
+  std::size_t offset = spelling.compare(0, 2, "::") == 0 ? 2 : 0;
+  if (offset == spelling.size()) {
+    return false;
+  }
+  while (offset < spelling.size()) {
+    const std::size_t separator = spelling.find("::", offset);
+    const std::string component = spelling.substr(
+        offset, separator == std::string::npos ? std::string::npos
+                                               : separator - offset);
+    if (!isOpenMPIdentifier(component)) {
+      return false;
+    }
+    if (separator == std::string::npos) {
+      return true;
+    }
+    offset = separator + 2;
+    if (offset == spelling.size()) {
+      return false;
+    }
+  }
+  return false;
+}
+
+void validateReductionIdentifier(
+    OpenMPBaseLang language, bool c_only, bool fortran_only, bool is_user,
+    const ompparser::HostFragment &user_identifier,
+    std::vector<ompparser::Diagnostic> &diagnostics) {
+  if (language == Lang_unknown) {
+    addStructureDiagnostic(diagnostics, ompparser::DiagnosticCode::InvalidAst,
+                           "reduction identifier has no exact base language");
+  }
+  if (c_only && language == Lang_Fortran) {
+    addStructureDiagnostic(diagnostics,
+                           ompparser::DiagnosticCode::InvalidClause,
+                           "C/C++ reduction identifier is invalid in Fortran");
+  }
+  if (fortran_only && language != Lang_Fortran) {
+    addStructureDiagnostic(diagnostics,
+                           ompparser::DiagnosticCode::InvalidClause,
+                           "Fortran reduction identifier is invalid in C/C++");
+  }
+  if (is_user) {
+    const bool valid_spelling =
+        language == Lang_Cplusplus
+            ? isCxxReductionIdExpression(user_identifier.spelling)
+        : language == Lang_Fortran
+            ? isOpenMPIdentifier(user_identifier.spelling) ||
+                  isFortranDefinedOperator(user_identifier.spelling)
+            : isOpenMPIdentifier(user_identifier.spelling);
+    if (!valid_spelling ||
+        user_identifier.role != ompparser::HostFragmentRole::Declarator ||
+        user_identifier.parse_mode != OMP_EXPR_PARSE_openmp_syntax) {
+      addStructureDiagnostic(
+          diagnostics, ompparser::DiagnosticCode::InvalidClause,
+          "user-defined reduction identifier '" + user_identifier.spelling +
+              "' is not a typed OpenMP name (mode " +
+              std::to_string(user_identifier.parse_mode) + ")");
+    }
+  } else if (!user_identifier.spelling.empty()) {
+    addStructureDiagnostic(
+        diagnostics, ompparser::DiagnosticCode::InvalidClause,
+        "predefined reduction identifier has a user-defined name payload");
+  }
+}
+
 bool initIncludesInteropType(const OpenMPInitClause &init_clause,
                              OpenMPInitClauseKind interop_type) {
   const auto &modifiers = init_clause.getModifiers().getModifiers();
@@ -157,9 +262,11 @@ void validateInitModifiers(const OpenMPInitModifierList &modifier_list,
                            std::vector<ompparser::Diagnostic> &diagnostics) {
   std::size_t prefer_type_count = 0;
   std::size_t depinfo_count = 0;
-  std::size_t directive_name_count = 0;
+  std::size_t depobj_name_count = 0;
+  std::size_t interop_name_count = 0;
   std::size_t target_count = 0;
   std::size_t targetsync_count = 0;
+  bool invalid_typed_modifier = false;
   for (const OpenMPInitModifier &modifier : modifier_list.getModifiers()) {
     switch (modifier.category) {
     case OpenMPInitModifierCategory::InteropType:
@@ -167,32 +274,61 @@ void validateInitModifiers(const OpenMPInitModifierList &modifier_list,
         ++target_count;
       } else if (modifier.interop_type == OMPC_INIT_KIND_targetsync) {
         ++targetsync_count;
+      } else {
+        invalid_typed_modifier = true;
       }
       break;
     case OpenMPInitModifierCategory::DirectiveName:
-      ++directive_name_count;
+      if (modifier.directive_name == OMPD_depobj) {
+        ++depobj_name_count;
+      } else if (modifier.directive_name == OMPD_interop) {
+        ++interop_name_count;
+      } else {
+        invalid_typed_modifier = true;
+      }
       break;
     case OpenMPInitModifierCategory::PreferType:
       ++prefer_type_count;
-      if (modifier.argument.spelling.empty()) {
+      if (modifier.argument.spelling.empty() ||
+          modifier.argument.role != ompparser::HostFragmentRole::Verbatim ||
+          modifier.argument.parse_mode != OMP_EXPR_PARSE_openmp_source) {
         addStructureDiagnostic(diagnostics,
                                ompparser::DiagnosticCode::InvalidClause,
-                               "prefer_type requires a non-empty argument");
+                               "prefer_type requires a typed source argument");
       }
       break;
     case OpenMPInitModifierCategory::Depinfo:
       ++depinfo_count;
-      if (modifier.argument.spelling.empty()) {
+      if (modifier.dependence_type != OMPC_DEPENDENCE_TYPE_in &&
+          modifier.dependence_type != OMPC_DEPENDENCE_TYPE_out &&
+          modifier.dependence_type != OMPC_DEPENDENCE_TYPE_inout &&
+          modifier.dependence_type != OMPC_DEPENDENCE_TYPE_inoutset &&
+          modifier.dependence_type != OMPC_DEPENDENCE_TYPE_mutexinoutset) {
+        invalid_typed_modifier = true;
+      }
+      if (modifier.argument.spelling.empty() ||
+          modifier.argument.role != ompparser::HostFragmentRole::Locator ||
+          modifier.argument.parse_mode != OMP_EXPR_PARSE_array_section) {
         addStructureDiagnostic(diagnostics,
                                ompparser::DiagnosticCode::InvalidClause,
-                               "depinfo requires a locator list item");
+                               "depinfo requires a typed locator list item");
       }
+      break;
+    default:
+      invalid_typed_modifier = true;
       break;
     }
   }
 
-  if (prefer_type_count > 1 || depinfo_count > 1 || directive_name_count > 1 ||
-      target_count > 1 || targetsync_count > 1) {
+  if (invalid_typed_modifier) {
+    addStructureDiagnostic(diagnostics,
+                           ompparser::DiagnosticCode::InvalidClause,
+                           "init modifier has an invalid typed kind");
+  }
+
+  if (prefer_type_count > 1 || depinfo_count > 1 ||
+      depobj_name_count + interop_name_count > 1 || target_count > 1 ||
+      targetsync_count > 1) {
     addStructureDiagnostic(
         diagnostics, ompparser::DiagnosticCode::InvalidClause,
         "init modifier names and interop-type keywords must be unique");
@@ -222,6 +358,16 @@ void validateInitModifiers(const OpenMPInitModifierList &modifier_list,
     addStructureDiagnostic(
         diagnostics, ompparser::DiagnosticCode::InvalidClause,
         "prefer_type is only valid for interop initialization");
+  }
+  if (require_interop_type && depobj_name_count != 0) {
+    addStructureDiagnostic(
+        diagnostics, ompparser::DiagnosticCode::InvalidClause,
+        "depobj directive-name modifier is invalid for interop");
+  }
+  if (!require_interop_type && interop_name_count != 0) {
+    addStructureDiagnostic(
+        diagnostics, ompparser::DiagnosticCode::InvalidClause,
+        "interop directive-name modifier is invalid for depobj");
   }
 }
 
@@ -253,6 +399,11 @@ void validateOpenMPStructure(const OpenMPDirective &directive,
   for (const OpenMPClause *clause : directive.getClausesInOriginalOrder()) {
     if (clause == nullptr) {
       continue;
+    }
+    if (clause->getBaseLang() != directive.getBaseLang()) {
+      addStructureDiagnostic(
+          diagnostics, ompparser::DiagnosticCode::InvalidAst,
+          "clause base language disagrees with its owning directive");
     }
     if (directive.getKind() != OMPD_end &&
         !ompparser::isClauseAllowedOnDirective(directive.getKind(),
@@ -296,6 +447,20 @@ void validateOpenMPStructure(const OpenMPDirective &directive,
             diagnostics, ompparser::DiagnosticCode::InvalidClause,
             "adjust_args requires a typed adjust-op and a non-empty "
             "parameter list");
+      }
+    }
+    if (const auto *allocate =
+            dynamic_cast<const OpenMPAllocateClause *>(clause)) {
+      const bool has_user_allocator =
+          !allocate->getUserDefinedAllocator().empty();
+      const bool typed_user_allocator =
+          allocate->getAllocator() == OMPC_ALLOCATE_ALLOCATOR_user;
+      if (has_user_allocator != typed_user_allocator ||
+          (allocate->usesAllocatorModifierSyntax() && !typed_user_allocator)) {
+        addStructureDiagnostic(
+            diagnostics, ompparser::DiagnosticCode::InvalidClause,
+            "allocate allocator kind, modifier syntax, and typed payload "
+            "must agree");
       }
     }
     if (const auto *init = dynamic_cast<const OpenMPInitClause *>(clause)) {
@@ -382,6 +547,18 @@ void validateOpenMPStructure(const OpenMPDirective &directive,
     }
     if (const auto *map_clause =
             dynamic_cast<const OpenMPMapClause *>(clause)) {
+      const ompparser::HostFragment &mapper =
+          map_clause->getMapperIdentifierFragment();
+      if (!mapper.spelling.empty() &&
+          (mapper.role != ompparser::HostFragmentRole::Declarator ||
+           mapper.parse_mode != OMP_EXPR_PARSE_verbatim ||
+           !isOpenMPIdentifier(mapper.spelling))) {
+        addStructureDiagnostic(diagnostics,
+                               ompparser::DiagnosticCode::InvalidClause,
+                               "map mapper identifier '" + mapper.spelling +
+                                   "' is not a typed OpenMP name (mode " +
+                                   std::to_string(mapper.parse_mode) + ")");
+      }
       const auto &all_policies = map_clause->getDistDataPolicies();
       const bool has_invalid_policy = std::any_of(
           all_policies.begin(), all_policies.end(), [](const auto &policies) {
@@ -395,6 +572,31 @@ void validateOpenMPStructure(const OpenMPDirective &directive,
         addStructureDiagnostic(
             diagnostics, ompparser::DiagnosticCode::InvalidClause,
             "dist_data contains an unrecognized or malformed policy");
+      }
+    }
+    if (const auto *to_clause = dynamic_cast<const OpenMPToClause *>(clause)) {
+      const ompparser::HostFragment &mapper =
+          to_clause->getMapperIdentifierFragment();
+      if (!mapper.spelling.empty() &&
+          (mapper.role != ompparser::HostFragmentRole::Declarator ||
+           mapper.parse_mode != OMP_EXPR_PARSE_verbatim ||
+           !isOpenMPIdentifier(mapper.spelling))) {
+        addStructureDiagnostic(
+            diagnostics, ompparser::DiagnosticCode::InvalidClause,
+            "to mapper identifier is not a typed OpenMP name");
+      }
+    }
+    if (const auto *from_clause =
+            dynamic_cast<const OpenMPFromClause *>(clause)) {
+      const ompparser::HostFragment &mapper =
+          from_clause->getMapperIdentifierFragment();
+      if (!mapper.spelling.empty() &&
+          (mapper.role != ompparser::HostFragmentRole::Declarator ||
+           mapper.parse_mode != OMP_EXPR_PARSE_verbatim ||
+           !isOpenMPIdentifier(mapper.spelling))) {
+        addStructureDiagnostic(
+            diagnostics, ompparser::DiagnosticCode::InvalidClause,
+            "from mapper identifier is not a typed OpenMP name");
       }
     }
     if (const auto *depend = dynamic_cast<const OpenMPDependClause *>(clause)) {
@@ -411,6 +613,78 @@ void validateOpenMPStructure(const OpenMPDirective &directive,
                                ompparser::DiagnosticCode::InvalidClause,
                                "depend requires a non-empty locator list");
       }
+    }
+    if (const auto *reduction =
+            dynamic_cast<const OpenMPReductionClause *>(clause)) {
+      switch (reduction->getModifier()) {
+      case OMPC_REDUCTION_MODIFIER_unspecified:
+      case OMPC_REDUCTION_MODIFIER_default:
+      case OMPC_REDUCTION_MODIFIER_inscan:
+      case OMPC_REDUCTION_MODIFIER_task:
+      case OMPC_REDUCTION_MODIFIER_original_private:
+        break;
+      default:
+        addStructureDiagnostic(diagnostics,
+                               ompparser::DiagnosticCode::InvalidClause,
+                               "reduction has an unknown modifier");
+        break;
+      }
+      const OpenMPReductionClauseIdentifier identifier =
+          reduction->getIdentifier();
+      const bool c_only = identifier == OMPC_REDUCTION_IDENTIFIER_bitand ||
+                          identifier == OMPC_REDUCTION_IDENTIFIER_bitor ||
+                          identifier == OMPC_REDUCTION_IDENTIFIER_bitxor;
+      const bool fortran_only = identifier == OMPC_REDUCTION_IDENTIFIER_eqv ||
+                                identifier == OMPC_REDUCTION_IDENTIFIER_neqv;
+      if (identifier == OMPC_REDUCTION_IDENTIFIER_unknown) {
+        addStructureDiagnostic(diagnostics,
+                               ompparser::DiagnosticCode::InvalidClause,
+                               "reduction has an unknown identifier");
+      }
+      validateReductionIdentifier(directive.getBaseLang(), c_only, fortran_only,
+                                  identifier == OMPC_REDUCTION_IDENTIFIER_user,
+                                  reduction->getUserDefinedIdentifierFragment(),
+                                  diagnostics);
+    }
+    if (const auto *reduction =
+            dynamic_cast<const OpenMPInReductionClause *>(clause)) {
+      const OpenMPInReductionClauseIdentifier identifier =
+          reduction->getIdentifier();
+      const bool c_only = identifier == OMPC_IN_REDUCTION_IDENTIFIER_bitand ||
+                          identifier == OMPC_IN_REDUCTION_IDENTIFIER_bitor ||
+                          identifier == OMPC_IN_REDUCTION_IDENTIFIER_bitxor;
+      const bool fortran_only =
+          identifier == OMPC_IN_REDUCTION_IDENTIFIER_eqv ||
+          identifier == OMPC_IN_REDUCTION_IDENTIFIER_neqv;
+      if (identifier == OMPC_IN_REDUCTION_IDENTIFIER_unknown) {
+        addStructureDiagnostic(diagnostics,
+                               ompparser::DiagnosticCode::InvalidClause,
+                               "in_reduction has an unknown identifier");
+      }
+      validateReductionIdentifier(
+          directive.getBaseLang(), c_only, fortran_only,
+          identifier == OMPC_IN_REDUCTION_IDENTIFIER_user,
+          reduction->getUserDefinedIdentifierFragment(), diagnostics);
+    }
+    if (const auto *reduction =
+            dynamic_cast<const OpenMPTaskReductionClause *>(clause)) {
+      const OpenMPTaskReductionClauseIdentifier identifier =
+          reduction->getIdentifier();
+      const bool c_only = identifier == OMPC_TASK_REDUCTION_IDENTIFIER_bitand ||
+                          identifier == OMPC_TASK_REDUCTION_IDENTIFIER_bitor ||
+                          identifier == OMPC_TASK_REDUCTION_IDENTIFIER_bitxor;
+      const bool fortran_only =
+          identifier == OMPC_TASK_REDUCTION_IDENTIFIER_eqv ||
+          identifier == OMPC_TASK_REDUCTION_IDENTIFIER_neqv;
+      if (identifier == OMPC_TASK_REDUCTION_IDENTIFIER_unknown) {
+        addStructureDiagnostic(diagnostics,
+                               ompparser::DiagnosticCode::InvalidClause,
+                               "task_reduction has an unknown identifier");
+      }
+      validateReductionIdentifier(
+          directive.getBaseLang(), c_only, fortran_only,
+          identifier == OMPC_TASK_REDUCTION_IDENTIFIER_user,
+          reduction->getUserDefinedIdentifierFragment(), diagnostics);
     }
   }
 
@@ -756,6 +1030,19 @@ void validateOpenMPStructure(const OpenMPDirective &directive,
       addStructureDiagnostic(
           diagnostics, ompparser::DiagnosticCode::InvalidDirective,
           "declare variant requires a variant function identifier");
+    }
+  }
+
+  if (const auto *critical =
+          dynamic_cast<const OpenMPCriticalDirective *>(&directive)) {
+    const ompparser::HostFragment &name = critical->getCriticalNameFragment();
+    if (!name.spelling.empty() &&
+        (!isOpenMPIdentifier(name.spelling) ||
+         name.role != ompparser::HostFragmentRole::Declarator ||
+         name.parse_mode != OMP_EXPR_PARSE_openmp_syntax)) {
+      addStructureDiagnostic(diagnostics,
+                             ompparser::DiagnosticCode::InvalidDirective,
+                             "critical name is not a typed OpenMP name");
     }
   }
 }

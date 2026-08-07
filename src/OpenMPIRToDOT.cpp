@@ -7,7 +7,46 @@
  */
 
 #include "OpenMPIR.h"
+#include "OpenMPSchema.h"
 #include <sstream>
+
+namespace {
+
+std::string logicalReductionSpelling(OpenMPBaseLang language,
+                                     bool conjunction) {
+  if (language == Lang_Fortran) {
+    return conjunction ? ".and." : ".or.";
+  }
+  if (language == Lang_C || language == Lang_Cplusplus) {
+    return conjunction ? "&&" : "||";
+  }
+  throw std::logic_error(
+      "logical reduction identifier has no exact base language");
+}
+
+std::string equivalenceReductionSpelling(OpenMPBaseLang language,
+                                         bool equivalent) {
+  if (language != Lang_Fortran) {
+    throw std::logic_error("equivalence reduction identifier requires Fortran");
+  }
+  return equivalent ? ".eqv." : ".neqv.";
+}
+
+void generateExpressionNodes(
+    std::ostream &dot_file, const std::string &indent,
+    const std::string &clause_kind,
+    const std::vector<OpenMPExpressionItem> &expressions) {
+  for (std::size_t index = 0; index < expressions.size(); ++index) {
+    const std::string expression_name =
+        clause_kind + "_expr" + std::to_string(index);
+    dot_file << indent << clause_kind << " -- " << expression_name << "\n";
+    dot_file << indent << "\t" << expression_name << " [label = \""
+             << expression_name << "\\n "
+             << expressions[index].fragment.spelling << "\"]\n";
+  }
+}
+
+} // namespace
 
 void OpenMPAtomicDefaultMemOrderClause::generateDOT(
     std::ostream &dot_file, int depth, int index,
@@ -29,6 +68,12 @@ void OpenMPAtomicDefaultMemOrderClause::generateDOT(
     break;
   case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acq_rel:
     parameter_string = "acq_rel";
+    break;
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acquire:
+    parameter_string = "acquire";
+    break;
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_release:
+    parameter_string = "release";
     break;
   case OMPC_ATOMIC_DEFAULT_MEM_ORDER_relaxed:
     parameter_string = "relaxed";
@@ -80,10 +125,16 @@ void OpenMPInReductionClause::generateDOT(std::ostream &dot_file, int depth,
     parameter_string = "^";
     break;
   case OMPC_IN_REDUCTION_IDENTIFIER_logand:
-    parameter_string = "&&";
+    parameter_string = logicalReductionSpelling(getBaseLang(), true);
     break;
   case OMPC_IN_REDUCTION_IDENTIFIER_logor:
-    parameter_string = "||";
+    parameter_string = logicalReductionSpelling(getBaseLang(), false);
+    break;
+  case OMPC_IN_REDUCTION_IDENTIFIER_eqv:
+    parameter_string = equivalenceReductionSpelling(getBaseLang(), true);
+    break;
+  case OMPC_IN_REDUCTION_IDENTIFIER_neqv:
+    parameter_string = equivalenceReductionSpelling(getBaseLang(), false);
     break;
   case OMPC_IN_REDUCTION_IDENTIFIER_min:
     parameter_string = "min";
@@ -106,21 +157,7 @@ void OpenMPInReductionClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPDepobjUpdateClause::generateDOT(std::ostream &dot_file, int depth,
@@ -153,21 +190,7 @@ void OpenMPDepobjUpdateClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPDependClause::generateDOT(std::ostream &dot_file, int depth,
@@ -236,21 +259,7 @@ void OpenMPDependClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPAffinityClause::generateDOT(std::ostream &dot_file, int depth,
@@ -282,21 +291,7 @@ void OpenMPAffinityClause::generateDOT(std::ostream &dot_file, int depth,
                    parameter_string + "\"]\n";
     dot_file << current_line.c_str();
   };
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPToClause::generateDOT(std::ostream &dot_file, int depth, int index,
@@ -339,21 +334,7 @@ void OpenMPToClause::generateDOT(std::ostream &dot_file, int depth, int index,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPFromClause::generateDOT(std::ostream &dot_file, int depth, int index,
@@ -395,21 +376,7 @@ void OpenMPFromClause::generateDOT(std::ostream &dot_file, int depth, int index,
                    mapper_identifier_name + "\\n " + parameter_string + "\"]\n";
     dot_file << current_line.c_str();
   };
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPDefaultmapClause::generateDOT(std::ostream &dot_file, int depth,
@@ -488,21 +455,7 @@ void OpenMPDefaultmapClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPDeviceClause::generateDOT(std::ostream &dot_file, int depth,
@@ -536,21 +489,7 @@ void OpenMPDeviceClause::generateDOT(std::ostream &dot_file, int depth,
                    parameter_string + "\"]\n";
     dot_file << current_line.c_str();
   };
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPDeviceTypeClause::generateDOT(std::ostream &dot_file, int depth,
@@ -624,10 +563,16 @@ void OpenMPTaskReductionClause::generateDOT(std::ostream &dot_file, int depth,
     parameter_string = "^";
     break;
   case OMPC_TASK_REDUCTION_IDENTIFIER_logand:
-    parameter_string = "&&";
+    parameter_string = logicalReductionSpelling(getBaseLang(), true);
     break;
   case OMPC_TASK_REDUCTION_IDENTIFIER_logor:
-    parameter_string = "||";
+    parameter_string = logicalReductionSpelling(getBaseLang(), false);
+    break;
+  case OMPC_TASK_REDUCTION_IDENTIFIER_eqv:
+    parameter_string = equivalenceReductionSpelling(getBaseLang(), true);
+    break;
+  case OMPC_TASK_REDUCTION_IDENTIFIER_neqv:
+    parameter_string = equivalenceReductionSpelling(getBaseLang(), false);
     break;
   case OMPC_TASK_REDUCTION_IDENTIFIER_min:
     parameter_string = "min";
@@ -650,21 +595,7 @@ void OpenMPTaskReductionClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPMapClause::generateDOT(std::ostream &dot_file, int depth, int index,
@@ -779,21 +710,7 @@ void OpenMPMapClause::generateDOT(std::ostream &dot_file, int depth, int index,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 // 2 or more combined directive
@@ -1566,21 +1483,15 @@ void OpenMPClause::generateDOT(std::ostream &dot_file, int depth, int index,
     };
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + "expr" +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  const auto &expressions = getExpressionItems();
+  for (std::size_t index = 0; index < expressions.size(); ++index) {
+    const std::string expr_name = clause_kind + "_expr" + std::to_string(index);
+    current_line = indent + clause_kind + " -- " + expr_name + "\n";
+    dot_file << current_line.c_str();
+    current_line = indent + "\t" + expr_name + " [label = \"" + "expr" +
+                   "\\n " + expressions[index].fragment.spelling + "\"]\n";
+    dot_file << current_line.c_str();
+  }
 };
 
 void OpenMPReductionClause::generateDOT(std::ostream &dot_file, int depth,
@@ -1607,6 +1518,9 @@ void OpenMPReductionClause::generateDOT(std::ostream &dot_file, int depth,
     break;
   case OMPC_REDUCTION_MODIFIER_task:
     parameter_string = "task";
+    break;
+  case OMPC_REDUCTION_MODIFIER_original_private:
+    parameter_string = "original(private)";
     break;
   default:;
   }
@@ -1639,10 +1553,16 @@ void OpenMPReductionClause::generateDOT(std::ostream &dot_file, int depth,
     parameter_string = "^";
     break;
   case OMPC_REDUCTION_IDENTIFIER_logand:
-    parameter_string = "&&";
+    parameter_string = logicalReductionSpelling(getBaseLang(), true);
     break;
   case OMPC_REDUCTION_IDENTIFIER_logor:
-    parameter_string = "||";
+    parameter_string = logicalReductionSpelling(getBaseLang(), false);
+    break;
+  case OMPC_REDUCTION_IDENTIFIER_eqv:
+    parameter_string = equivalenceReductionSpelling(getBaseLang(), true);
+    break;
+  case OMPC_REDUCTION_IDENTIFIER_neqv:
+    parameter_string = equivalenceReductionSpelling(getBaseLang(), false);
     break;
   case OMPC_REDUCTION_IDENTIFIER_min:
     parameter_string = "min";
@@ -1665,208 +1585,108 @@ void OpenMPReductionClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPVariantClause::generateDOT(std::ostream &dot_file, int depth,
                                       int index,
                                       std::string parent_node) const {
-
-  std::string parameter_string;
-  const OpenMPVariantClause::ScoredExpression *scored_expr = nullptr;
-  std::string current_line;
-  std::string indent = std::string(depth, '\t');
-  std::string clause_string;
-  std::string clause_type;
-  parent_node = parent_node.substr(0, parent_node.size() - 1);
-  OpenMPClauseKind clause_kind = this->getKind();
-  switch (clause_kind) {
-  case OMPC_when:
-    clause_type = "when";
-    break;
-  case OMPC_match:
-    clause_type = "match";
-    break;
-  default:
-    break;
-  };
-  clause_string = parent_node + "_" + clause_type + "_" +
-                  std::to_string(depth) + "_" + std::to_string(index);
-  current_line = indent + parent_node + " -- " + clause_string + "\n";
-  dot_file << current_line.c_str();
-  indent += "\t";
-  current_line =
-      indent + clause_string + " [label = \"" + clause_type + "\"]\n";
-  dot_file << current_line.c_str();
-
-  std::string node_id = "";
-  // check user
-  scored_expr = this->getUserCondition();
-  if (scored_expr != nullptr && !scored_expr->expression.spelling.empty()) {
-    node_id = clause_string + "_user_condition";
-    current_line = indent + clause_string + " -- " + node_id + "\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t" + node_id + " [label = \"user_condition\"]\n";
-    dot_file << current_line.c_str();
-    // output score
-    if (!scored_expr->score.spelling.empty()) {
-      current_line = indent + "\t" + node_id + " -- " + node_id + "_score\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t\t" + node_id + "_score [label = \"score\\n " +
-                     scored_expr->score.spelling + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-    // output condition expression
-    current_line = indent + "\t" + node_id + " -- " + node_id + "_expr\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t\t" + node_id + "_expr [label = \"expr\\n " +
-                   scored_expr->expression.spelling + "\"]\n";
-    dot_file << current_line.c_str();
-  };
-
-  // check construct
-  const auto &parameter_pair_directives = this->getConstructDirective();
-  if (!parameter_pair_directives.empty()) {
-    node_id = clause_string + "_construct";
-    current_line = indent + clause_string + " -- " + node_id + "\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t" + node_id + " [label = \"construct\"]\n";
-    dot_file << current_line.c_str();
-    for (unsigned int i = 0; i < parameter_pair_directives.size(); i++) {
-      parameter_pair_directives.at(i).directive->generateDOT(
-          dot_file, depth + 2, i, node_id,
-          parameter_pair_directives.at(i).score.spelling);
-    };
-  };
-
-  auto emit_device_selector = [&](bool target_device) {
-    const std::string selector_name =
-        target_device ? "target_device" : "device";
-    const std::string selector_node = clause_string + "_" + selector_name;
-    const ScoredExpression *arch = this->getArchExpression(target_device);
-    const ScoredExpression *isa = this->getIsaExpression(target_device);
-    const ScoredExpression *device_num =
-        this->getDeviceNumExpression(target_device);
-    const ScoredContextKind *context_kind = this->getContextKind(target_device);
-
-    parameter_string.clear();
-    switch (context_kind->kind) {
-    case OMPC_CONTEXT_KIND_host:
-      parameter_string = "host";
-      break;
-    case OMPC_CONTEXT_KIND_nohost:
-      parameter_string = "nohost";
-      break;
-    case OMPC_CONTEXT_KIND_any:
-      parameter_string = "any";
-      break;
-    case OMPC_CONTEXT_KIND_cpu:
-      parameter_string = "cpu";
-      break;
-    case OMPC_CONTEXT_KIND_gpu:
-      parameter_string = "gpu";
-      break;
-    case OMPC_CONTEXT_KIND_fpga:
-      parameter_string = "fpga";
-      break;
-    case OMPC_CONTEXT_KIND_unknown:
-      break;
-    default:
-      break;
-    }
-
-    if (arch->expression.spelling.empty() && isa->expression.spelling.empty() &&
-        device_num->expression.spelling.empty() && parameter_string.empty()) {
-      return;
-    }
-
-    current_line = indent + clause_string + " -- " + selector_node + "\n";
-    dot_file << current_line.c_str();
-    current_line = indent + "\t" + selector_node + " [label = \"" +
-                   selector_name + "\"]\n";
-    dot_file << current_line.c_str();
-
-    auto emit_expression = [&](const char *name,
-                               const ScoredExpression &expression) {
-      if (expression.expression.spelling.empty()) {
-        return;
+  auto escape = [](const std::string &text) {
+    std::string result;
+    for (char character : text) {
+      if (character == '\\' || character == '"') {
+        result += '\\';
       }
-      const std::string property_node = selector_node + "_" + name;
-      current_line =
-          indent + "\t" + selector_node + " -- " + property_node + "\n";
-      dot_file << current_line.c_str();
-      current_line =
-          indent + "\t\t" + property_node + " [label = \"" + name + "\"]\n";
-      dot_file << current_line.c_str();
-      if (!expression.score.spelling.empty()) {
-        current_line = indent + "\t\t" + property_node + " -- " +
-                       property_node + "_score\n";
-        dot_file << current_line.c_str();
-        current_line = indent + "\t\t\t" + property_node +
-                       "_score [label = \"score\\n " +
-                       expression.score.spelling + "\"]\n";
-        dot_file << current_line.c_str();
-      }
-      current_line =
-          indent + "\t\t" + property_node + " -- " + property_node + "_expr\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t\t\t" + property_node +
-                     "_expr [label = \"expr\\n " +
-                     expression.expression.spelling + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-    emit_expression("arch", *arch);
-    emit_expression("isa", *isa);
-    emit_expression("device_num", *device_num);
-
-    if (!parameter_string.empty()) {
-      const std::string kind_node = selector_node + "_kind";
-      current_line = indent + "\t" + selector_node + " -- " + kind_node + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t\t" + kind_node + " [label = \"kind\"]\n";
-      dot_file << current_line.c_str();
-      if (!context_kind->score.spelling.empty()) {
-        current_line =
-            indent + "\t\t" + kind_node + " -- " + kind_node + "_score\n";
-        dot_file << current_line.c_str();
-        current_line = indent + "\t\t\t" + kind_node +
-                       "_score [label = \"score\\n " +
-                       context_kind->score.spelling + "\"]\n";
-        dot_file << current_line.c_str();
-      }
-      current_line =
-          indent + "\t\t" + kind_node + " -- " + kind_node + "_value\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t\t\t" + kind_node + "_value [label = \"" +
-                     parameter_string + "\"]\n";
-      dot_file << current_line.c_str();
+      result += character == '\n' ? ' ' : character;
     }
+    return result;
   };
-  emit_device_selector(false);
-  emit_device_selector(true);
 
-  if (clause_kind == OMPC_when) {
-    const auto *variant_directive =
+  if (!parent_node.empty()) {
+    parent_node.pop_back();
+  }
+  const std::string clause_node = parent_node + "_variant_" +
+                                  std::to_string(depth) + "_" +
+                                  std::to_string(index);
+  const std::string indent(static_cast<std::size_t>(depth), '\t');
+  dot_file << indent << parent_node << " -- " << clause_node << "\n";
+  dot_file << indent << '\t' << clause_node << " [label = \""
+           << ompparser::getClauseName(getKind()) << "\"]\n";
+
+  for (std::size_t set_index = 0; set_index < trait_sets.size(); ++set_index) {
+    const TraitSetSelector &set = trait_sets[set_index];
+    const std::string set_node =
+        clause_node + "_set_" + std::to_string(set_index);
+    dot_file << indent << '\t' << clause_node << " -- " << set_node << "\n";
+    dot_file << indent << "\t\t" << set_node << " [label = \"set "
+             << static_cast<int>(set.kind) << "\"]\n";
+    for (std::size_t selector_index = 0; selector_index < set.selectors.size();
+         ++selector_index) {
+      const TraitSelector &selector = set.selectors[selector_index];
+      const std::string selector_node =
+          set_node + "_selector_" + std::to_string(selector_index);
+      dot_file << indent << "\t\t" << set_node << " -- " << selector_node
+               << "\n";
+      std::string selector_label =
+          "selector " + std::to_string(static_cast<int>(selector.kind));
+      if (!selector.implementation_defined_name.empty()) {
+        selector_label += "\\n" + selector.implementation_defined_name;
+      }
+      if (!selector.score.spelling.empty()) {
+        selector_label += "\\nscore " + selector.score.spelling;
+      }
+      dot_file << indent << "\t\t\t" << selector_node << " [label = \""
+               << escape(selector_label) << "\"]\n";
+
+      for (std::size_t property_index = 0;
+           property_index < selector.properties.size(); ++property_index) {
+        const TraitProperty &property = selector.properties[property_index];
+        const std::string property_node =
+            selector_node + "_property_" + std::to_string(property_index);
+        dot_file << indent << "\t\t\t" << selector_node << " -- "
+                 << property_node << "\n";
+        std::string label = property.fragment.spelling;
+        if (property.context_kind) {
+          label = "context kind " +
+                  std::to_string(static_cast<int>(*property.context_kind));
+        } else if (property.context_vendor) {
+          label = "vendor " +
+                  std::to_string(static_cast<int>(*property.context_vendor));
+        } else if (property.atomic_default_mem_order) {
+          label = "memory order " + std::to_string(static_cast<int>(
+                                        *property.atomic_default_mem_order));
+        } else if (property.requirement != nullptr) {
+          label = property.requirement->toString();
+          while (!label.empty() && label.back() == ' ') {
+            label.pop_back();
+          }
+        }
+        dot_file << indent << "\t\t\t\t" << property_node << " [label = \""
+                 << escape(label) << "\"]\n";
+      }
+
+      if (selector.construct_directive != nullptr) {
+        selector.construct_directive->generateDOT(
+            dot_file, depth + 3, static_cast<int>(selector_index),
+            selector_node, selector.score.spelling);
+      }
+    }
+  }
+
+  if (getKind() == OMPC_when) {
+    const OpenMPDirective *variant =
         static_cast<const OpenMPWhenClause *>(this)->getVariantDirective();
-    if (variant_directive != NULL) {
-      variant_directive->generateDOT(dot_file, depth + 1, 0, clause_string, "");
-    };
-  };
-};
+    if (variant != nullptr) {
+      variant->generateDOT(dot_file, depth + 1, 0, clause_node, "");
+    }
+  } else if (getKind() == OMPC_otherwise) {
+    const OpenMPDirective *variant =
+        static_cast<const OpenMPOtherwiseClause *>(this)->getVariantDirective();
+    if (variant != nullptr) {
+      variant->generateDOT(dot_file, depth + 1, 0, clause_node, "");
+    }
+  }
+}
 
 void OpenMPDefaultClause::generateDOT(std::ostream &dot_file, int depth,
                                       int index,
@@ -1940,21 +1760,7 @@ void OpenMPLastprivateClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPLinearClause::generateDOT(std::ostream &dot_file, int depth,
@@ -1993,21 +1799,7 @@ void OpenMPLinearClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
   std::string step = this->getUserDefinedStep();
   if (step != "") {
     parameter_string = step;
@@ -2034,21 +1826,7 @@ void OpenMPAlignedClause::generateDOT(std::ostream &dot_file, int depth,
   indent += "\t";
   std::string parameter_string;
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
   std::string alignment = this->getUserDefinedAlignment();
   if (alignment != "") {
     parameter_string = alignment;
@@ -2147,21 +1925,7 @@ void OpenMPScheduleClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPDistScheduleClause::generateDOT(std::ostream &dot_file, int depth,
@@ -2260,21 +2024,7 @@ void OpenMPIfClause::generateDOT(std::ostream &dot_file, int depth, int index,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPInitializerClause::generateDOT(std::ostream &dot_file, int depth,
@@ -2301,21 +2051,7 @@ void OpenMPInitializerClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPAllocateClause::generateDOT(std::ostream &dot_file, int depth,
@@ -2368,21 +2104,7 @@ void OpenMPAllocateClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };
 
 void OpenMPAllocatorClause::generateDOT(std::ostream &dot_file, int depth,
@@ -2435,19 +2157,5 @@ void OpenMPAllocatorClause::generateDOT(std::ostream &dot_file, int depth,
     dot_file << current_line.c_str();
   };
 
-  const std::vector<const char *> *expr = this->getExpressions();
-  if (expr != NULL) {
-    std::vector<const char *>::const_iterator it;
-    int expr_index = 0;
-    std::string expr_name;
-    for (it = expr->begin(); it != expr->end(); it++) {
-      expr_name = clause_kind + "_expr" + std::to_string(expr_index);
-      expr_index += 1;
-      current_line = indent + clause_kind + " -- " + expr_name + "\n";
-      dot_file << current_line.c_str();
-      current_line = indent + "\t" + expr_name + " [label = \"" + expr_name +
-                     "\\n " + std::string(*it) + "\"]\n";
-      dot_file << current_line.c_str();
-    };
-  };
+  generateExpressionNodes(dot_file, indent, clause_kind, getExpressionItems());
 };

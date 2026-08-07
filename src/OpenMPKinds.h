@@ -88,6 +88,21 @@ enum OpenMPContextSelectorSequenceKind {
   OMPC_SELECTOR_implementation
 };
 
+enum OpenMPContextTraitSelectorKind {
+  OMPC_TRAIT_condition,
+  OMPC_TRAIT_construct,
+  OMPC_TRAIT_kind,
+  OMPC_TRAIT_arch,
+  OMPC_TRAIT_isa,
+  OMPC_TRAIT_device_num,
+  OMPC_TRAIT_uid,
+  OMPC_TRAIT_vendor,
+  OMPC_TRAIT_extension,
+  OMPC_TRAIT_requires,
+  OMPC_TRAIT_atomic_default_mem_order,
+  OMPC_TRAIT_implementation_user
+};
+
 enum OpenMPInitClauseKind {
   OMPC_INIT_KIND_target,
   OMPC_INIT_KIND_targetsync,
