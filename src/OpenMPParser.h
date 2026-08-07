@@ -9,6 +9,8 @@
 #ifndef OMPPARSER_OPENMPPARSER_H
 #define OMPPARSER_OPENMPPARSER_H
 
+#include "OpenMPKinds.h"
+
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -17,6 +19,23 @@
 #include <vector>
 
 class OpenMPDirective;
+
+enum OpenMPExprParseMode {
+  OMP_EXPR_PARSE_none,
+  OMP_EXPR_PARSE_expression,
+  OMP_EXPR_PARSE_constant_integer,
+  OMP_EXPR_PARSE_variable_list,
+  OMP_EXPR_PARSE_array_section,
+  OMP_EXPR_PARSE_openmp_iterator_type,
+  OMP_EXPR_PARSE_openmp_iterator_name,
+  OMP_EXPR_PARSE_openmp_declare_mapper_identifier,
+  OMP_EXPR_PARSE_openmp_declare_mapper_type,
+  OMP_EXPR_PARSE_openmp_declare_mapper_variable,
+  OMP_EXPR_PARSE_openmp_context_name,
+  OMP_EXPR_PARSE_openmp_source,
+  OMP_EXPR_PARSE_openmp_syntax,
+  OMP_EXPR_PARSE_verbatim
+};
 
 namespace ompparser {
 
@@ -55,6 +74,8 @@ struct HostFragment {
   std::string spelling;
   SourceRange range;
   HostFragmentRole role = HostFragmentRole::Expression;
+  OpenMPClauseKind clause_kind = OMPC_unknown;
+  OpenMPExprParseMode parse_mode = OMP_EXPR_PARSE_expression;
   std::shared_ptr<const HostSemanticNode> semantic;
 };
 

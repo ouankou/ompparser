@@ -12,6 +12,7 @@
 #include <atomic>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -62,6 +63,12 @@ public:
     diagnostic.message = "host-language contextual rejection";
     diagnostics.push_back(std::move(diagnostic));
   }
+};
+
+struct ExpectedHostFragment {
+  const char *spelling;
+  OpenMPClauseKind clause_kind;
+  OpenMPExprParseMode parse_mode;
 };
 
 template <typename ResultT>
@@ -115,6 +122,9 @@ bool expectText(const char *label, const std::string &input,
   ompparser::ParseResult parsed = ompparser::parseDirective(input, options);
   if (!parsed.success()) {
     std::cerr << label << ": parsing failed\n";
+    for (const ompparser::Diagnostic &diagnostic : parsed.diagnostics) {
+      std::cerr << "  " << diagnostic.message << "\n";
+    }
     return false;
   }
   ompparser::UnparseResult unparsed = ompparser::unparse(*parsed.directive);
@@ -139,6 +149,66 @@ bool expectSuccess(const char *label, const std::string &input,
   return false;
 }
 
+bool expectHostFragments(const char *label, const std::string &input,
+                         const ompparser::ParseOptions &base_options,
+                         const std::vector<ExpectedHostFragment> &expected) {
+  RecordingHooks hooks;
+  ompparser::ParseOptions options = base_options;
+  options.host_hooks = &hooks;
+  ompparser::ParseResult parsed = ompparser::parseDirective(input, options);
+  if (!parsed.success() || !parsed.context_checks_complete ||
+      hooks.fragments.size() != expected.size()) {
+    std::cerr << label << ": host-fragment count mismatch: got "
+              << hooks.fragments.size() << ", expected " << expected.size()
+              << "\n";
+    for (const ompparser::Diagnostic &diagnostic : parsed.diagnostics) {
+      std::cerr << "  diagnostic at " << diagnostic.range.begin.line << ":"
+                << diagnostic.range.begin.column << ": " << diagnostic.message
+                << "\n";
+    }
+    for (const ompparser::HostFragment &fragment : hooks.fragments) {
+      std::cerr << "  fragment: ('" << fragment.spelling << "', "
+                << static_cast<int>(fragment.clause_kind) << ", "
+                << static_cast<int>(fragment.parse_mode) << ")\n";
+    }
+    return false;
+  }
+  for (std::size_t index = 0; index < expected.size(); ++index) {
+    const ompparser::HostFragment &actual = hooks.fragments[index];
+    const ExpectedHostFragment &wanted = expected[index];
+    if (actual.spelling != wanted.spelling ||
+        actual.clause_kind != wanted.clause_kind ||
+        actual.parse_mode != wanted.parse_mode ||
+        !hasSourceFaithfulRange(actual, input)) {
+      std::cerr << label << ": host-fragment mismatch at " << index
+                << ": got ('" << actual.spelling << "', "
+                << static_cast<int>(actual.clause_kind) << ", "
+                << static_cast<int>(actual.parse_mode) << "), expected ('"
+                << wanted.spelling << "', "
+                << static_cast<int>(wanted.clause_kind) << ", "
+                << static_cast<int>(wanted.parse_mode) << ")\n";
+      std::cerr << "  range: " << actual.range.begin.offset << ".."
+                << actual.range.end.offset;
+      if (actual.range.end.offset >= actual.range.begin.offset &&
+          actual.range.end.offset <= input.size()) {
+        std::cerr << " maps to '"
+                  << input.substr(actual.range.begin.offset,
+                                  actual.range.end.offset -
+                                      actual.range.begin.offset)
+                  << "'";
+      }
+      std::cerr << "\n";
+      return false;
+    }
+  }
+  ompparser::UnparseResult unparsed = ompparser::unparse(*parsed.directive);
+  if (!unparsed.success()) {
+    std::cerr << label << ": typed host-fragment AST did not unparse\n";
+    return false;
+  }
+  return true;
+}
+
 } // namespace
 
 int main() {
@@ -146,6 +216,493 @@ int main() {
 
   ompparser::ParseOptions c_options;
   c_options.language = ompparser::BaseLanguage::C;
+  ompparser::ParseOptions cxx_options;
+  cxx_options.language = ompparser::BaseLanguage::CXX;
+  ompparser::ParseOptions registered_fragment_options = c_options;
+  registered_fragment_options.extensions =
+      ompparser::ExtensionPolicy::AllowRegistered;
+  ok = expectHostFragments(
+           "allocate_host_fragment_modes", "#pragma omp allocate(a,b)",
+           c_options,
+           {{"a", OMPC_unknown, OMP_EXPR_PARSE_variable_list},
+            {"b", OMPC_unknown, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ok = expectHostFragments("device_wildcard_host_fragment_mode",
+                           "#pragma omp target device(*)", c_options,
+                           {{"*", OMPC_device, OMP_EXPR_PARSE_verbatim}}) &&
+       ok;
+  ok = expectHostFragments("spaced_device_wildcard_host_fragment_mode",
+                           "#pragma omp target device(* )", c_options,
+                           {{"* ", OMPC_device, OMP_EXPR_PARSE_verbatim}}) &&
+       ok;
+  ok = expectHostFragments("device_modifier_scalar_expression_mode",
+                           "#pragma omp target device(ancestor:1)", c_options,
+                           {{"1", OMPC_device, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "critical_name_openmp_syntax_mode", "#pragma omp critical(rex_lock)",
+           c_options,
+           {{"rex_lock", OMPC_unknown, OMP_EXPR_PARSE_openmp_syntax}}) &&
+       ok;
+  ok = expectHostFragments("requires_extension_is_grammar_owned",
+                           "#pragma omp requires ext_vendor_runtime",
+                           registered_fragment_options, {}) &&
+       ok;
+  ok = expectHostFragments(
+           "uses_allocators_user_and_traits_are_separate",
+           "#pragma omp target uses_allocators(rex_allocator(traits))",
+           c_options,
+           {{"traits", OMPC_uses_allocators, OMP_EXPR_PARSE_expression},
+            {"rex_allocator", OMPC_uses_allocators,
+             OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ok =
+      expectHostFragments(
+          "uses_allocators_cxx_qualified_allocator_is_one_fragment",
+          "#pragma omp target uses_allocators(ns::pool)", cxx_options,
+          {{"ns::pool", OMPC_uses_allocators, OMP_EXPR_PARSE_variable_list}}) &&
+      ok;
+  ok = expectHostFragments(
+           "from_iterator_has_typed_fragment_ownership",
+           "#pragma omp target update "
+           "from(iterator(unsigned long i = 0:n:step) : values[i])",
+           c_options,
+           {{"unsigned long", OMPC_from, OMP_EXPR_PARSE_openmp_iterator_type},
+            {"i", OMPC_from, OMP_EXPR_PARSE_openmp_iterator_name},
+            {"0", OMPC_from, OMP_EXPR_PARSE_expression},
+            {"n", OMPC_from, OMP_EXPR_PARSE_expression},
+            {"step", OMPC_from, OMP_EXPR_PARSE_expression},
+            {"values[i]", OMPC_from, OMP_EXPR_PARSE_array_section}}) &&
+       ok;
+  ok = expectHostFragments(
+           "doacross_sink_has_one_typed_owner",
+           "#pragma omp ordered doacross(sink:i-1, j+1)", c_options,
+           {{"i-1", OMPC_doacross, OMP_EXPR_PARSE_variable_list},
+            {"j+1", OMPC_doacross, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ok = expectHostFragments(
+           "looprange_operands_are_expressions",
+           "#pragma omp fuse looprange(first + 1, count)", c_options,
+           {{"first + 1", OMPC_looprange, OMP_EXPR_PARSE_expression},
+            {"count", OMPC_looprange, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "scalar_simd_length_expression_modes",
+           "#pragma omp simd safelen(width) simdlen(width-1)", c_options,
+           {{"width", OMPC_safelen, OMP_EXPR_PARSE_expression},
+            {"width-1", OMPC_simdlen, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "partial_cast_expression_mode",
+           "#pragma omp unroll partial((int)(2u + 2u))", c_options,
+           {{"(int)(2u + 2u)", OMPC_partial, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "partial_keyword_identifier_expression_mode",
+           "#pragma omp unroll partial(unroll_factor)", cxx_options,
+           {{"unroll_factor", OMPC_partial, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectText("parameterless_partial_before_apply",
+                  "#pragma omp unroll partial apply(reverse)", c_options,
+                  "#pragma omp unroll partial apply(reverse)") &&
+       ok;
+  ok = expectHostFragments(
+           "apply_partial_keyword_identifier_expression_mode",
+           "#pragma omp tile sizes(4) apply(unroll partial(unroll_factor))",
+           cxx_options,
+           {{"4", OMPC_sizes, OMP_EXPR_PARSE_expression},
+            {"unroll_factor", OMPC_apply, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "sizes_scalar_expression_modes",
+           "#pragma omp tile sizes((int)(1u << 1), width + 2)", c_options,
+           {{"(int)(1u << 1)", OMPC_sizes, OMP_EXPR_PARSE_expression},
+            {"width + 2", OMPC_sizes, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "target_update_mapper_name_mode",
+           "#pragma omp target update to(mapper(custom):value)", c_options,
+           {{"custom", OMPC_to, OMP_EXPR_PARSE_verbatim},
+            {"value", OMPC_to, OMP_EXPR_PARSE_array_section}}) &&
+       ok;
+  ok = expectHostFragments(
+           "cxx_scope_operator_expression",
+           "#pragma omp parallel if(rex::choose())", cxx_options,
+           {{"rex::choose()", OMPC_if, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "typed_iterator_host_fragment_modes",
+           "#pragma omp target map(iterator(unsigned long i = "
+           "f<std::pair<int, long>>(0, 1):n + 1:step(2)), to: a[i])",
+           c_options,
+           {{"unsigned long", OMPC_map, OMP_EXPR_PARSE_openmp_iterator_type},
+            {"i", OMPC_map, OMP_EXPR_PARSE_openmp_iterator_name},
+            {"f<std::pair<int, long>>(0, 1)", OMPC_map,
+             OMP_EXPR_PARSE_expression},
+            {"n + 1", OMPC_map, OMP_EXPR_PARSE_expression},
+            {"step(2)", OMPC_map, OMP_EXPR_PARSE_expression},
+            {"a[i]", OMPC_map, OMP_EXPR_PARSE_array_section}}) &&
+       ok;
+  ok = expectHostFragments(
+           "declare_mapper_host_fragment_modes",
+           "#pragma omp declare mapper(custom : const MapperRecord value) "
+           "map(to: value)",
+           c_options,
+           {{"custom", OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_identifier},
+            {"const MapperRecord", OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_type},
+            {"value", OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_variable},
+            {"value", OMPC_map, OMP_EXPR_PARSE_array_section}}) &&
+       ok;
+  ok = expectHostFragments(
+           "allocate_clause_host_fragment_modes",
+           "#pragma omp parallel allocate(allocator(select_allocator()), "
+           "align(compute_align()): x)",
+           c_options,
+           {{"select_allocator()", OMPC_allocate, OMP_EXPR_PARSE_expression},
+            {"compute_align()", OMPC_allocate, OMP_EXPR_PARSE_expression},
+            {"x", OMPC_allocate, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ok = expectHostFragments(
+           "prefer_type_source_fragment_mode",
+           "#pragma omp interop "
+           "init(prefer_type(rex_vendor_type), target: object)",
+           c_options,
+           {{"rex_vendor_type", OMPC_init, OMP_EXPR_PARSE_openmp_source},
+            {"object", OMPC_init, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ompparser::ParseResult typed_allocate = ompparser::parseDirective(
+      "#pragma omp parallel allocate(allocator(pool), align(64): value)",
+      c_options);
+  const std::vector<OpenMPClause *> *typed_allocate_clauses =
+      typed_allocate.success()
+          ? typed_allocate.directive->findClauses(OMPC_allocate)
+          : nullptr;
+  const auto *typed_allocate_clause =
+      typed_allocate_clauses != nullptr && typed_allocate_clauses->size() == 1
+          ? dynamic_cast<const OpenMPAllocateClause *>(
+                typed_allocate_clauses->front())
+          : nullptr;
+  if (typed_allocate_clause == nullptr ||
+      typed_allocate_clause->getAllocator() != OMPC_ALLOCATE_ALLOCATOR_user ||
+      !typed_allocate_clause->usesAllocatorModifierSyntax() ||
+      typed_allocate_clause->getUserDefinedAllocator() != "pool" ||
+      typed_allocate_clause->getAlignment() != "64") {
+    std::cerr << "allocate modifier syntax did not produce one coherent typed "
+                 "allocator payload\n";
+    ok = false;
+  }
+  ok =
+      expectHostFragments(
+          "allocate_clause_raw_string_host_fragment",
+          R"omp(#pragma omp parallel allocate(allocator(lookup(R"(foo")")): value))omp",
+          cxx_options,
+          {{R"omp(lookup(R"(foo")"))omp", OMPC_allocate,
+            OMP_EXPR_PARSE_expression},
+           {"value", OMPC_allocate, OMP_EXPR_PARSE_variable_list}}) &&
+      ok;
+  ok = expectHostFragments(
+           "reduction_identifier_clause_ownership",
+           "#pragma omp parallel reduction(custom: value)", c_options,
+           {{"custom", OMPC_reduction, OMP_EXPR_PARSE_openmp_syntax},
+            {"value", OMPC_reduction, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ompparser::ParseResult original_private_reduction = ompparser::parseDirective(
+      "#pragma omp for reduction(original(private),+: sum_v)", cxx_options);
+  const std::vector<OpenMPClause *> *original_private_clauses =
+      original_private_reduction.success()
+          ? original_private_reduction.directive->findClauses(OMPC_reduction)
+          : nullptr;
+  const auto *original_private_clause =
+      original_private_clauses != nullptr &&
+              original_private_clauses->size() == 1
+          ? dynamic_cast<const OpenMPReductionClause *>(
+                original_private_clauses->front())
+          : nullptr;
+  if (original_private_clause == nullptr ||
+      original_private_clause->getModifier() !=
+          OMPC_REDUCTION_MODIFIER_original_private ||
+      original_private_clause->getIdentifier() !=
+          OMPC_REDUCTION_IDENTIFIER_plus ||
+      !original_private_clause->getUserDefinedIdentifier().empty()) {
+    std::cerr << "original(private) reduction did not produce one coherent "
+                 "typed modifier and operator\n";
+    ok = false;
+  }
+  ompparser::ParseOptions extension_options = c_options;
+  extension_options.extensions = ompparser::ExtensionPolicy::AllowRegistered;
+  ok = expectHostFragments(
+           "dist_data_argument_clause_ownership",
+           "#pragma omp target map(to: value dist_data(block(chunk)))",
+           extension_options,
+           {{"chunk", OMPC_map, OMP_EXPR_PARSE_expression},
+            {"value", OMPC_map, OMP_EXPR_PARSE_array_section}}) &&
+       ok;
+  ok = expectHostFragments(
+           "typed_context_selector_property_modes",
+           "#pragma omp metadirective "
+           "when(device={arch(\"nvptx\",\"amdgcn\"),kind(cpu,gpu)}, "
+           "target_device={device_num(device_id),"
+           "isa(\"sm_90\",\"gfx942\"),uid(\"device-7\")}, "
+           "implementation={vendor(score(5): amd,llvm),"
+           "extension(score(2): ext_a,ext_b),"
+           "requires(score(3): unified_shared_memory,"
+           "dynamic_allocators(require_enabled),"
+           "atomic_default_mem_order(acquire)),"
+           "atomic_default_mem_order(score(4): release),"
+           "rex_fast(score(6): prop,nested(7))}, "
+           "user={condition(score(7): enabled)}: parallel)",
+           cxx_options,
+           {{"\"nvptx\"", OMPC_when, OMP_EXPR_PARSE_openmp_context_name},
+            {"\"amdgcn\"", OMPC_when, OMP_EXPR_PARSE_openmp_context_name},
+            {"device_id", OMPC_when, OMP_EXPR_PARSE_expression},
+            {"\"sm_90\"", OMPC_when, OMP_EXPR_PARSE_openmp_context_name},
+            {"\"gfx942\"", OMPC_when, OMP_EXPR_PARSE_openmp_context_name},
+            {"\"device-7\"", OMPC_when, OMP_EXPR_PARSE_openmp_context_name},
+            {"5", OMPC_when, OMP_EXPR_PARSE_constant_integer},
+            {"2", OMPC_when, OMP_EXPR_PARSE_constant_integer},
+            {"ext_a", OMPC_when, OMP_EXPR_PARSE_openmp_context_name},
+            {"ext_b", OMPC_when, OMP_EXPR_PARSE_openmp_context_name},
+            {"3", OMPC_when, OMP_EXPR_PARSE_constant_integer},
+            {"require_enabled", OMPC_dynamic_allocators,
+             OMP_EXPR_PARSE_expression},
+            {"4", OMPC_when, OMP_EXPR_PARSE_constant_integer},
+            {"6", OMPC_when, OMP_EXPR_PARSE_constant_integer},
+            {"prop", OMPC_when, OMP_EXPR_PARSE_verbatim},
+            {"nested(7)", OMPC_when, OMP_EXPR_PARSE_verbatim},
+            {"7", OMPC_when, OMP_EXPR_PARSE_constant_integer},
+            {"enabled", OMPC_when, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "openmp_syntax_fragment_modes",
+           "#pragma omp tile sizes(4) apply(grid: custom)", c_options,
+           {{"4", OMPC_sizes, OMP_EXPR_PARSE_expression},
+            {"grid", OMPC_apply, OMP_EXPR_PARSE_openmp_syntax},
+            {"custom", OMPC_apply, OMP_EXPR_PARSE_openmp_syntax}}) &&
+       ok;
+  ok = expectHostFragments(
+           "induction_syntax_fragment_modes",
+           "#pragma omp parallel for induction(step(1), user_defined: value)",
+           c_options,
+           {{"1", OMPC_induction, OMP_EXPR_PARSE_expression},
+            {"user_defined", OMPC_induction, OMP_EXPR_PARSE_openmp_syntax},
+            {"value", OMPC_induction, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "induction_binding_before_step_modes",
+           "#pragma omp parallel for induction(*: induction_value, "
+           "step(step_value), induction_value)",
+           c_options,
+           {{"*", OMPC_induction, OMP_EXPR_PARSE_openmp_syntax},
+            {"induction_value", OMPC_induction, OMP_EXPR_PARSE_expression},
+            {"step_value", OMPC_induction, OMP_EXPR_PARSE_expression},
+            {"induction_value", OMPC_induction, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+
+  ompparser::ParseResult induction_sequence = ompparser::parseDirective(
+      "#pragma omp parallel for induction(step(1), i: j, passthrough)",
+      c_options);
+  std::vector<std::string> induction_items;
+  if (induction_sequence.success()) {
+    const std::vector<OpenMPClause *> *induction_clauses =
+        induction_sequence.directive->findClauses(OMPC_induction);
+    const auto *induction =
+        induction_clauses != nullptr && induction_clauses->size() == 1
+            ? dynamic_cast<const OpenMPInductionClause *>(
+                  induction_clauses->front())
+            : nullptr;
+    if (induction != nullptr) {
+      induction->visitSpecificationItems(
+          [&](OpenMPInductionClause::SpecificationItemKind kind,
+              const ompparser::HostFragment *label,
+              const ompparser::HostFragment &expression) {
+            const char *kind_name = nullptr;
+            switch (kind) {
+            case OpenMPInductionClause::SpecificationItemKind::Step:
+              kind_name = "step";
+              break;
+            case OpenMPInductionClause::SpecificationItemKind::Binding:
+              kind_name = "binding";
+              break;
+            case OpenMPInductionClause::SpecificationItemKind::Expression:
+              kind_name = "expression";
+              break;
+            }
+            induction_items.push_back(
+                std::string(kind_name) + ":" +
+                (label == nullptr ? std::string() : label->spelling + ":") +
+                expression.spelling);
+          });
+    }
+  }
+  if (induction_items != std::vector<std::string>{"step:1", "binding:i:j",
+                                                  "expression:passthrough"}) {
+    std::cerr << "typed induction specification order was not preserved\n";
+    ok = false;
+  }
+  ok = expectHostFragments(
+           "quoted_kind_vendor_property_modes",
+           "#pragma omp metadirective "
+           "when(device={kind(\"cpu\" )}, "
+           "implementation={vendor(\"amd\" )}: parallel)",
+           cxx_options,
+           {{"\"cpu\"", OMPC_when, OMP_EXPR_PARSE_openmp_context_name},
+            {"\"amd\"", OMPC_when, OMP_EXPR_PARSE_openmp_context_name}}) &&
+       ok;
+  ok = expectText("escaped_cxx_kind_property_identity",
+                  "#pragma omp metadirective "
+                  "when(device={kind(\"c\\x70u\")}: parallel)",
+                  cxx_options,
+                  "#pragma omp metadirective "
+                  "when (device = {kind(\"c\\x70u\")} : parallel)") &&
+       ok;
+  ok = expectSuccess("escaped_c_kind_property_identity",
+                     "#pragma omp metadirective "
+                     "when(device={kind(\"c\\x70u\")}: parallel)",
+                     c_options) &&
+       ok;
+  const std::string invalid_cxx_context_name_literals[] = {
+      "#pragma omp metadirective "
+      "when(device={arch('x86')}: parallel)",
+      "#pragma omp metadirective "
+      "when(device={arch('x86')}: parallel)",
+      "#pragma omp metadirective "
+      "when(device={kind(cpu,\"c\\x70u\")}: parallel)",
+      "#pragma omp metadirective "
+      "when(device={arch(name,\"na\\155e\")}: parallel)"};
+  const ompparser::ParseOptions *invalid_cxx_context_name_options[] = {
+      &c_options, &cxx_options, &cxx_options, &cxx_options};
+  for (std::size_t index = 0;
+       index < sizeof(invalid_cxx_context_name_literals) /
+                   sizeof(invalid_cxx_context_name_literals[0]);
+       ++index) {
+    if (ompparser::parseDirective(invalid_cxx_context_name_literals[index],
+                                  *invalid_cxx_context_name_options[index])
+            .success()) {
+      std::cerr << "invalid or duplicate decoded C/C++ context name was "
+                   "accepted: "
+                << invalid_cxx_context_name_literals[index] << "\n";
+      ok = false;
+    }
+  }
+  ok = expectHostFragments(
+           "prefixed_kind_vendor_property_modes",
+           "#pragma omp metadirective "
+           "when(device={kind(R\"(cpu)\")}, "
+           "implementation={vendor(u8\"amd\")}: parallel)",
+           cxx_options,
+           {{"R\"(cpu)\"", OMPC_when, OMP_EXPR_PARSE_openmp_context_name},
+            {"u8\"amd\"", OMPC_when, OMP_EXPR_PARSE_openmp_context_name}}) &&
+       ok;
+  ok =
+      expectHostFragments(
+          "requires_host_fragment_modes",
+          "#pragma omp requires reverse_offload(can_reverse) "
+          "unified_address(has_address) dynamic_allocators(can_allocate) "
+          "self_maps(has_self_maps) device_safesync(can_sync)",
+          c_options,
+          {{"can_reverse", OMPC_reverse_offload, OMP_EXPR_PARSE_expression},
+           {"has_address", OMPC_unified_address, OMP_EXPR_PARSE_expression},
+           {"can_allocate", OMPC_dynamic_allocators, OMP_EXPR_PARSE_expression},
+           {"has_self_maps", OMPC_self_maps, OMP_EXPR_PARSE_expression},
+           {"can_sync", OMPC_device_safesync, OMP_EXPR_PARSE_expression}}) &&
+      ok;
+  ok = expectHostFragments(
+           "directive_owned_host_fragment_modes",
+           "#pragma omp declare variant(foo) match(construct={parallel})",
+           cxx_options, {{"foo", OMPC_unknown, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "threadprivate_host_fragment_modes",
+           "#pragma omp threadprivate(a,b)", cxx_options,
+           {{"a", OMPC_unknown, OMP_EXPR_PARSE_variable_list},
+            {"b", OMPC_unknown, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ok = expectHostFragments(
+           "groupprivate_host_fragment_modes", "#pragma omp groupprivate(a,b)",
+           cxx_options,
+           {{"a", OMPC_unknown, OMP_EXPR_PARSE_variable_list},
+            {"b", OMPC_unknown, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ok = expectHostFragments(
+           "declare_target_host_fragment_modes",
+           "#pragma omp declare target(a,b[0:4])", cxx_options,
+           {{"a", OMPC_unknown, OMP_EXPR_PARSE_array_section},
+            {"b[0:4]", OMPC_unknown, OMP_EXPR_PARSE_array_section}}) &&
+       ok;
+  ok = expectHostFragments(
+           "flush_host_fragment_modes", "#pragma omp flush(a,b)", cxx_options,
+           {{"a", OMPC_unknown, OMP_EXPR_PARSE_variable_list},
+            {"b", OMPC_unknown, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ok = expectHostFragments(
+           "depobj_host_fragment_mode",
+           "#pragma omp depobj(obj) depend(inout: value)", cxx_options,
+           {{"obj", OMPC_unknown, OMP_EXPR_PARSE_expression},
+            {"value", OMPC_depend, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "declare_simd_host_fragment_mode", "#pragma omp declare simd(foo)",
+           cxx_options, {{"foo", OMPC_unknown, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "nowait_expression_host_fragment_mode",
+           "#pragma omp target nowait(is_deferred)", cxx_options,
+           {{"is_deferred", OMPC_nowait, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "to_iterator_host_fragment_modes",
+           "#pragma omp target update "
+           "to(iterator(T T = 0:n, int i = T:n): a[T][i])",
+           cxx_options,
+           {{"T", OMPC_to, OMP_EXPR_PARSE_openmp_iterator_type},
+            {"T", OMPC_to, OMP_EXPR_PARSE_openmp_iterator_name},
+            {"0", OMPC_to, OMP_EXPR_PARSE_expression},
+            {"n", OMPC_to, OMP_EXPR_PARSE_expression},
+            {"int", OMPC_to, OMP_EXPR_PARSE_openmp_iterator_type},
+            {"i", OMPC_to, OMP_EXPR_PARSE_openmp_iterator_name},
+            {"T", OMPC_to, OMP_EXPR_PARSE_expression},
+            {"n", OMPC_to, OMP_EXPR_PARSE_expression},
+            {"a[T][i]", OMPC_to, OMP_EXPR_PARSE_array_section}}) &&
+       ok;
+  ok = expectHostFragments(
+           "quoted_iterator_delimiter_host_fragment_modes",
+           "#pragma omp target map(iterator(int k = "
+           "(flag ? ')' : sizeof(R\"tag(\"),:)tag\")):n), to: a[k])",
+           cxx_options,
+           {{"int", OMPC_map, OMP_EXPR_PARSE_openmp_iterator_type},
+            {"k", OMPC_map, OMP_EXPR_PARSE_openmp_iterator_name},
+            {"(flag ? ')' : sizeof(R\"tag(\"),:)tag\"))", OMPC_map,
+             OMP_EXPR_PARSE_expression},
+            {"n", OMPC_map, OMP_EXPR_PARSE_expression},
+            {"a[k]", OMPC_map, OMP_EXPR_PARSE_array_section}}) &&
+       ok;
+  ok = expectHostFragments(
+           "implicit_default_mapper_host_fragment_modes",
+           "#pragma omp declare mapper(MapperRecord value) map(to: value)",
+           cxx_options,
+           {{"MapperRecord", OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_type},
+            {"value", OMPC_unknown,
+             OMP_EXPR_PARSE_openmp_declare_mapper_variable},
+            {"value", OMPC_map, OMP_EXPR_PARSE_array_section}}) &&
+       ok;
+  ok = expectHostFragments(
+           "complex_allocate_modifier_host_fragment_modes",
+           "#pragma omp parallel "
+           "allocate(allocator(select_allocator(\")\\\"\", "
+           "pool[index + nested(1, 2)])), "
+           "align(compute_align(sizeof(int[4]), \"),:\")): x)",
+           cxx_options,
+           {{"select_allocator(\")\\\"\", "
+             "pool[index + nested(1, 2)])",
+             OMPC_allocate, OMP_EXPR_PARSE_expression},
+            {"compute_align(sizeof(int[4]), \"),:\")", OMPC_allocate,
+             OMP_EXPR_PARSE_expression},
+            {"x", OMPC_allocate, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
   ok = expectText("c_literal_fidelity",
                   "#pragma omp parallel if(NAME == \"AbC\")", c_options,
                   "#pragma omp parallel if (NAME == \"AbC\")") &&
@@ -182,6 +739,16 @@ int main() {
                   "when (device = {kind(cpu), arch(x86), isa(sse)}, "
                   "target_device = {kind(gpu), arch(nvptx), isa(sm_90), "
                   "device_num(1)} : parallel)") &&
+       ok;
+  ok = expectText(
+           "target_device_selector_call_spacing",
+           "#pragma omp metadirective "
+           "when(target_device={uid (\"device-7\"), device_num (device_id)}: "
+           "parallel)",
+           c_options,
+           "#pragma omp metadirective "
+           "when (target_device = {uid(\"device-7\"), "
+           "device_num(device_id)} : parallel)") &&
        ok;
   ok = expectText(
            "typed_adjust_args",
@@ -241,6 +808,29 @@ int main() {
                   c_options,
                   "#pragma omp target update from ((([N][M]) a)[0:N][1])") &&
        ok;
+  ok = expectText(
+           "typed_requires_clause_payloads",
+           "#pragma omp requires reverse_offload(can_reverse) "
+           "unified_address(has_address) unified_shared_memory "
+           "dynamic_allocators(can_allocate) self_maps(has_self_maps) "
+           "device_safesync(can_sync) atomic_default_mem_order(acquire)",
+           c_options,
+           "#pragma omp requires reverse_offload(can_reverse) "
+           "unified_address(has_address) unified_shared_memory "
+           "dynamic_allocators(can_allocate) self_maps(has_self_maps) "
+           "device_safesync(can_sync) atomic_default_mem_order(acquire)") &&
+       ok;
+  ok =
+      expectText(
+          "typed_context_requires_payloads",
+          "#pragma omp metadirective "
+          "when(implementation={requires(reverse_offload(can_reverse), "
+          "unified_address, atomic_default_mem_order(release))}: parallel)",
+          c_options,
+          "#pragma omp metadirective "
+          "when (implementation = {requires(reverse_offload(can_reverse), "
+          "unified_address, atomic_default_mem_order(release))} : parallel)") &&
+      ok;
 
   const std::pair<const char *, const char *> openmp_60_valid_inputs[] = {
       {"task_iteration_clauses",
@@ -315,13 +905,39 @@ int main() {
       "append_args(raw_operation)",
       "#pragma omp interop init(vendor_type: object)",
       "#pragma omp interop init(target, target: object)",
+      "#pragma omp interop init(depobj, target: object)",
+      "#pragma omp depobj(object) init(interop, in(value): object)",
+      "#pragma omp declare variant(foo) match(construct={dispatch}) "
+      "append_args(interop(depobj, target))",
       "#pragma omp metadirective "
       "when(device={arch(score(1): x86)}:)",
       "#pragma omp metadirective "
       "when(device={arch(x86), arch(arm)}:)",
       "#pragma omp metadirective "
       "when(target_device={kind(cpu), kind(gpu)}:)",
-      "#pragma omp metadirective when(device={device_num(0)}:)"};
+      "#pragma omp metadirective when(device={device_num(0)}:)",
+      "#pragma omp metadirective when(device={kind(cpu,cpu)}:)",
+      "#pragma omp metadirective when(device={kind(cpu,\"cpu\")}:)",
+      "#pragma omp metadirective when(device={arch(x86,\"x86\")}:)",
+      "#pragma omp metadirective when(device={kind(any),arch(x86)}:)",
+      "#pragma omp metadirective "
+      "when(implementation={vendor(amd,amd)}:)",
+      "#pragma omp metadirective "
+      "when(implementation={vendor(amd,\"amd\")}:)",
+      "#pragma omp metadirective "
+      "when(implementation={requires(reverse_offload, "
+      "reverse_offload(enabled))}:)",
+      "#pragma omp metadirective "
+      "when(implementation={requires(vendor_requirement)}:)",
+      "#pragma omp target "
+      "map(iterator(unsigned long i 0:n), to: a[i])",
+      "#pragma omp target "
+      "map(iterator(unsigned long i = 0:), to: a[i])",
+      "#pragma omp declare mapper(custom : value) map(to: value)",
+      "#pragma omp target uses_allocators(rex_allocator::)",
+      "#pragma omp target uses_allocators(rex_allocator])",
+      "#pragma omp parallel allocate(allocator(a), allocator(b): x)",
+      "#pragma omp parallel allocate(align(8), align(16): x)"};
   for (const std::string &input : malformed_typed_inputs) {
     if (ompparser::parseDirective(input, c_options).success()) {
       std::cerr << "malformed typed clause was accepted: " << input << "\n";
@@ -329,14 +945,69 @@ int main() {
     }
   }
 
+  const std::string invalid_selector_tokens[] = {
+      "#pragma omp metadirective "
+      "when(implementation={-}: parallel)",
+      "#pragma omp metadirective "
+      "when(implementation={requires(-)}: parallel)"};
+  for (const std::string &input : invalid_selector_tokens) {
+    ompparser::ParseResult result = ompparser::parseDirective(input, c_options);
+    if (result.success() ||
+        !hasDiagnostic(result, ompparser::DiagnosticCode::SyntaxError)) {
+      std::cerr << "invalid selector token did not produce a syntax error: "
+                << input << "\n";
+      ok = false;
+    }
+  }
+
   ompparser::ParseOptions registered_c_options = c_options;
   registered_c_options.extensions = ompparser::ExtensionPolicy::AllowRegistered;
+  ompparser::ParseOptions registered_cxx_options = cxx_options;
+  registered_cxx_options.extensions =
+      ompparser::ExtensionPolicy::AllowRegistered;
+  ok = expectText(
+           "registered_context_requirement",
+           "#pragma omp metadirective "
+           "when(implementation={requires(ext_vendor_runtime)}: parallel)",
+           registered_c_options,
+           "#pragma omp metadirective "
+           "when (implementation = {requires(ext_vendor_runtime)} : "
+           "parallel)") &&
+       ok;
+  ompparser::ParseResult rejected_context_requirement =
+      ompparser::parseDirective(
+          "#pragma omp metadirective "
+          "when(implementation={requires(ext_vendor_runtime)}: parallel)",
+          c_options);
+  if (rejected_context_requirement.success() ||
+      !hasDiagnostic(rejected_context_requirement,
+                     ompparser::DiagnosticCode::UnsupportedExtension)) {
+    std::cerr << "default extension policy accepted a context requirement\n";
+    ok = false;
+  }
   ok = expectText("registered_dist_data",
                   "#pragma omp target data map(to: a[0:N] "
                   "dist_data(duplicate, block(4), cyclic(2)))",
                   registered_c_options,
                   "#pragma omp target data map(to : a[0:N] "
                   "dist_data(duplicate, block(4), cyclic(2)))") &&
+       ok;
+  ok = expectHostFragments(
+           "dist_data_quoted_delimiter",
+           "#pragma omp target data map(to: a[idx(\")\")] "
+           "dist_data(block(4)))",
+           registered_cxx_options,
+           {{"4", OMPC_map, OMP_EXPR_PARSE_expression},
+            {"a[idx(\")\")]", OMPC_map, OMP_EXPR_PARSE_array_section}}) &&
+       ok;
+  ok = expectHostFragments(
+           "dist_data_raw_string_delimiter",
+           "#pragma omp target data map(to: a[idx(R\"tag(foo)bar)tag\")] "
+           "dist_data(cyclic(2)))",
+           registered_cxx_options,
+           {{"2", OMPC_map, OMP_EXPR_PARSE_expression},
+            {"a[idx(R\"tag(foo)bar)tag\")]", OMPC_map,
+             OMP_EXPR_PARSE_array_section}}) &&
        ok;
 
   const std::string malformed_dist_data_inputs[] = {
@@ -366,6 +1037,166 @@ int main() {
 
   ompparser::ParseOptions fortran_options;
   fortran_options.language = ompparser::BaseLanguage::Fortran;
+  ok =
+      expectHostFragments(
+          "uses_allocators_fortran_component_allocator_is_one_fragment",
+          "!$omp target uses_allocators(obj%pool)", fortran_options,
+          {{"obj%pool", OMPC_uses_allocators, OMP_EXPR_PARSE_variable_list}}) &&
+      ok;
+  ok = expectHostFragments(
+           "cxx_qualified_reduction_identifier",
+           "#pragma omp parallel reduction(ns::sum: value)", cxx_options,
+           {{"ns::sum", OMPC_reduction, OMP_EXPR_PARSE_openmp_syntax},
+            {"value", OMPC_reduction, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ok = expectHostFragments(
+           "cxx_global_reduction_identifier",
+           "#pragma omp parallel reduction(::sum: value)", cxx_options,
+           {{"::sum", OMPC_reduction, OMP_EXPR_PARSE_openmp_syntax},
+            {"value", OMPC_reduction, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ok = expectText("cxx_qualified_in_reduction_identifier",
+                  "#pragma omp task in_reduction(ns::sum: value)", cxx_options,
+                  "#pragma omp task in_reduction (ns::sum : value)") &&
+       ok;
+  ok = expectText("cxx_qualified_task_reduction_identifier",
+                  "#pragma omp taskgroup task_reduction(ns::sum: value)",
+                  cxx_options,
+                  "#pragma omp taskgroup task_reduction (ns::sum : value)") &&
+       ok;
+  const char *non_cxx_qualified_reductions[] = {
+      "#pragma omp parallel reduction(ns::sum: value)",
+      "!$omp parallel do reduction(ns::sum: value)"};
+  const ompparser::ParseOptions *non_cxx_qualified_options[] = {
+      &c_options, &fortran_options};
+  for (std::size_t index = 0;
+       index < sizeof(non_cxx_qualified_reductions) /
+                   sizeof(non_cxx_qualified_reductions[0]);
+       ++index) {
+    if (ompparser::parseDirective(non_cxx_qualified_reductions[index],
+                                  *non_cxx_qualified_options[index])
+            .success()) {
+      std::cerr << "qualified C++ reduction identifier was accepted in "
+                   "another base language: "
+                << non_cxx_qualified_reductions[index] << "\n";
+      ok = false;
+    }
+  }
+  ok = expectSuccess("fortran_doubled_quote_context_name",
+                     "!$omp metadirective "
+                     "when(device={arch('foo''bar')}: parallel)",
+                     fortran_options) &&
+       ok;
+  const std::string cross_language_context_literals[] = {
+      "!$omp metadirective when(device={arch(R\"(cpu)\")}: parallel)",
+      "#pragma omp metadirective when(device={arch(R\"(cpu)\")}: parallel)",
+      "#pragma omp metadirective "
+      "when(device={arch('foo''bar')}: parallel)",
+      "!$omp metadirective "
+      "when(device={arch('foo''bar',\"foo'bar\")}: parallel)"};
+  const ompparser::ParseOptions *cross_language_context_options[] = {
+      &fortran_options, &c_options, &cxx_options, &fortran_options};
+  for (std::size_t index = 0;
+       index < sizeof(cross_language_context_literals) /
+                   sizeof(cross_language_context_literals[0]);
+       ++index) {
+    if (ompparser::parseDirective(cross_language_context_literals[index],
+                                  *cross_language_context_options[index])
+            .success()) {
+      std::cerr << "context selector accepted another language's literal: "
+                << cross_language_context_literals[index] << "\n";
+      ok = false;
+    }
+  }
+  ok = expectHostFragments("fortran_spaced_map_mapper_identifier",
+                           "!$omp target map(mapper( left_id), tofrom: a)",
+                           fortran_options,
+                           {{"left_id", OMPC_map, OMP_EXPR_PARSE_verbatim},
+                            {"a", OMPC_map, OMP_EXPR_PARSE_array_section}}) &&
+       ok;
+  ompparser::ParseResult fortran_default_mapper = ompparser::parseDirective(
+      "!$omp declare mapper(DEFAULT : integer :: value) map(tofrom: value)",
+      fortran_options);
+  const auto *fortran_default_mapper_directive =
+      fortran_default_mapper.success()
+          ? dynamic_cast<const OpenMPDeclareMapperDirective *>(
+                fortran_default_mapper.directive.get())
+          : nullptr;
+  if (fortran_default_mapper_directive == nullptr ||
+      fortran_default_mapper_directive->getIdentifier() !=
+          OMPD_DECLARE_MAPPER_IDENTIFIER_default ||
+      !fortran_default_mapper_directive->hasExplicitIdentifier() ||
+      !fortran_default_mapper_directive->getUserDefinedIdentifier().empty()) {
+    std::cerr << "Fortran DEFAULT mapper identifier was not classified as "
+                 "the predefined default identifier\n";
+    ok = false;
+  }
+  ok = expectHostFragments(
+           "fortran_logical_reduction_typed_operator",
+           "!$omp parallel do reduction(.and.:value)", fortran_options,
+           {{"value", OMPC_reduction, OMP_EXPR_PARSE_variable_list}}) &&
+       ok;
+  ok = expectText("fortran_logical_reduction_spelling",
+                  "!$omp parallel do reduction(.and.:value)", fortran_options,
+                  "!$omp parallel do reduction(.and. : value)") &&
+       ok;
+  ok = expectText("fortran_equivalence_reduction_spelling",
+                  "!$omp parallel do reduction(.neqv.:value)", fortran_options,
+                  "!$omp parallel do reduction(.neqv. : value)") &&
+       ok;
+  ok = expectText("fortran_in_reduction_spelling",
+                  "!$omp task in_reduction(.or.:value)", fortran_options,
+                  "!$omp task in_reduction (.or. : value)") &&
+       ok;
+  ok =
+      expectText("fortran_task_reduction_spelling",
+                 "!$omp taskgroup task_reduction(.eqv.:value)", fortran_options,
+                 "!$omp taskgroup task_reduction (.eqv. : value)") &&
+      ok;
+
+  struct CrossLanguageLogicalReductionCase {
+    const char *input;
+    const ompparser::ParseOptions *options;
+  };
+  const CrossLanguageLogicalReductionCase cross_language_logical_reductions[] =
+      {{"#pragma omp parallel reduction(.and.: value)", &c_options},
+       {"#pragma omp parallel reduction(.or.: value)", &cxx_options},
+       {"#pragma omp task in_reduction(.and.: value)", &c_options},
+       {"#pragma omp taskgroup task_reduction(.or.: value)", &cxx_options},
+       {"!$omp parallel do reduction(&&: value)", &fortran_options},
+       {"!$omp task in_reduction(||: value)", &fortran_options},
+       {"!$omp taskgroup task_reduction(&&: value)", &fortran_options},
+       {"#pragma omp declare reduction(.and. : int) "
+        "combiner(omp_out = omp_out && omp_in)",
+        &c_options},
+       {"!$omp declare reduction(&& : integer) "
+        "combiner(omp_out = omp_out .and. omp_in)",
+        &fortran_options}};
+  for (const CrossLanguageLogicalReductionCase &test :
+       cross_language_logical_reductions) {
+    if (ompparser::parseDirective(test.input, *test.options).success()) {
+      std::cerr << "cross-language logical reduction spelling was accepted: "
+                << test.input << "\n";
+      ok = false;
+    }
+  }
+
+  ompparser::ParseResult c_fortran_reduction = ompparser::parseDirective(
+      "#pragma omp parallel reduction(.eqv.:value)", c_options);
+  if (c_fortran_reduction.success() ||
+      !hasDiagnostic(c_fortran_reduction,
+                     ompparser::DiagnosticCode::InvalidClause)) {
+    std::cerr << "Fortran-only reduction operator was accepted in C\n";
+    ok = false;
+  }
+  ompparser::ParseResult fortran_c_reduction = ompparser::parseDirective(
+      "!$omp parallel do reduction(^:value)", fortran_options);
+  if (fortran_c_reduction.success() ||
+      !hasDiagnostic(fortran_c_reduction,
+                     ompparser::DiagnosticCode::InvalidClause)) {
+    std::cerr << "C-only reduction operator was accepted in Fortran\n";
+    ok = false;
+  }
   struct TargetHasDeviceAddrCase {
     const char *input;
     const ompparser::ParseOptions *options;
@@ -674,12 +1505,150 @@ int main() {
        ok;
 
   OpenMPDirective malformed_ast(OMPD_target);
-  malformed_ast.addOpenMPClause(OMPC_device);
-  ompparser::ValidationResult malformed_validation =
-      ompparser::validate(malformed_ast);
-  if (malformed_validation.success() ||
-      ompparser::unparse(malformed_ast).success()) {
-    std::cerr << "mistyped clause construction did not poison the AST\n";
+  bool malformed_clause_threw = false;
+  try {
+    malformed_ast.addOpenMPClause(OMPC_device);
+  } catch (const std::invalid_argument &) {
+    malformed_clause_threw = true;
+  }
+  if (!malformed_clause_threw) {
+    std::cerr << "mistyped clause construction did not fail immediately\n";
+    ok = false;
+  }
+  bool mistyped_clause_threw = false;
+  try {
+    malformed_ast.addOpenMPClause(OMPC_device, std::string("ancestor"));
+  } catch (const std::invalid_argument &) {
+    mistyped_clause_threw = true;
+  }
+  bool extra_clause_argument_threw = false;
+  try {
+    malformed_ast.addOpenMPClause(OMPC_nowait, 1);
+  } catch (const std::invalid_argument &) {
+    extra_clause_argument_threw = true;
+  }
+  if (!mistyped_clause_threw || !extra_clause_argument_threw) {
+    std::cerr << "invalid clause argument shape did not fail immediately\n";
+    ok = false;
+  }
+
+  OpenMPMatchClause invalid_atomic_property;
+  invalid_atomic_property.beginTraitSet(OMPC_SELECTOR_implementation);
+  invalid_atomic_property.beginTraitSelector(
+      OMPC_TRAIT_atomic_default_mem_order, nullptr);
+  bool unknown_atomic_property_threw = false;
+  try {
+    invalid_atomic_property.addAtomicDefaultMemOrderProperty(
+        OMPC_ATOMIC_DEFAULT_MEM_ORDER_unknown);
+  } catch (const std::invalid_argument &) {
+    unknown_atomic_property_threw = true;
+  }
+
+  OpenMPMatchClause invalid_requires_atomic_property;
+  invalid_requires_atomic_property.beginTraitSet(OMPC_SELECTOR_implementation);
+  invalid_requires_atomic_property.beginTraitSelector(OMPC_TRAIT_requires,
+                                                      nullptr);
+  bool unknown_requires_atomic_property_threw = false;
+  try {
+    invalid_requires_atomic_property.addRequiresAtomicDefaultMemOrderProperty(
+        OMPC_ATOMIC_DEFAULT_MEM_ORDER_unknown);
+  } catch (const std::invalid_argument &) {
+    unknown_requires_atomic_property_threw = true;
+  }
+  if (!unknown_atomic_property_threw ||
+      !unknown_requires_atomic_property_threw) {
+    std::cerr << "unknown context-selector atomic order was stored\n";
+    ok = false;
+  }
+
+  OpenMPDirective transactional_clause_ast(OMPD_target);
+  bool parameterized_extra_argument_threw = false;
+  try {
+    transactional_clause_ast.addOpenMPClause(
+        OMPC_device, OMPC_DEVICE_MODIFIER_unspecified, 1);
+  } catch (const std::invalid_argument &) {
+    parameterized_extra_argument_threw = true;
+  }
+  std::vector<std::string> transactional_errors;
+  if (!parameterized_extra_argument_threw ||
+      !transactional_clause_ast.getAllClauses().empty() ||
+      !transactional_clause_ast.getClausesInOriginalOrder()->empty() ||
+      !transactional_clause_ast.validateInvariants(transactional_errors)) {
+    std::cerr << "invalid parameterized clause mutated directive ownership\n";
+    ok = false;
+  }
+
+  OpenMPDirective null_clause_ast(OMPD_parallel);
+  bool null_clause_threw = false;
+  try {
+    null_clause_ast.registerClause(nullptr);
+  } catch (const std::invalid_argument &) {
+    null_clause_threw = true;
+  }
+  if (!null_clause_threw) {
+    std::cerr << "null clause registration did not fail immediately\n";
+    ok = false;
+  }
+
+  OpenMPDirective null_expression_ast(OMPD_parallel);
+  OpenMPClause *null_expression_clause =
+      null_expression_ast.addOpenMPClause(OMPC_private);
+  if (null_expression_clause == nullptr) {
+    std::cerr << "failed to construct null-expression AST test\n";
+    ok = false;
+  } else {
+    bool null_expression_threw = false;
+    try {
+      null_expression_clause->addLangExpr(nullptr);
+    } catch (const std::invalid_argument &) {
+      null_expression_threw = true;
+    }
+    if (!null_expression_threw) {
+      std::cerr << "null host expression did not fail immediately\n";
+      ok = false;
+    }
+  }
+
+  OpenMPDirective null_nested_apply_ast(OMPD_fuse);
+  auto *null_nested_apply = dynamic_cast<OpenMPApplyClause *>(
+      null_nested_apply_ast.addOpenMPClause(OMPC_apply));
+  if (null_nested_apply == nullptr) {
+    std::cerr << "failed to construct null nested-apply AST test\n";
+    ok = false;
+  } else {
+    bool null_nested_apply_threw = false;
+    try {
+      null_nested_apply->addNestedApply(nullptr, OMPC_CLAUSE_SEP_comma);
+    } catch (const std::invalid_argument &) {
+      null_nested_apply_threw = true;
+    }
+    if (!null_nested_apply_threw) {
+      std::cerr << "null nested apply did not fail immediately\n";
+      ok = false;
+    }
+  }
+
+  OpenMPClause expression_index_contract(OMPC_private);
+  bool get_node_threw = false;
+  bool set_node_threw = false;
+  bool get_mode_threw = false;
+  try {
+    expression_index_contract.getExpressionNode(0);
+  } catch (const std::out_of_range &) {
+    get_node_threw = true;
+  }
+  try {
+    expression_index_contract.setExpressionNode(0, nullptr);
+  } catch (const std::out_of_range &) {
+    set_node_threw = true;
+  }
+  try {
+    expression_index_contract.getExpressionParseMode(0);
+  } catch (const std::out_of_range &) {
+    get_mode_threw = true;
+  }
+  if (!get_node_threw || !set_node_threw || !get_mode_threw) {
+    std::cerr << "out-of-range expression access did not fail hard\n";
     ok = false;
   }
 
@@ -713,6 +1682,34 @@ int main() {
     std::cerr << "copyprivate and nowait passed programmatic end single "
                  "validation or unparse\n";
     ok = false;
+  }
+
+  OpenMPDirective legacy_allocator_align_ast(OMPD_parallel);
+  auto *legacy_allocator_align = dynamic_cast<OpenMPAllocateClause *>(
+      OpenMPAllocateClause::addAllocateClause(&legacy_allocator_align_ast,
+                                              OMPC_ALLOCATE_ALLOCATOR_default,
+                                              nullptr));
+  if (legacy_allocator_align == nullptr) {
+    std::cerr << "failed to construct legacy allocator alignment AST test\n";
+    ok = false;
+  } else {
+    legacy_allocator_align->setAlignModifier("64");
+    legacy_allocator_align->addLangExpr("value", OMPC_CLAUSE_SEP_space, 1, 1,
+                                        OMP_EXPR_PARSE_variable_list);
+    ompparser::ValidationResult legacy_allocator_align_validation =
+        ompparser::validate(legacy_allocator_align_ast);
+    ompparser::UnparseResult legacy_allocator_align_unparse =
+        ompparser::unparse(legacy_allocator_align_ast);
+    if (legacy_allocator_align_validation.success() ||
+        !hasDiagnostic(legacy_allocator_align_validation,
+                       ompparser::DiagnosticCode::InvalidAst) ||
+        legacy_allocator_align_unparse.success() ||
+        !hasDiagnostic(legacy_allocator_align_unparse,
+                       ompparser::DiagnosticCode::InvalidAst)) {
+      std::cerr << "exclusive legacy allocator syntax accepted an align "
+                   "modifier\n";
+      ok = false;
+    }
   }
 
   OpenMPEndDirective malformed_paired_target_ast;
@@ -792,7 +1789,10 @@ int main() {
   }
 
   OpenMPDirective misplaced_clause_ast(OMPD_parallel);
-  auto *misplaced_map = misplaced_clause_ast.addOpenMPClause(OMPC_map);
+  auto *misplaced_map = misplaced_clause_ast.addOpenMPClause(
+      OMPC_map, OMPC_MAP_MODIFIER_unspecified, OMPC_MAP_MODIFIER_unspecified,
+      OMPC_MAP_MODIFIER_unspecified, OMPC_MAP_TYPE_unspecified,
+      OMPC_MAP_REF_MODIFIER_unspecified);
   if (misplaced_map != nullptr) {
     misplaced_map->addLangExpr("value", OMPC_CLAUSE_SEP_space, 1, 1,
                                OMP_EXPR_PARSE_variable_list);

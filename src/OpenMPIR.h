@@ -17,6 +17,7 @@
 #include <cassert>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <stdio.h>
 #include <string.h>
@@ -31,14 +32,6 @@
 enum OpenMPBaseLang { Lang_C, Lang_Cplusplus, Lang_Fortran, Lang_unknown };
 
 enum OpenMPFortranSentinelKind { OMPFS_omp, OMPFS_ompx };
-
-enum OpenMPExprParseMode {
-  OMP_EXPR_PARSE_none,
-  OMP_EXPR_PARSE_expression,
-  OMP_EXPR_PARSE_variable_list,
-  OMP_EXPR_PARSE_array_section,
-  OMP_EXPR_PARSE_verbatim
-};
 
 int openmpGetCurrentTokenLine();
 int openmpGetCurrentTokenColumn();
@@ -88,6 +81,7 @@ struct OpenMPExpressionItem {
       OpenMPExprParseMode mode = OMP_EXPR_PARSE_expression)
       : separator(expression_separator), parse_mode(mode) {
     fragment.spelling = std::move(spelling);
+    fragment.parse_mode = mode;
   }
 };
 
@@ -104,8 +98,10 @@ struct OpenMPIterator {
            const std::string &step_spelling = std::string()) {
     qualifier.spelling = qualifier_spelling;
     qualifier.role = ompparser::HostFragmentRole::Type;
+    qualifier.parse_mode = OMP_EXPR_PARSE_openmp_iterator_type;
     variable.spelling = variable_spelling;
     variable.role = ompparser::HostFragmentRole::Declarator;
+    variable.parse_mode = OMP_EXPR_PARSE_openmp_iterator_name;
     begin.spelling = begin_spelling;
     begin.role = ompparser::HostFragmentRole::Expression;
     end.spelling = end_spelling;
@@ -114,7 +110,13 @@ struct OpenMPIterator {
     step.role = ompparser::HostFragmentRole::Expression;
   }
 
-  void visitHostFragments(const ompparser::HostFragmentVisitor &visitor) {
+  void visitHostFragments(const ompparser::HostFragmentVisitor &visitor,
+                          OpenMPClauseKind owner_clause = OMPC_unknown) {
+    qualifier.clause_kind = owner_clause;
+    variable.clause_kind = owner_clause;
+    begin.clause_kind = owner_clause;
+    end.clause_kind = owner_clause;
+    step.clause_kind = owner_clause;
     if (!qualifier.spelling.empty()) {
       visitor(qualifier);
     }
@@ -126,6 +128,10 @@ struct OpenMPIterator {
     }
   }
 };
+
+bool parseOpenMPIteratorDefinitions(const char *text,
+                                    std::vector<OpenMPIterator> &result,
+                                    std::string &error);
 
 /**
  * The class or baseclass for all the clause classes. For all the clauses that
@@ -139,6 +145,7 @@ public:
 protected:
   OpenMPClauseKind kind;
   OpenMPDirectiveKind directive_kind = OMPD_unknown;
+  OpenMPBaseLang base_lang = Lang_unknown;
   bool has_directive_name_modifier = false;
   OpenMPDirectiveKind directive_name_modifier = OMPD_unknown;
   // the clause position in the vector of clauses in original order
@@ -146,7 +153,20 @@ protected:
   OpenMPClauseSeparator separator = OMPC_CLAUSE_SEP_space;
 
   std::vector<OpenMPExpressionItem> expressions;
-  mutable std::vector<const char *> legacy_expression_view;
+  std::vector<std::string> construction_errors;
+
+  void visitOwnedHostFragment(const ompparser::HostFragmentVisitor &visitor,
+                              ompparser::HostFragment &fragment) {
+    fragment.clause_kind = kind;
+    visitor(fragment);
+  }
+
+  ompparser::HostFragmentVisitor
+  owningHostFragmentVisitor(const ompparser::HostFragmentVisitor &visitor) {
+    return [this, visitor](ompparser::HostFragment &fragment) {
+      visitOwnedHostFragment(visitor, fragment);
+    };
+  }
 
 public:
   OpenMPClause(OpenMPClauseKind k, int _line = 0, int _col = 0)
@@ -157,6 +177,8 @@ public:
   OpenMPClauseKind getKind() const { return kind; };
   OpenMPDirectiveKind getDirectiveKind() const { return directive_kind; }
   void setDirectiveKind(OpenMPDirectiveKind value) { directive_kind = value; }
+  OpenMPBaseLang getBaseLang() const { return base_lang; }
+  void setBaseLang(OpenMPBaseLang value) { base_lang = value; }
   void setDirectiveNameModifier(OpenMPDirectiveKind value) {
     has_directive_name_modifier = true;
     directive_name_modifier = value;
@@ -171,6 +193,9 @@ public:
   };
   void setPrecedingSeparator(OpenMPClauseSeparator sep) { separator = sep; }
   OpenMPClauseSeparator getPrecedingSeparator() const { return separator; }
+  const std::vector<std::string> &getConstructionErrors() const {
+    return construction_errors;
+  }
 
   // Typed host-language fragments owned by this clause. Optional host hooks
   // may attach semantic nodes without changing their source spelling/ranges.
@@ -180,8 +205,6 @@ public:
               int col = 0,
               OpenMPExprParseMode parse_mode = OMP_EXPR_PARSE_none);
 
-  std::vector<const char *> *getExpressions();
-  const std::vector<const char *> *getExpressions() const;
   const std::vector<OpenMPExpressionItem> &getExpressionItems() const {
     return expressions;
   }
@@ -191,24 +214,20 @@ public:
   virtual void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) {
     for (OpenMPExpressionItem &expression : expressions) {
-      visitor(expression.fragment);
+      visitOwnedHostFragment(visitor, expression.fragment);
     }
   }
   std::shared_ptr<const ompparser::HostSemanticNode>
   getExpressionNode(size_t index) const {
-    return index < expressions.size() ? expressions[index].fragment.semantic
-                                      : nullptr;
+    return expressions.at(index).fragment.semantic;
   }
   void setExpressionNode(
       size_t index,
       std::shared_ptr<const ompparser::HostSemanticNode> semantic) {
-    if (index < expressions.size()) {
-      expressions[index].fragment.semantic = std::move(semantic);
-    }
+    expressions.at(index).fragment.semantic = std::move(semantic);
   }
   OpenMPExprParseMode getExpressionParseMode(size_t index) const {
-    return index < expressions.size() ? expressions[index].parse_mode
-                                      : OMP_EXPR_PARSE_none;
+    return expressions.at(index).parse_mode;
   }
 
   virtual std::string toString();
@@ -300,8 +319,9 @@ public:
                                  std::remove_cv_t<
                                      std::remove_pointer_t<Argument>>,
                                  char>) {
-          arguments.emplace_back(raw_argument ? std::string(raw_argument)
-                                              : std::string());
+          const char *value = raw_argument;
+          arguments.emplace_back(value != nullptr ? std::string(value)
+                                                  : std::string());
         } else if constexpr (std::is_enum_v<Argument> ||
                              std::is_integral_v<Argument>) {
           arguments.emplace_back(static_cast<int>(raw_argument));
@@ -315,7 +335,7 @@ public:
     return addOpenMPClauseWithArguments(static_cast<OpenMPClauseKind>(raw_kind),
                                         arguments);
   }
-  void setBaseLang(OpenMPBaseLang _lang) { lang = _lang; };
+  void setBaseLang(OpenMPBaseLang _lang);
   OpenMPBaseLang getBaseLang() const { return lang; };
   void setDeclareTargetUnderscore(bool use_underscore) {
     use_declare_target_underscore = use_underscore;
@@ -504,6 +524,9 @@ public:
   const std::string &getVariantFuncID() const {
     return variant_func_id.spelling;
   };
+  const ompparser::HostFragment &getVariantFuncFragment() const {
+    return variant_func_id;
+  }
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!variant_func_id.spelling.empty()) {
@@ -582,6 +605,9 @@ public:
   OpenMPDeclareSimdDirective() : OpenMPDirective(OMPD_declare_simd) {};
   void addProcName(const char *_proc_name);
   const std::string &getProcName() const { return proc_name.spelling; }
+  const ompparser::HostFragment &getProcNameFragment() const {
+    return proc_name;
+  }
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!proc_name.spelling.empty()) {
@@ -629,6 +655,7 @@ class OpenMPDeclareMapperDirective : public OpenMPDirective {
 protected:
   OpenMPDeclareMapperDirectiveIdentifier identifier =
       OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified; // modifier
+  bool identifier_explicit = false;
   ompparser::HostFragment user_defined_identifier;
   ompparser::HostFragment type;
   ompparser::HostFragment var;
@@ -646,14 +673,26 @@ public:
   OpenMPDeclareMapperDirectiveIdentifier getIdentifier() const {
     return identifier;
   }
+  bool hasExplicitIdentifier() const { return identifier_explicit; }
   void setUserDefinedIdentifier(const char *_user_defined_identifier);
   const std::string &getUserDefinedIdentifier() const {
     return user_defined_identifier.spelling;
   }
+  const ompparser::HostFragment &getUserDefinedIdentifierFragment() const {
+    return user_defined_identifier;
+  }
   const std::string &getDeclareMapperType() const { return type.spelling; }
+  const ompparser::HostFragment &getDeclareMapperTypeFragment() const {
+    return type;
+  }
   const std::string &getDeclareMapperVar() const { return var.spelling; }
+  const ompparser::HostFragment &getDeclareMapperVarFragment() const {
+    return var;
+  }
   void setDeclareMapperType(const char *_declare_mapper_type);
   void setDeclareMapperVar(const char *_declare_mapper_variable);
+  bool setSpecification(const char *specification, OpenMPBaseLang language,
+                        OpenMPBaseLang &resolved_language, std::string &error);
   void setTypeVarHasSpace(bool has_space) { type_var_has_space = has_space; }
   bool hasTypeVarSpace() const { return type_var_has_space; }
   void
@@ -680,7 +719,6 @@ protected:
   OpenMPReductionClauseIdentifier identifier =
       OMPC_REDUCTION_IDENTIFIER_unknown; // identifier
   ompparser::HostFragment user_defined_identifier;
-  ompparser::HostFragment user_defined_modifier;
 
 public:
   OpenMPReductionClause() : OpenMPClause(OMPC_reduction) {}
@@ -695,18 +733,18 @@ public:
   OpenMPReductionClauseIdentifier getIdentifier() const { return identifier; };
 
   void setUserDefinedIdentifier(const char *_identifier);
+  void setUserDefinedIdentifierSourceRange(
+      const ompparser::SourceRange &source_range);
 
   const std::string &getUserDefinedIdentifier() const {
     return user_defined_identifier.spelling;
   }
-  void setUserDefinedModifier(const char *_modifier);
-
-  const std::string &getUserDefinedModifier() const {
-    return user_defined_modifier.spelling;
+  const ompparser::HostFragment &getUserDefinedIdentifierFragment() const {
+    return user_defined_identifier;
   }
-  void addOperand(const std::string &operand,
+  void addOperand(const char *operand,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
-    addLangExpr(operand.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
+    addLangExpr(operand, sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
   const std::vector<OpenMPExpressionItem> &getOperands() const {
     return expressions;
@@ -716,15 +754,12 @@ public:
   static OpenMPClause *addReductionClause(OpenMPDirective *,
                                           OpenMPReductionClauseModifier,
                                           OpenMPReductionClauseIdentifier,
-                                          const char *, const char *);
+                                          const char *);
 
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
-    if (!user_defined_modifier.spelling.empty()) {
-      visitor(user_defined_modifier);
-    }
     if (!user_defined_identifier.spelling.empty()) {
-      visitor(user_defined_identifier);
+      visitOwnedHostFragment(visitor, user_defined_identifier);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -747,7 +782,7 @@ public:
       const char *_implementation_defined_requirement) {
     implementation_defined_requirement = _implementation_defined_requirement;
   };
-  std::string getImplementationDefinedRequirement() {
+  const std::string &getImplementationDefinedRequirement() const {
     return implementation_defined_requirement;
   };
 
@@ -808,11 +843,11 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!label.spelling.empty()) {
-      visitor(label);
+      visitOwnedHostFragment(visitor, label);
     }
     for (ApplyTransform &transform : transforms) {
       if (!transform.argument.spelling.empty()) {
-        visitor(transform.argument);
+        visitOwnedHostFragment(visitor, transform.argument);
       }
       if (transform.nested_apply != nullptr) {
         transform.nested_apply->visitHostFragments(visitor);
@@ -829,6 +864,11 @@ public:
     ompparser::HostFragment label;
     ompparser::HostFragment expression;
   };
+
+  enum class SpecificationItemKind { Step, Binding, Expression };
+  using SpecificationItemVisitor =
+      std::function<void(SpecificationItemKind, const ompparser::HostFragment *,
+                         const ompparser::HostFragment &)>;
 
 private:
   enum ItemKind { ItemStep, ItemBinding, ItemPassthrough };
@@ -855,22 +895,9 @@ public:
   const std::vector<ompparser::HostFragment> &getPassthroughItems() const {
     return passthrough_items;
   }
+  void visitSpecificationItems(const SpecificationItemVisitor &visitor) const;
   void
-  visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
-    if (!step_expression.spelling.empty()) {
-      visitor(step_expression);
-    }
-    for (Binding &binding : bindings) {
-      if (!binding.label.spelling.empty()) {
-        visitor(binding.label);
-      }
-      visitor(binding.expression);
-    }
-    for (ompparser::HostFragment &item : passthrough_items) {
-      visitor(item);
-    }
-    OpenMPClause::visitHostFragments(visitor);
-  }
+  visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override;
   std::string specificationToString() const;
   std::string toString() override;
 };
@@ -931,9 +958,9 @@ public:
   const std::string &getOperand() const { return operand.spelling; }
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
-    modifiers.visitHostFragments(visitor);
+    modifiers.visitHostFragments(owningHostFragmentVisitor(visitor));
     if (!operand.spelling.empty()) {
-      visitor(operand);
+      visitOwnedHostFragment(visitor, operand);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -957,7 +984,7 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     for (ompparser::HostFragment &argument : arguments) {
-      visitor(argument);
+      visitOwnedHostFragment(visitor, argument);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -984,7 +1011,8 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     for (Operation &operation : operations) {
-      operation.modifiers.visitHostFragments(visitor);
+      operation.modifiers.visitHostFragments(
+          owningHostFragmentVisitor(visitor));
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -993,10 +1021,14 @@ public:
 
 // allocate clause
 class OpenMPAllocateClause : public OpenMPClause {
+public:
+  enum class ModifierKind { Allocator, Align };
+
 protected:
   OpenMPAllocateClauseAllocator allocator; // Allocate allocator
   ompparser::HostFragment user_defined_allocator;
-  std::vector<ompparser::HostFragment> extra_allocator_parameters;
+  ompparser::HostFragment alignment;
+  std::vector<ModifierKind> modifier_order;
 
 public:
   OpenMPAllocateClause(OpenMPAllocateClauseAllocator _allocator)
@@ -1009,18 +1041,27 @@ public:
   const std::string &getUserDefinedAllocator() const {
     return user_defined_allocator.spelling;
   }
-  const std::vector<ompparser::HostFragment> &
-  getExtraAllocatorParameters() const {
-    return extra_allocator_parameters;
+  const ompparser::HostFragment &getUserDefinedAllocatorFragment() const {
+    return user_defined_allocator;
   }
-  void addExtraAllocatorParameter(const char *param);
+  void setAllocatorModifier(const char *allocator);
+  void setAlignModifier(const char *alignment);
+  const std::string &getAlignment() const { return alignment.spelling; }
+  const ompparser::HostFragment &getAlignmentFragment() const {
+    return alignment;
+  }
+  bool usesAllocatorModifierSyntax() const;
+  bool hasAlignModifier() const { return !alignment.spelling.empty(); }
+  const std::vector<ModifierKind> &getModifierOrder() const {
+    return modifier_order;
+  }
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!user_defined_allocator.spelling.empty()) {
-      visitor(user_defined_allocator);
+      visitOwnedHostFragment(visitor, user_defined_allocator);
     }
-    for (ompparser::HostFragment &parameter : extra_allocator_parameters) {
-      visitor(parameter);
+    if (!alignment.spelling.empty()) {
+      visitOwnedHostFragment(visitor, alignment);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -1051,7 +1092,7 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!user_defined_allocator.spelling.empty()) {
-      visitor(user_defined_allocator);
+      visitOwnedHostFragment(visitor, user_defined_allocator);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -1115,7 +1156,7 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!user_defined_step.spelling.empty()) {
-      visitor(user_defined_step);
+      visitOwnedHostFragment(visitor, user_defined_step);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -1143,7 +1184,7 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!user_defined_alignment.spelling.empty()) {
-      visitor(user_defined_alignment);
+      visitOwnedHostFragment(visitor, user_defined_alignment);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -1175,7 +1216,7 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!chunk_size.spelling.empty()) {
-      visitor(chunk_size);
+      visitOwnedHostFragment(visitor, chunk_size);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -1232,10 +1273,10 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!user_defined_kind.spelling.empty()) {
-      visitor(user_defined_kind);
+      visitOwnedHostFragment(visitor, user_defined_kind);
     }
     if (!chunk_size.spelling.empty()) {
-      visitor(chunk_size);
+      visitOwnedHostFragment(visitor, chunk_size);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -1293,189 +1334,68 @@ public:
 
 // OpenMP clauses with variant directives, such as WHEN and MATCH clauses.
 class OpenMPVariantClause : public OpenMPClause {
-protected:
-  struct ScoredExpression {
-    ompparser::HostFragment score;
-    ompparser::HostFragment expression;
-  };
-  struct ImplementationExpression {
-    OpenMPImplementationExprKind kind = OMPC_IMPL_EXPR_unknown;
-    ompparser::HostFragment score;
-    ompparser::HostFragment expression;
-  };
-  struct ScoredConstruct {
-    ompparser::HostFragment score;
-    OpenMPDirective *directive = nullptr;
-  };
-  struct ScoredContextKind {
-    ompparser::HostFragment score;
-    OpenMPClauseContextKind kind = OMPC_CONTEXT_KIND_unknown;
-  };
-  struct ScoredContextVendor {
-    ompparser::HostFragment score;
-    OpenMPClauseContextVendor vendor = OMPC_CONTEXT_VENDOR_unspecified;
-  };
-  struct DeviceSelectorData {
-    ScoredExpression arch_expression;
-    ScoredExpression isa_expression;
-    ScoredContextKind context_kind_name;
-    ScoredExpression device_num_expression;
-    std::size_t arch_expression_count = 0;
-    std::size_t isa_expression_count = 0;
-    std::size_t context_kind_count = 0;
-    std::size_t device_num_expression_count = 0;
+public:
+  struct TraitProperty {
+    ompparser::HostFragment fragment;
+    std::optional<OpenMPClauseContextKind> context_kind;
+    std::optional<OpenMPClauseContextVendor> context_vendor;
+    std::optional<OpenMPAtomicDefaultMemOrderClauseKind>
+        atomic_default_mem_order;
+    std::unique_ptr<OpenMPClause> requirement;
   };
 
-  ScoredExpression user_condition_expression;
-  std::vector<ScoredConstruct> construct_directives;
-  std::vector<std::unique_ptr<OpenMPDirective>> construct_directive_storage;
-  DeviceSelectorData device_selector;
-  DeviceSelectorData target_device_selector;
-  ScoredExpression extension_expression;
-  ScoredContextVendor context_vendor_name;
-  ImplementationExpression implementation_user_defined_expression;
-  std::size_t user_condition_count = 0;
-  std::size_t extension_expression_count = 0;
-  std::size_t implementation_kind_count = 0;
-  std::size_t implementation_expression_count = 0;
-  bool is_target_device_selector = false;
-  // Preserve selector order as it appeared in the source
-  std::vector<OpenMPContextSelectorSequenceKind> selector_order;
+  struct TraitSelector {
+    OpenMPContextTraitSelectorKind kind = OMPC_TRAIT_condition;
+    ompparser::HostFragment score;
+    std::string implementation_defined_name;
+    std::vector<TraitProperty> properties;
+    std::unique_ptr<OpenMPDirective> construct_directive;
+  };
+
+  struct TraitSetSelector {
+    OpenMPContextSelectorSequenceKind kind = OMPC_SELECTOR_user;
+    std::vector<TraitSelector> selectors;
+  };
+
+protected:
+  std::vector<TraitSetSelector> trait_sets;
+  std::optional<std::size_t> active_trait_set;
+  std::optional<std::size_t> active_trait_selector;
+
+  TraitSetSelector *activeTraitSet(const char *operation);
+  TraitSelector *activeTraitSelector(const char *operation);
+  void recordVariantError(const std::string &message);
 
 public:
   OpenMPVariantClause(OpenMPClauseKind _kind) : OpenMPClause(_kind) {};
-
-  void setUserCondition(const char *_score,
-                        const char *_user_condition_expression);
-  ScoredExpression *getUserCondition() { return &user_condition_expression; };
-  const ScoredExpression *getUserCondition() const {
-    return &user_condition_expression;
-  }
-  void addConstructDirective(const char *_score,
-                             OpenMPDirective *_construct_directive) {
-    if (_construct_directive == nullptr) {
-      return;
-    }
-    addConstructDirectiveImpl(_score, _construct_directive);
-  };
+  void beginTraitSet(OpenMPContextSelectorSequenceKind kind);
+  void endTraitSet();
+  void beginTraitSelector(OpenMPContextTraitSelectorKind kind,
+                          const char *score,
+                          const char *implementation_defined_name = nullptr);
+  void addExpressionProperty(const char *expression,
+                             OpenMPExprParseMode parse_mode);
+  void addContextKindProperty(OpenMPClauseContextKind kind);
+  void addContextVendorProperty(OpenMPClauseContextVendor vendor);
   void
-  addConstructDirective(const char *_score,
-                        std::unique_ptr<OpenMPDirective> _construct_directive) {
-    if (_construct_directive == nullptr) {
-      return;
-    }
-    auto *construct_directive = _construct_directive.get();
-    construct_directive_storage.push_back(std::move(_construct_directive));
-    addConstructDirectiveImpl(_score, construct_directive);
-  };
-  std::vector<ScoredConstruct> *getConstructDirective() {
-    return &construct_directives;
-  };
-  const std::vector<ScoredConstruct> &getConstructDirective() const {
-    return construct_directives;
+  addAtomicDefaultMemOrderProperty(OpenMPAtomicDefaultMemOrderClauseKind kind);
+  void addRequiresProperty(OpenMPClauseKind kind,
+                           const char *required_expression = nullptr);
+  void addRequiresAtomicDefaultMemOrderProperty(
+      OpenMPAtomicDefaultMemOrderClauseKind kind);
+  void addRequiresExtensionProperty(const char *identifier);
+  void endTraitSelector();
+  void
+  addConstructDirective(const char *score,
+                        std::unique_ptr<OpenMPDirective> construct_directive);
+  const std::vector<TraitSetSelector> &getTraitSets() const {
+    return trait_sets;
   }
-  void setArchExpression(const char *_score, const char *_arch_expression);
-  ScoredExpression *getArchExpression() {
-    return getArchExpression(is_target_device_selector);
-  }
-  const ScoredExpression *getArchExpression() const {
-    return getArchExpression(is_target_device_selector);
-  }
-  ScoredExpression *getArchExpression(bool target_device) {
-    return &getDeviceSelectorData(target_device).arch_expression;
-  }
-  const ScoredExpression *getArchExpression(bool target_device) const {
-    return &getDeviceSelectorData(target_device).arch_expression;
-  }
-  void setIsaExpression(const char *_score, const char *_isa_expression);
-  ScoredExpression *getIsaExpression() {
-    return getIsaExpression(is_target_device_selector);
-  }
-  const ScoredExpression *getIsaExpression() const {
-    return getIsaExpression(is_target_device_selector);
-  }
-  ScoredExpression *getIsaExpression(bool target_device) {
-    return &getDeviceSelectorData(target_device).isa_expression;
-  }
-  const ScoredExpression *getIsaExpression(bool target_device) const {
-    return &getDeviceSelectorData(target_device).isa_expression;
-  }
-  void setContextKind(const char *_score,
-                      OpenMPClauseContextKind _context_kind_name);
-  ScoredContextKind *getContextKind() {
-    return getContextKind(is_target_device_selector);
-  }
-  const ScoredContextKind *getContextKind() const {
-    return getContextKind(is_target_device_selector);
-  }
-  ScoredContextKind *getContextKind(bool target_device) {
-    return &getDeviceSelectorData(target_device).context_kind_name;
-  }
-  const ScoredContextKind *getContextKind(bool target_device) const {
-    return &getDeviceSelectorData(target_device).context_kind_name;
-  }
-  void setDeviceNumExpression(const char *_score,
-                              const char *_device_num_expression);
-  ScoredExpression *getDeviceNumExpression() {
-    return getDeviceNumExpression(is_target_device_selector);
-  }
-  const ScoredExpression *getDeviceNumExpression() const {
-    return getDeviceNumExpression(is_target_device_selector);
-  }
-  ScoredExpression *getDeviceNumExpression(bool target_device) {
-    return &getDeviceSelectorData(target_device).device_num_expression;
-  }
-  const ScoredExpression *getDeviceNumExpression(bool target_device) const {
-    return &getDeviceSelectorData(target_device).device_num_expression;
-  }
-  void setExtensionExpression(const char *_score,
-                              const char *_extension_expression);
-  ScoredExpression *getExtensionExpression() { return &extension_expression; };
-  const ScoredExpression *getExtensionExpression() const {
-    return &extension_expression;
-  }
-  void setImplementationKind(const char *_score,
-                             OpenMPClauseContextVendor _context_vendor_name);
-  ScoredContextVendor *getImplementationKind() { return &context_vendor_name; };
-  const ScoredContextVendor *getImplementationKind() const {
-    return &context_vendor_name;
-  }
-  void setImplementationRequiresExpression(const char *_score,
-                                           const char *args);
-  void setImplementationUserExpression(const char *_score,
-                                       const char *_implementation_expression);
-  ImplementationExpression *getImplementationExpression() {
-    return &implementation_user_defined_expression;
-  };
-  const ImplementationExpression *getImplementationExpression() const {
-    return &implementation_user_defined_expression;
-  }
-  void setIsTargetDeviceSelector(bool _is_target_device) {
-    is_target_device_selector = _is_target_device;
-  };
-  bool getIsTargetDeviceSelector() const { return is_target_device_selector; };
-  void addSelectorKind(OpenMPContextSelectorSequenceKind kind) {
-    selector_order.push_back(kind);
-  };
-  const std::vector<OpenMPContextSelectorSequenceKind> &
-  getSelectorOrder() const {
-    return selector_order;
-  };
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override;
   bool validateSelectorInvariants(std::vector<std::string> &errors) const;
   std::string toString() override;
   void generateDOT(std::ostream &, int, int, std::string) const override;
-
-private:
-  DeviceSelectorData &getDeviceSelectorData(bool target_device) {
-    return target_device ? target_device_selector : device_selector;
-  }
-  const DeviceSelectorData &getDeviceSelectorData(bool target_device) const {
-    return target_device ? target_device_selector : device_selector;
-  }
-  void addConstructDirectiveImpl(const char *_score,
-                                 OpenMPDirective *_construct_directive);
 };
 
 // When Clause
@@ -1640,9 +1560,9 @@ public:
 
   OpenMPOrderClauseModifier getOrderClauseModifier() { return order_modifier; };
   OpenMPOrderClauseKind getOrderClauseKind() { return order_kind; };
-  void addOperand(const std::string &expr,
+  void addOperand(const char *expr,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
-    addLangExpr(expr.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
+    addLangExpr(expr, sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
   const std::vector<OpenMPExpressionItem> &getOperands() const {
     return expressions;
@@ -1662,9 +1582,9 @@ class OpenMPScanClause : public OpenMPClause {
 public:
   OpenMPScanClause(OpenMPClauseKind kind) : OpenMPClause(kind) {}
 
-  void addOperand(const std::string &expr,
+  void addOperand(const char *expr,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
-    addLangExpr(expr.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
+    addLangExpr(expr, sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
 
   const std::vector<OpenMPExpressionItem> &getOperands() const {
@@ -1728,7 +1648,7 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!user_defined_modifier.spelling.empty()) {
-      visitor(user_defined_modifier);
+      visitOwnedHostFragment(visitor, user_defined_modifier);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -1761,9 +1681,12 @@ public:
   const std::string &getUserDefinedIdentifier() const {
     return user_defined_identifier.spelling;
   }
-  void addOperand(const std::string &operand,
+  const ompparser::HostFragment &getUserDefinedIdentifierFragment() const {
+    return user_defined_identifier;
+  }
+  void addOperand(const char *operand,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
-    addLangExpr(operand.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
+    addLangExpr(operand, sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
   const std::vector<OpenMPExpressionItem> &getOperands() const {
     return expressions;
@@ -1776,7 +1699,7 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!user_defined_identifier.spelling.empty()) {
-      visitor(user_defined_identifier);
+      visitOwnedHostFragment(visitor, user_defined_identifier);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -1826,10 +1749,10 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!dependence_vector.spelling.empty()) {
-      visitor(dependence_vector);
+      visitOwnedHostFragment(visitor, dependence_vector);
     }
     for (OpenMPIterator &iterator : iterators) {
-      iterator.visitHostFragments(visitor);
+      iterator.visitHostFragments(visitor, kind);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -1845,9 +1768,6 @@ class OpenMPDoacrossClause : public OpenMPClause {
 
 protected:
   OpenMPDoacrossClauseType type = OMPC_DOACROSS_TYPE_unknown; // source or sink
-  bool has_source_expr = false;
-  OpenMPExpressionItem source_expr;
-  std::vector<OpenMPExpressionItem> sink_args;
 
 public:
   OpenMPDoacrossClause() : OpenMPClause(OMPC_doacross) {}
@@ -1858,23 +1778,26 @@ public:
   OpenMPDoacrossClauseType getType() const { return type; };
   void setSourceExpression(const std::string &expr,
                            OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_space) {
-    has_source_expr = true;
-    source_expr = OpenMPExpressionItem{expr, sep};
-    addLangExpr(expr.c_str(), sep, 0, 0, OMP_EXPR_PARSE_expression);
+    if (expressions.size() != 1 ||
+        expressions.front().fragment.spelling != expr ||
+        expressions.front().separator != sep ||
+        expressions.front().parse_mode != OMP_EXPR_PARSE_expression) {
+      construction_errors.push_back(
+          "doacross source payload does not match its typed expression");
+    }
   }
-  bool hasSourceExpression() const { return has_source_expr; }
+  bool hasSourceExpression() const { return !expressions.empty(); }
   const OpenMPExpressionItem &getSourceExpression() const {
-    return source_expr;
+    return expressions.at(0);
   }
-  void addSinkArg(const std::string &expr,
+  void addSinkArg(const char *expr,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
-    sink_args.push_back(OpenMPExpressionItem{expr, sep});
-    addLangExpr(expr.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
+    addLangExpr(expr, sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
   const std::vector<OpenMPExpressionItem> &getSinkArgs() const {
-    return sink_args;
+    return expressions;
   }
-  void clearSinkArgs() { sink_args.clear(); }
+  void clearSinkArgs() { expressions.clear(); }
 
   std::string toString() override;
 };
@@ -1892,6 +1815,10 @@ public:
 
   OpenMPAffinityClause(OpenMPAffinityClauseModifier _modifier)
       : OpenMPClause(OMPC_affinity), modifier(_modifier) {};
+  void addIterator(const OpenMPIterator &iterator) {
+    iterators.push_back(iterator);
+  }
+  void clearIterators() { iterators.clear(); }
   void addIteratorsDefinitionClass(
       const std::vector<const char *> &iterator_definition) {
     if (iterator_definition.size() < 4) {
@@ -1914,7 +1841,7 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     for (OpenMPIterator &iterator : iterators) {
-      iterator.visitHostFragments(visitor);
+      iterator.visitHostFragments(visitor, kind);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -1982,6 +1909,9 @@ public:
   const std::string &getMapperIdentifier() const {
     return mapper_identifier.spelling;
   };
+  const ompparser::HostFragment &getMapperIdentifierFragment() const {
+    return mapper_identifier;
+  }
   std::shared_ptr<const ompparser::HostSemanticNode>
   getMapperIdentifierNode() const {
     return mapper_identifier.semantic;
@@ -1995,6 +1925,9 @@ public:
   }
   const std::vector<OpenMPIterator> &getIterators() const { return iterators; }
   void clearIterators() { iterators.clear(); }
+  void addIterator(const OpenMPIterator &iterator) {
+    iterators.push_back(iterator);
+  }
   void addItem(const char *expr,
                OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
     addLangExpr(expr, sep, 0, 0, OMP_EXPR_PARSE_array_section);
@@ -2010,10 +1943,10 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     for (OpenMPIterator &iterator : iterators) {
-      iterator.visitHostFragments(visitor);
+      iterator.visitHostFragments(visitor, kind);
     }
     if (!mapper_identifier.spelling.empty()) {
-      visitor(mapper_identifier);
+      visitOwnedHostFragment(visitor, mapper_identifier);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -2039,6 +1972,9 @@ public:
   const std::string &getMapperIdentifier() const {
     return mapper_identifier.spelling;
   };
+  const ompparser::HostFragment &getMapperIdentifierFragment() const {
+    return mapper_identifier;
+  }
   std::shared_ptr<const ompparser::HostSemanticNode>
   getMapperIdentifierNode() const {
     return mapper_identifier.semantic;
@@ -2052,6 +1988,9 @@ public:
   }
   const std::vector<OpenMPIterator> &getIterators() const { return iterators; }
   void clearIterators() { iterators.clear(); }
+  void addIterator(const OpenMPIterator &iterator) {
+    iterators.push_back(iterator);
+  }
   void addItem(const char *expr,
                OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
     addLangExpr(expr, sep, 0, 0, OMP_EXPR_PARSE_array_section);
@@ -2067,10 +2006,10 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     for (OpenMPIterator &iterator : iterators) {
-      iterator.visitHostFragments(visitor);
+      iterator.visitHostFragments(visitor, kind);
     }
     if (!mapper_identifier.spelling.empty()) {
-      visitor(mapper_identifier);
+      visitOwnedHostFragment(visitor, mapper_identifier);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -2142,9 +2081,12 @@ public:
   const std::string &getUserDefinedIdentifier() const {
     return user_defined_identifier.spelling;
   }
-  void addOperand(const std::string &operand,
+  const ompparser::HostFragment &getUserDefinedIdentifierFragment() const {
+    return user_defined_identifier;
+  }
+  void addOperand(const char *operand,
                   OpenMPClauseSeparator sep = OMPC_CLAUSE_SEP_comma) {
-    addLangExpr(operand.c_str(), sep, 0, 0, OMP_EXPR_PARSE_variable_list);
+    addLangExpr(operand, sep, 0, 0, OMP_EXPR_PARSE_variable_list);
   }
   const std::vector<OpenMPExpressionItem> &getOperands() const {
     return expressions;
@@ -2157,7 +2099,7 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!user_defined_identifier.spelling.empty()) {
-      visitor(user_defined_identifier);
+      visitOwnedHostFragment(visitor, user_defined_identifier);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -2198,13 +2140,9 @@ public:
   OpenMPMapClause(OpenMPMapClauseModifier _modifier1,
                   OpenMPMapClauseModifier _modifier2,
                   OpenMPMapClauseModifier _modifier3, OpenMPMapClauseType _type,
-                  OpenMPMapClauseRefModifier _ref_modifier,
-                  std::string _mapper_identifier)
+                  OpenMPMapClauseRefModifier _ref_modifier)
       : OpenMPClause(OMPC_map), modifier1(_modifier1), modifier2(_modifier2),
-        modifier3(_modifier3), type(_type), ref_modifier(_ref_modifier) {
-    mapper_identifier.spelling = std::move(_mapper_identifier);
-    mapper_identifier.role = ompparser::HostFragmentRole::Declarator;
-  };
+        modifier3(_modifier3), type(_type), ref_modifier(_ref_modifier) {};
 
   OpenMPMapClauseModifier getModifier1() const { return modifier1; };
   OpenMPMapClauseModifier getModifier2() const { return modifier2; };
@@ -2217,6 +2155,10 @@ public:
   const std::string &getMapperIdentifier() const {
     return mapper_identifier.spelling;
   };
+  const ompparser::HostFragment &getMapperIdentifierFragment() const {
+    return mapper_identifier;
+  }
+  void setMapperIdentifier(const char *_identifier);
   void addIterator(const OpenMPIterator &it) { iterators.push_back(it); }
   void addIterator(const std::string &qualifier, const std::string &var,
                    const std::string &begin, const std::string &end,
@@ -2244,15 +2186,15 @@ public:
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     for (OpenMPIterator &iterator : iterators) {
-      iterator.visitHostFragments(visitor);
+      iterator.visitHostFragments(visitor, kind);
     }
     if (!mapper_identifier.spelling.empty()) {
-      visitor(mapper_identifier);
+      visitOwnedHostFragment(visitor, mapper_identifier);
     }
     for (auto &policy_list : dist_data_policies) {
       for (DistDataPolicy &policy : policy_list) {
         if (!policy.argument.spelling.empty()) {
-          visitor(policy.argument);
+          visitOwnedHostFragment(visitor, policy.argument);
         }
       }
     }
@@ -2262,7 +2204,7 @@ public:
                                     OpenMPMapClauseModifier,
                                     OpenMPMapClauseModifier,
                                     OpenMPMapClauseType,
-                                    OpenMPMapClauseRefModifier, std::string);
+                                    OpenMPMapClauseRefModifier);
   std::string toString() override;
   void generateDOT(std::ostream &, int, int, std::string) const override;
 };
@@ -2319,6 +2261,7 @@ public:
     critical_name.spelling =
         _name != nullptr ? std::string(_name) : std::string();
     critical_name.role = ompparser::HostFragmentRole::Declarator;
+    critical_name.parse_mode = OMP_EXPR_PARSE_openmp_syntax;
     critical_name.semantic.reset();
     openmpGetLexemeSourceRange(_name, critical_name.range);
   };
@@ -2364,6 +2307,7 @@ public:
   OpenMPDepobjDirective() : OpenMPDirective(OMPD_depobj) {}
   void addDepobj(const char *_depobj);
   const std::string &getDepobj() const { return depobj.spelling; };
+  const ompparser::HostFragment &getDepobjFragment() const { return depobj; }
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!depobj.spelling.empty()) {
@@ -2439,7 +2383,7 @@ public:
     for (usesAllocatorParameter *parameter :
          usesAllocatorsAllocatorSequenceView) {
       if (parameter != nullptr) {
-        parameter->visitHostFragments(visitor);
+        parameter->visitHostFragments(owningHostFragmentVisitor(visitor));
       }
     }
     OpenMPClause::visitHostFragments(visitor);

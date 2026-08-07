@@ -10,8 +10,10 @@
 #include "OpenMPParserInternal.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <utility>
 
 extern thread_local bool clause_separator_comma;
@@ -43,6 +45,31 @@ std::string trimWhitespace(const std::string &text, size_t pos, size_t count) {
   }
   size_t end = text.find_last_not_of(whitespace, end_pos - 1);
   return text.substr(begin, end - begin + 1);
+}
+
+bool equalsIgnoringAsciiCase(const std::string &left, const char *right) {
+  const size_t right_size = std::strlen(right);
+  return left.size() == right_size &&
+         std::equal(
+             left.begin(), left.end(), right,
+             [](unsigned char left_character, unsigned char right_character) {
+               return std::tolower(left_character) ==
+                      std::tolower(right_character);
+             });
+}
+
+void requireAtomicDefaultMemOrder(OpenMPAtomicDefaultMemOrderClauseKind kind) {
+  switch (kind) {
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_seq_cst:
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acq_rel:
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acquire:
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_release:
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_relaxed:
+    return;
+  case OMPC_ATOMIC_DEFAULT_MEM_ORDER_unknown:
+    break;
+  }
+  throw std::invalid_argument("invalid atomic default memory order");
 }
 
 void advanceSourcePosition(ompparser::SourcePosition &position,
@@ -96,17 +123,40 @@ void trimHostFragment(ompparser::HostFragment &fragment,
   fragment.spelling = fragment.spelling.substr(trimmed_begin, trimmed_size);
 }
 
-ompparser::HostFragment makeHostFragment(const char *spelling,
-                                         ompparser::HostFragmentRole role) {
+ompparser::HostFragment
+makeHostFragment(const char *spelling, ompparser::HostFragmentRole role,
+                 OpenMPExprParseMode parse_mode = OMP_EXPR_PARSE_none) {
   ompparser::HostFragment fragment;
   if (spelling == nullptr) {
     return fragment;
   }
   fragment.spelling = spelling;
   fragment.role = role;
+  if (parse_mode == OMP_EXPR_PARSE_none) {
+    switch (role) {
+    case ompparser::HostFragmentRole::Variable:
+      parse_mode = OMP_EXPR_PARSE_variable_list;
+      break;
+    case ompparser::HostFragmentRole::Locator:
+      parse_mode = OMP_EXPR_PARSE_array_section;
+      break;
+    case ompparser::HostFragmentRole::Verbatim:
+      parse_mode = OMP_EXPR_PARSE_verbatim;
+      break;
+    case ompparser::HostFragmentRole::Expression:
+    case ompparser::HostFragmentRole::Condition:
+    case ompparser::HostFragmentRole::Type:
+    case ompparser::HostFragmentRole::Declarator:
+    case ompparser::HostFragmentRole::Initializer:
+      parse_mode = OMP_EXPR_PARSE_expression;
+      break;
+    }
+  }
+  fragment.parse_mode = parse_mode;
   const bool has_source_range =
       openmpGetLexemeSourceRange(spelling, fragment.range);
-  if (role != ompparser::HostFragmentRole::Expression) {
+  if (role != ompparser::HostFragmentRole::Expression ||
+      parse_mode == OMP_EXPR_PARSE_openmp_context_name) {
     trimHostFragment(fragment, has_source_range);
   }
   if (!has_source_range) {
@@ -121,6 +171,20 @@ ompparser::HostFragment makeHostFragment(const char *spelling,
   return fragment;
 }
 
+void assignSubfragmentRange(ompparser::HostFragment &fragment,
+                            const std::string &source, std::size_t begin,
+                            std::size_t end,
+                            const ompparser::SourceRange &source_range,
+                            bool has_source_range) {
+  if (!has_source_range || begin > end || end > source.size()) {
+    return;
+  }
+  fragment.range.begin = source_range.begin;
+  advanceSourcePosition(fragment.range.begin, source, 0, begin);
+  fragment.range.end = fragment.range.begin;
+  advanceSourcePosition(fragment.range.end, source, begin, end);
+}
+
 } // namespace
 
 namespace {
@@ -128,6 +192,124 @@ namespace {
 bool isIdentifierChar(char ch) {
   const unsigned char uch = static_cast<unsigned char>(ch);
   return std::isalnum(uch) != 0 || ch == '_';
+}
+
+struct ParsedQuotedLiteral {
+  std::string::size_type content_begin = 0;
+  std::string::size_type content_end = 0;
+  std::string::size_type end = 0;
+  bool raw = false;
+};
+
+bool parseCxxQuotedLiteralAt(const std::string &text,
+                             std::string::size_type begin,
+                             ParsedQuotedLiteral *literal) {
+  if (literal == nullptr || begin >= text.size() ||
+      (begin > 0 && isIdentifierChar(text[begin - 1]))) {
+    return false;
+  }
+
+  std::string::size_type quote = begin;
+  if (text.compare(quote, 2, "u8") == 0) {
+    quote += 2;
+  } else if (text[quote] == 'u' || text[quote] == 'U' || text[quote] == 'L') {
+    ++quote;
+  }
+
+  bool raw = false;
+  if (quote < text.size() && text[quote] == 'R') {
+    raw = true;
+    ++quote;
+  }
+  if (quote >= text.size() ||
+      (raw ? text[quote] != '"' : text[quote] != '"' && text[quote] != '\'')) {
+    return false;
+  }
+
+  if (raw) {
+    const std::string::size_type delimiter_begin = quote + 1;
+    const std::string::size_type open = text.find('(', delimiter_begin);
+    if (open == std::string::npos || open - delimiter_begin > 16) {
+      return false;
+    }
+    for (std::string::size_type index = delimiter_begin; index < open;
+         ++index) {
+      const unsigned char character = static_cast<unsigned char>(text[index]);
+      if (std::isspace(character) || text[index] == '(' || text[index] == ')' ||
+          text[index] == '\\') {
+        return false;
+      }
+    }
+    const std::string delimiter =
+        text.substr(delimiter_begin, open - delimiter_begin);
+    const std::string terminator = ")" + delimiter + "\"";
+    const std::string::size_type close = text.find(terminator, open + 1);
+    if (close == std::string::npos) {
+      return false;
+    }
+    literal->content_begin = open + 1;
+    literal->content_end = close;
+    literal->end = close + terminator.size();
+    literal->raw = true;
+    return true;
+  }
+
+  const char delimiter = text[quote];
+  bool escaped = false;
+  for (std::string::size_type index = quote + 1; index < text.size(); ++index) {
+    const char character = text[index];
+    if (escaped) {
+      escaped = false;
+    } else if (character == '\\') {
+      escaped = true;
+    } else if (character == delimiter) {
+      literal->content_begin = quote + 1;
+      literal->content_end = index;
+      literal->end = index + 1;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool parseFortranQuotedLiteralAt(const std::string &text,
+                                 std::string::size_type begin,
+                                 ParsedQuotedLiteral *literal) {
+  if (literal == nullptr || begin >= text.size() ||
+      (text[begin] != '\'' && text[begin] != '"')) {
+    return false;
+  }
+
+  const char delimiter = text[begin];
+  for (std::string::size_type index = begin + 1; index < text.size(); ++index) {
+    if (text[index] != delimiter) {
+      continue;
+    }
+    if (index + 1 < text.size() && text[index + 1] == delimiter) {
+      ++index;
+      continue;
+    }
+    literal->content_begin = begin + 1;
+    literal->content_end = index;
+    literal->end = index + 1;
+    literal->raw = false;
+    return true;
+  }
+  return false;
+}
+
+std::vector<bool> quotedLiteralCharacters(const std::string &text) {
+  std::vector<bool> quoted(text.size(), false);
+  for (std::string::size_type index = 0; index < text.size();) {
+    ParsedQuotedLiteral literal;
+    if (!parseCxxQuotedLiteralAt(text, index, &literal)) {
+      ++index;
+      continue;
+    }
+    std::fill(quoted.begin() + index, quoted.begin() + literal.end, true);
+    index = literal.end;
+  }
+  return quoted;
 }
 
 std::vector<std::string> splitTopLevelCommaSeparated(const std::string &text) {
@@ -138,7 +320,15 @@ std::vector<std::string> splitTopLevelCommaSeparated(const std::string &text) {
   int brace_depth = 0;
 
   for (std::string::size_type index = 0; index < text.size(); ++index) {
+    ParsedQuotedLiteral literal;
+    if (parseCxxQuotedLiteralAt(text, index, &literal)) {
+      index = literal.end - 1;
+      continue;
+    }
     const char ch = text[index];
+    if (ch == '\'' || ch == '"') {
+      return {};
+    }
     switch (ch) {
     case '(':
       ++paren_depth;
@@ -227,7 +417,17 @@ bool isValidDistDataBaseExpression(const std::string &expression) {
   int paren_depth = 0;
   int bracket_depth = 0;
   int brace_depth = 0;
-  for (const char ch : trimmed_expression) {
+  for (std::string::size_type index = 0; index < trimmed_expression.size();
+       ++index) {
+    ParsedQuotedLiteral literal;
+    if (parseCxxQuotedLiteralAt(trimmed_expression, index, &literal)) {
+      index = literal.end - 1;
+      continue;
+    }
+    const char ch = trimmed_expression[index];
+    if (ch == '\'' || ch == '"') {
+      return false;
+    }
     switch (ch) {
     case '(':
       ++paren_depth;
@@ -295,7 +495,11 @@ bool splitMapExpressionDistDataSuffix(const std::string &expression,
   int bracket_depth = 0;
   int brace_depth = 0;
   std::string::size_type open_paren_pos = std::string::npos;
+  const std::vector<bool> quoted = quotedLiteralCharacters(trimmed_expression);
   for (std::string::size_type i = trimmed_expression.size(); i-- > 0;) {
+    if (quoted[i]) {
+      continue;
+    }
     const char ch = trimmed_expression[i];
     switch (ch) {
     case ')':
@@ -632,10 +836,697 @@ resolveClauseExpressionParseMode(OpenMPClauseKind clause_kind,
   return parse_mode;
 }
 
+struct IteratorDelimiterState {
+  int parentheses = 0;
+  int brackets = 0;
+  int braces = 0;
+  int angles = 0;
+  char quote = '\0';
+  bool escaped = false;
+  bool raw_string = false;
+  bool raw_string_body_started = false;
+  std::string raw_string_delimiter;
+  std::string raw_string_terminator;
+
+  bool structuralTopLevel() const {
+    return parentheses == 0 && brackets == 0 && braces == 0;
+  }
+  bool fullyTopLevel() const { return structuralTopLevel() && angles == 0; }
+  bool balanced() const {
+    return fullyTopLevel() && quote == '\0' && !escaped && !raw_string;
+  }
+  void consumeQuoted(const std::string &text, std::size_t index) {
+    const char character = text[index];
+    if (quote == '\0') {
+      if (character == '\'' || character == '"') {
+        quote = character;
+        raw_string = character == '"' && index > 0 && text[index - 1] == 'R';
+        raw_string_body_started = false;
+        raw_string_delimiter.clear();
+        raw_string_terminator.clear();
+      }
+      return;
+    }
+    if (raw_string) {
+      if (!raw_string_body_started) {
+        if (character == '(') {
+          raw_string_body_started = true;
+          raw_string_terminator = ")" + raw_string_delimiter + "\"";
+        } else {
+          raw_string_delimiter.push_back(character);
+        }
+      } else if (index + 1 >= raw_string_terminator.size() &&
+                 text.compare(index + 1 - raw_string_terminator.size(),
+                              raw_string_terminator.size(),
+                              raw_string_terminator) == 0) {
+        quote = '\0';
+        raw_string = false;
+        raw_string_body_started = false;
+        raw_string_delimiter.clear();
+        raw_string_terminator.clear();
+      }
+      return;
+    }
+    if (escaped) {
+      escaped = false;
+    } else if (character == '\\') {
+      escaped = true;
+    } else if (character == quote) {
+      quote = '\0';
+    }
+  }
+};
+
+bool consumeIteratorDelimiter(IteratorDelimiterState &state,
+                              const std::string &text, std::size_t index,
+                              bool track_angles, std::string &error) {
+  const char character = text[index];
+  if (state.quote != '\0' || character == '\'' || character == '"') {
+    state.consumeQuoted(text, index);
+    return true;
+  }
+  switch (character) {
+  case '(':
+    ++state.parentheses;
+    break;
+  case ')':
+    if (--state.parentheses < 0) {
+      error = "unmatched ')' delimiter";
+      return false;
+    }
+    break;
+  case '[':
+    ++state.brackets;
+    break;
+  case ']':
+    if (--state.brackets < 0) {
+      error = "unmatched ']' delimiter";
+      return false;
+    }
+    break;
+  case '{':
+    ++state.braces;
+    break;
+  case '}':
+    if (--state.braces < 0) {
+      error = "unmatched '}' delimiter";
+      return false;
+    }
+    break;
+  case '<':
+    if (track_angles && state.structuralTopLevel()) {
+      ++state.angles;
+    }
+    break;
+  case '>':
+    if (track_angles && state.structuralTopLevel() && state.angles > 0) {
+      --state.angles;
+    }
+    break;
+  default:
+    break;
+  }
+  return true;
+}
+
+bool remainderBeginsIterator(const std::string &text, std::size_t begin,
+                             std::string &error) {
+  IteratorDelimiterState state;
+  for (std::size_t index = begin; index < text.size(); ++index) {
+    const char character = text[index];
+    if (!consumeIteratorDelimiter(state, text, index, true, error)) {
+      return false;
+    }
+    if (state.quote != '\0') {
+      continue;
+    }
+    if (character == '=' && state.fullyTopLevel()) {
+      return !trimWhitespace(text, begin, index - begin).empty();
+    }
+    const bool scope_colon =
+        character == ':' &&
+        ((index > begin && text[index - 1] == ':') ||
+         (index + 1 < text.size() && text[index + 1] == ':'));
+    if (((character == ':' && !scope_colon) || character == ',') &&
+        state.fullyTopLevel()) {
+      return false;
+    }
+  }
+  if (!state.balanced()) {
+    error = "unbalanced delimiters after iterator separator";
+  }
+  return false;
+}
+
+bool splitIteratorItems(const std::string &text,
+                        std::vector<std::string> &items, std::string &error) {
+  IteratorDelimiterState state;
+  std::size_t item_begin = 0;
+  bool saw_assignment = false;
+  for (std::size_t index = 0; index < text.size(); ++index) {
+    const char character = text[index];
+    if (!consumeIteratorDelimiter(state, text, index, !saw_assignment, error)) {
+      return false;
+    }
+    if (state.quote != '\0') {
+      continue;
+    }
+    if (character == '=' && state.fullyTopLevel()) {
+      saw_assignment = true;
+    } else if (character == ',' && state.fullyTopLevel() && saw_assignment) {
+      std::string remainder_error;
+      if (remainderBeginsIterator(text, index + 1, remainder_error)) {
+        const std::string item =
+            trimWhitespace(text, item_begin, index - item_begin);
+        if (item.empty()) {
+          error = "iterator list contains an empty item";
+          return false;
+        }
+        items.push_back(item);
+        item_begin = index + 1;
+        saw_assignment = false;
+        state = {};
+      } else if (!remainder_error.empty()) {
+        error = std::move(remainder_error);
+        return false;
+      }
+    }
+  }
+  if (!state.balanced()) {
+    error = "iterator list has unbalanced delimiters";
+    return false;
+  }
+  if (!saw_assignment) {
+    error = "iterator item has no assignment";
+    return false;
+  }
+  const std::string item = trimWhitespace(text, item_begin, text.size());
+  if (item.empty()) {
+    error = "iterator list has no final item";
+    return false;
+  }
+  items.push_back(item);
+  return true;
+}
+
+std::size_t findIteratorAssignment(const std::string &item,
+                                   std::string &error) {
+  IteratorDelimiterState state;
+  for (std::size_t index = 0; index < item.size(); ++index) {
+    const char character = item[index];
+    if (!consumeIteratorDelimiter(state, item, index, true, error)) {
+      return std::string::npos;
+    }
+    if (state.quote == '\0' && character == '=' && state.fullyTopLevel()) {
+      return index;
+    }
+  }
+  error = "iterator item has no top-level assignment";
+  return std::string::npos;
+}
+
+bool splitIteratorRange(const std::string &range,
+                        std::vector<std::string> &fields, std::string &error) {
+  IteratorDelimiterState state;
+  std::size_t field_begin = 0;
+  unsigned ternary_depth = 0;
+  for (std::size_t index = 0; index < range.size(); ++index) {
+    const char character = range[index];
+    if (!consumeIteratorDelimiter(state, range, index, false, error)) {
+      return false;
+    }
+    if (state.quote != '\0') {
+      continue;
+    }
+    if (character == '?' && state.structuralTopLevel()) {
+      ++ternary_depth;
+      continue;
+    }
+    const bool scope_colon =
+        character == ':' &&
+        ((index > 0 && range[index - 1] == ':') ||
+         (index + 1 < range.size() && range[index + 1] == ':'));
+    if (character == ':' && !scope_colon && state.structuralTopLevel()) {
+      if (ternary_depth > 0) {
+        --ternary_depth;
+      } else {
+        const std::string field =
+            trimWhitespace(range, field_begin, index - field_begin);
+        if (field.empty()) {
+          error = "iterator range contains an empty field";
+          return false;
+        }
+        fields.push_back(field);
+        field_begin = index + 1;
+      }
+    }
+  }
+  if (!state.balanced() || ternary_depth != 0) {
+    error = "iterator range has unbalanced delimiters";
+    return false;
+  }
+  const std::string field =
+      trimWhitespace(range, field_begin, range.size() - field_begin);
+  if (field.empty()) {
+    error = "iterator range has an empty final field";
+    return false;
+  }
+  fields.push_back(field);
+  if (fields.size() < 2 || fields.size() > 3) {
+    error = "iterator range must contain begin:end[:step]";
+    return false;
+  }
+  return true;
+}
+
+bool isOpenMPIdentifierSpelling(const std::string &spelling) {
+  return !spelling.empty() &&
+         (std::isalpha(static_cast<unsigned char>(spelling.front())) ||
+          spelling.front() == '_') &&
+         std::all_of(spelling.begin() + 1, spelling.end(),
+                     [](unsigned char character) {
+                       return std::isalnum(character) || character == '_';
+                     });
+}
+
+int hexadecimalDigitValue(char character) {
+  if (character >= '0' && character <= '9') {
+    return character - '0';
+  }
+  if (character >= 'a' && character <= 'f') {
+    return character - 'a' + 10;
+  }
+  if (character >= 'A' && character <= 'F') {
+    return character - 'A' + 10;
+  }
+  return -1;
+}
+
+bool appendUtf8Scalar(std::uint32_t value, std::string &output) {
+  if (value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) {
+    return false;
+  }
+  if (value <= 0x7f) {
+    output.push_back(static_cast<char>(value));
+  } else if (value <= 0x7ff) {
+    output.push_back(static_cast<char>(0xc0 | (value >> 6)));
+    output.push_back(static_cast<char>(0x80 | (value & 0x3f)));
+  } else if (value <= 0xffff) {
+    output.push_back(static_cast<char>(0xe0 | (value >> 12)));
+    output.push_back(static_cast<char>(0x80 | ((value >> 6) & 0x3f)));
+    output.push_back(static_cast<char>(0x80 | (value & 0x3f)));
+  } else {
+    output.push_back(static_cast<char>(0xf0 | (value >> 18)));
+    output.push_back(static_cast<char>(0x80 | ((value >> 12) & 0x3f)));
+    output.push_back(static_cast<char>(0x80 | ((value >> 6) & 0x3f)));
+    output.push_back(static_cast<char>(0x80 | (value & 0x3f)));
+  }
+  return true;
+}
+
+std::optional<std::string>
+decodeCxxStringLiteral(const std::string &spelling,
+                       const ParsedQuotedLiteral &literal) {
+  if (literal.raw) {
+    return spelling.substr(literal.content_begin,
+                           literal.content_end - literal.content_begin);
+  }
+  if (literal.content_begin == 0 ||
+      spelling[literal.content_begin - 1] != '"') {
+    return std::nullopt;
+  }
+
+  std::string identity;
+  identity.reserve(literal.content_end - literal.content_begin);
+  for (std::size_t index = literal.content_begin;
+       index < literal.content_end;) {
+    const char character = spelling[index++];
+    if (character != '\\') {
+      identity.push_back(character);
+      continue;
+    }
+    if (index == literal.content_end) {
+      return std::nullopt;
+    }
+
+    const char escaped = spelling[index++];
+    switch (escaped) {
+    case '\'':
+    case '"':
+    case '?':
+    case '\\':
+      identity.push_back(escaped);
+      continue;
+    case 'a':
+      identity.push_back('\a');
+      continue;
+    case 'b':
+      identity.push_back('\b');
+      continue;
+    case 'f':
+      identity.push_back('\f');
+      continue;
+    case 'n':
+      identity.push_back('\n');
+      continue;
+    case 'r':
+      identity.push_back('\r');
+      continue;
+    case 't':
+      identity.push_back('\t');
+      continue;
+    case 'v':
+      identity.push_back('\v');
+      continue;
+    case '\n':
+      continue;
+    case '\r':
+      if (index < literal.content_end && spelling[index] == '\n') {
+        ++index;
+      }
+      continue;
+    default:
+      break;
+    }
+
+    if (escaped >= '0' && escaped <= '7') {
+      std::uint32_t value = static_cast<std::uint32_t>(escaped - '0');
+      for (int digit = 1; digit < 3 && index < literal.content_end &&
+                          spelling[index] >= '0' && spelling[index] <= '7';
+           ++digit) {
+        value = value * 8 + static_cast<std::uint32_t>(spelling[index] - '0');
+        ++index;
+      }
+      if (value > 0xff) {
+        return std::nullopt;
+      }
+      identity.push_back(static_cast<char>(value));
+      continue;
+    }
+
+    if (escaped == 'x') {
+      std::uint32_t value = 0;
+      std::size_t digits = 0;
+      while (index < literal.content_end) {
+        const int digit = hexadecimalDigitValue(spelling[index]);
+        if (digit < 0) {
+          break;
+        }
+        if (value > (0xffu - static_cast<std::uint32_t>(digit)) / 16u) {
+          return std::nullopt;
+        }
+        value = value * 16u + static_cast<std::uint32_t>(digit);
+        ++index;
+        ++digits;
+      }
+      if (digits == 0) {
+        return std::nullopt;
+      }
+      identity.push_back(static_cast<char>(value));
+      continue;
+    }
+
+    if (escaped == 'u' || escaped == 'U') {
+      const std::size_t required_digits = escaped == 'u' ? 4 : 8;
+      if (required_digits > literal.content_end - index) {
+        return std::nullopt;
+      }
+      std::uint32_t value = 0;
+      for (std::size_t digit_index = 0; digit_index < required_digits;
+           ++digit_index) {
+        const int digit = hexadecimalDigitValue(spelling[index++]);
+        if (digit < 0 || value > (0x10ffffu - digit) / 16u) {
+          return std::nullopt;
+        }
+        value = value * 16u + static_cast<std::uint32_t>(digit);
+      }
+      if (!appendUtf8Scalar(value, identity)) {
+        return std::nullopt;
+      }
+      continue;
+    }
+
+    return std::nullopt;
+  }
+  return identity;
+}
+
+std::optional<std::string>
+normalizeOpenMPNamePropertyIdentity(const std::string &spelling,
+                                    OpenMPBaseLang language) {
+  if (isOpenMPIdentifierSpelling(spelling)) {
+    return spelling;
+  }
+  ParsedQuotedLiteral literal;
+  if (language == Lang_Fortran &&
+      parseFortranQuotedLiteralAt(spelling, 0, &literal) &&
+      literal.end == spelling.size()) {
+    std::string identity;
+    identity.reserve(literal.content_end - literal.content_begin);
+    const char delimiter = spelling.front();
+    for (std::size_t index = literal.content_begin; index < literal.content_end;
+         ++index) {
+      identity.push_back(spelling[index]);
+      if (spelling[index] == delimiter && index + 1 < literal.content_end &&
+          spelling[index + 1] == delimiter) {
+        ++index;
+      }
+    }
+    return identity;
+  }
+  if ((language == Lang_C || language == Lang_Cplusplus) &&
+      parseCxxQuotedLiteralAt(spelling, 0, &literal) &&
+      literal.end == spelling.size() &&
+      (language == Lang_Cplusplus || !literal.raw)) {
+    return decodeCxxStringLiteral(spelling, literal);
+  }
+  return std::nullopt;
+}
+
+const char *contextKindIdentity(OpenMPClauseContextKind kind) {
+  switch (kind) {
+  case OMPC_CONTEXT_KIND_host:
+    return "host";
+  case OMPC_CONTEXT_KIND_nohost:
+    return "nohost";
+  case OMPC_CONTEXT_KIND_any:
+    return "any";
+  case OMPC_CONTEXT_KIND_cpu:
+    return "cpu";
+  case OMPC_CONTEXT_KIND_gpu:
+    return "gpu";
+  case OMPC_CONTEXT_KIND_fpga:
+    return "fpga";
+  case OMPC_CONTEXT_KIND_unknown:
+    return nullptr;
+  }
+  return nullptr;
+}
+
+const char *contextVendorIdentity(OpenMPClauseContextVendor vendor) {
+  switch (vendor) {
+  case OMPC_CONTEXT_VENDOR_amd:
+    return "amd";
+  case OMPC_CONTEXT_VENDOR_arm:
+    return "arm";
+  case OMPC_CONTEXT_VENDOR_bsc:
+    return "bsc";
+  case OMPC_CONTEXT_VENDOR_cray:
+    return "cray";
+  case OMPC_CONTEXT_VENDOR_fujitsu:
+    return "fujitsu";
+  case OMPC_CONTEXT_VENDOR_gnu:
+    return "gnu";
+  case OMPC_CONTEXT_VENDOR_ibm:
+    return "ibm";
+  case OMPC_CONTEXT_VENDOR_intel:
+    return "intel";
+  case OMPC_CONTEXT_VENDOR_llvm:
+    return "llvm";
+  case OMPC_CONTEXT_VENDOR_nvidia:
+    return "nvidia";
+  case OMPC_CONTEXT_VENDOR_pgi:
+    return "pgi";
+  case OMPC_CONTEXT_VENDOR_ti:
+    return "ti";
+  case OMPC_CONTEXT_VENDOR_user:
+    return "user";
+  case OMPC_CONTEXT_VENDOR_unknown:
+    return "unknown";
+  case OMPC_CONTEXT_VENDOR_unspecified:
+    return nullptr;
+  }
+  return nullptr;
+}
+
+bool isKnownContextKindIdentity(const std::string &identity) {
+  static constexpr const char *Names[] = {"host", "nohost", "any",
+                                          "cpu",  "gpu",    "fpga"};
+  return std::find(std::begin(Names), std::end(Names), identity) !=
+         std::end(Names);
+}
+
+bool isKnownContextVendorIdentity(const std::string &identity) {
+  static constexpr const char *Names[] = {
+      "amd",   "arm",  "bsc",    "cray", "fujitsu", "gnu",  "ibm",
+      "intel", "llvm", "nvidia", "pgi",  "ti",      "user", "unknown"};
+  return std::find(std::begin(Names), std::end(Names), identity) !=
+         std::end(Names);
+}
+
+std::size_t findTopLevelMapperColon(const std::string &text,
+                                    std::string &error) {
+  IteratorDelimiterState state;
+  std::size_t mapper_colon = std::string::npos;
+  for (std::size_t index = 0; index < text.size(); ++index) {
+    const char character = text[index];
+    if (!consumeIteratorDelimiter(state, text, index, true, error)) {
+      return std::string::npos;
+    }
+    if (state.quote != '\0') {
+      continue;
+    }
+    const bool scope_colon =
+        character == ':' &&
+        ((index > 0 && text[index - 1] == ':') ||
+         (index + 1 < text.size() && text[index + 1] == ':'));
+    if (character == ':' && !scope_colon && state.fullyTopLevel()) {
+      if (mapper_colon != std::string::npos) {
+        error = "declare mapper has more than one top-level identifier colon";
+        return std::string::npos;
+      }
+      mapper_colon = index;
+    }
+  }
+  if (!state.balanced()) {
+    error = "declare mapper specification has unbalanced delimiters";
+    return std::string::npos;
+  }
+  return mapper_colon;
+}
+
 } // namespace
 
+bool parseOpenMPIteratorDefinitions(const char *spelling,
+                                    std::vector<OpenMPIterator> &result,
+                                    std::string &error) {
+  result.clear();
+  error.clear();
+  if (spelling == nullptr) {
+    error = "iterator specifier list is null";
+    return false;
+  }
+  const std::string text(spelling);
+  ompparser::SourceRange source_range;
+  const bool has_source_range =
+      openmpGetLexemeSourceRange(spelling, source_range);
+  std::vector<std::string> items;
+  if (!splitIteratorItems(text, items, error)) {
+    return false;
+  }
+  std::size_t item_search_begin = 0;
+  for (const std::string &item : items) {
+    const std::size_t item_begin = text.find(item, item_search_begin);
+    if (item_begin == std::string::npos) {
+      error = "iterator item is not a source-faithful substring";
+      result.clear();
+      return false;
+    }
+    item_search_begin = item_begin + item.size();
+    const std::size_t assignment = findIteratorAssignment(item, error);
+    if (assignment == std::string::npos) {
+      result.clear();
+      return false;
+    }
+    const std::string declaration = trimWhitespace(item, 0, assignment);
+    const std::string range =
+        trimWhitespace(item, assignment + 1, item.size() - assignment - 1);
+    std::size_t name_end = declaration.size();
+    while (name_end > 0 && std::isspace(static_cast<unsigned char>(
+                               declaration[name_end - 1]))) {
+      --name_end;
+    }
+    std::size_t name_begin = name_end;
+    while (name_begin > 0) {
+      const unsigned char character =
+          static_cast<unsigned char>(declaration[name_begin - 1]);
+      if (!std::isalnum(character) && character != '_') {
+        break;
+      }
+      --name_begin;
+    }
+    const std::string name =
+        declaration.substr(name_begin, name_end - name_begin);
+    if (name.empty() ||
+        !(std::isalpha(static_cast<unsigned char>(name.front())) ||
+          name.front() == '_') ||
+        !std::all_of(name.begin() + 1, name.end(), [](unsigned char value) {
+          return std::isalnum(value) || value == '_';
+        })) {
+      error = "iterator declaration has no final identifier";
+      result.clear();
+      return false;
+    }
+    const std::string qualifier = trimWhitespace(declaration, 0, name_begin);
+    std::vector<std::string> fields;
+    if (!splitIteratorRange(range, fields, error)) {
+      result.clear();
+      return false;
+    }
+    OpenMPIterator iterator;
+    iterator.set(qualifier, name, fields[0], fields[1],
+                 fields.size() == 3 ? fields[2] : std::string());
+    const std::size_t declaration_begin = item.find(declaration);
+    const std::size_t range_begin = item.find(range, assignment + 1);
+    if (declaration_begin == std::string::npos ||
+        range_begin == std::string::npos) {
+      error = "iterator fields are not source-faithful substrings";
+      result.clear();
+      return false;
+    }
+    const std::size_t name_offset = declaration_begin + name_begin;
+    if (!qualifier.empty()) {
+      const std::size_t qualifier_offset = declaration.find(qualifier);
+      if (qualifier_offset == std::string::npos) {
+        error = "iterator qualifier is not a source-faithful substring";
+        result.clear();
+        return false;
+      }
+      assignSubfragmentRange(iterator.qualifier, text,
+                             item_begin + declaration_begin + qualifier_offset,
+                             item_begin + declaration_begin + qualifier_offset +
+                                 qualifier.size(),
+                             source_range, has_source_range);
+    }
+    assignSubfragmentRange(iterator.variable, text, item_begin + name_offset,
+                           item_begin + name_offset + name.size(), source_range,
+                           has_source_range);
+    std::size_t field_search_begin = 0;
+    ompparser::HostFragment *fragments[] = {&iterator.begin, &iterator.end,
+                                            &iterator.step};
+    for (std::size_t field_index = 0; field_index < fields.size();
+         ++field_index) {
+      const std::size_t field_begin =
+          range.find(fields[field_index], field_search_begin);
+      if (field_begin == std::string::npos) {
+        error = "iterator range field is not a source-faithful substring";
+        result.clear();
+        return false;
+      }
+      assignSubfragmentRange(
+          *fragments[field_index], text, item_begin + range_begin + field_begin,
+          item_begin + range_begin + field_begin + fields[field_index].size(),
+          source_range, has_source_range);
+      field_search_begin = field_begin + fields[field_index].size();
+    }
+    result.push_back(std::move(iterator));
+  }
+  return true;
+}
+
 void OpenMPApplyClause::setLabel(const char *value) {
-  label = makeHostFragment(value, ompparser::HostFragmentRole::Declarator);
+  label = makeHostFragment(value, ompparser::HostFragmentRole::Verbatim,
+                           OMP_EXPR_PARSE_openmp_syntax);
 }
 
 void OpenMPApplyClause::addTransformation(OpenMPApplyTransformKind kind,
@@ -643,8 +1534,13 @@ void OpenMPApplyClause::addTransformation(OpenMPApplyTransformKind kind,
                                           OpenMPClauseSeparator sep) {
   ApplyTransform t;
   t.kind = kind;
-  t.argument =
-      makeHostFragment(argument, ompparser::HostFragmentRole::Expression);
+  t.argument = makeHostFragment(argument,
+                                kind == OMPC_APPLY_TRANSFORM_unknown
+                                    ? ompparser::HostFragmentRole::Verbatim
+                                    : ompparser::HostFragmentRole::Expression,
+                                kind == OMPC_APPLY_TRANSFORM_unknown
+                                    ? OMP_EXPR_PARSE_openmp_syntax
+                                    : OMP_EXPR_PARSE_expression);
   t.separator = sep;
   transforms.push_back(std::move(t));
 }
@@ -652,7 +1548,7 @@ void OpenMPApplyClause::addTransformation(OpenMPApplyTransformKind kind,
 void OpenMPApplyClause::addNestedApply(OpenMPApplyClause *nested,
                                        OpenMPClauseSeparator sep) {
   if (nested == nullptr) {
-    return;
+    throw std::invalid_argument("nested apply transformation is null");
   }
   ApplyTransform t;
   t.kind = OMPC_APPLY_TRANSFORM_apply;
@@ -663,15 +1559,32 @@ void OpenMPApplyClause::addNestedApply(OpenMPApplyClause *nested,
 
 OpenMPClause *
 OpenMPDirective::registerClause(std::unique_ptr<OpenMPClause> clause) {
-  if (clause != nullptr) {
-    clause->setDirectiveKind(this->kind);
+  if (clause == nullptr) {
+    throw std::invalid_argument("cannot register a null clause");
   }
+  clause->setDirectiveKind(this->kind);
+  clause->setBaseLang(this->lang);
   OpenMPClause *raw_ptr = clause.get();
   clause_storage.push_back(std::move(clause));
   return raw_ptr;
 }
 
+void OpenMPDirective::setBaseLang(OpenMPBaseLang value) {
+  lang = value;
+  for (const std::unique_ptr<OpenMPClause> &clause : clause_storage) {
+    if (clause == nullptr) {
+      throw std::logic_error("cannot assign a base language to a null clause");
+    }
+    clause->setBaseLang(value);
+  }
+}
+
 void OpenMPDirective::adoptClausesFrom(OpenMPDirective &source) {
+  if (lang != Lang_unknown && source.lang != Lang_unknown &&
+      lang != source.lang) {
+    throw std::logic_error(
+        "cannot adopt clauses from a directive in another base language");
+  }
   for (auto &entry : source.clauses) {
     auto &destination = clauses[entry.first];
     destination.insert(destination.end(), entry.second.begin(),
@@ -680,11 +1593,13 @@ void OpenMPDirective::adoptClausesFrom(OpenMPDirective &source) {
   source.clauses.clear();
 
   for (OpenMPClause *clause : source.clauses_in_original_order) {
-    if (clause == nullptr ||
-        std::find(clauses_in_original_order.begin(),
+    if (clause == nullptr) {
+      throw std::logic_error("cannot adopt a null clause-order entry");
+    }
+    if (std::find(clauses_in_original_order.begin(),
                   clauses_in_original_order.end(),
                   clause) != clauses_in_original_order.end()) {
-      continue;
+      throw std::logic_error("cannot adopt a duplicate clause-order entry");
     }
     clause->setClausePosition(
         static_cast<int>(clauses_in_original_order.size()));
@@ -693,6 +1608,10 @@ void OpenMPDirective::adoptClausesFrom(OpenMPDirective &source) {
   source.clauses_in_original_order.clear();
 
   for (std::unique_ptr<OpenMPClause> &clause : source.clause_storage) {
+    if (clause == nullptr) {
+      throw std::logic_error("cannot adopt a null owned clause");
+    }
+    clause->setBaseLang(lang != Lang_unknown ? lang : source.lang);
     clause_storage.push_back(std::move(clause));
   }
   source.clause_storage.clear();
@@ -713,6 +1632,8 @@ bool OpenMPDirective::validateInvariants(
       errors.push_back("directive owns the same clause more than once");
       continue;
     }
+    errors.insert(errors.end(), clause->getConstructionErrors().begin(),
+                  clause->getConstructionErrors().end());
     owned.push_back(clause.get());
   }
 
@@ -808,13 +1729,13 @@ void OpenMPGroupprivateDirective::addGroupprivateList(const char *item) {
 }
 
 void OpenMPDeclareSimdDirective::addProcName(const char *name) {
-  proc_name = makeHostFragment(name, ompparser::HostFragmentRole::Declarator);
+  proc_name = makeHostFragment(name, ompparser::HostFragmentRole::Expression);
 }
 
 void OpenMPDeclareTargetDirective::addExtendedList(const char *item) {
   if (item != nullptr) {
     extended_list.push_back(
-        makeHostFragment(item, ompparser::HostFragmentRole::Variable));
+        makeHostFragment(item, ompparser::HostFragmentRole::Locator));
   }
 }
 
@@ -826,7 +1747,7 @@ void OpenMPFlushDirective::addFlushList(const char *item) {
 }
 
 void OpenMPDepobjDirective::addDepobj(const char *item) {
-  depobj = makeHostFragment(item, ompparser::HostFragmentRole::Variable);
+  depobj = makeHostFragment(item, ompparser::HostFragmentRole::Expression);
 }
 
 void OpenMPDependClause::addDependenceVector(const char *dependence) {
@@ -836,12 +1757,18 @@ void OpenMPDependClause::addDependenceVector(const char *dependence) {
 
 void OpenMPReductionClause::setUserDefinedIdentifier(const char *identifier) {
   user_defined_identifier =
-      makeHostFragment(identifier, ompparser::HostFragmentRole::Declarator);
+      makeHostFragment(identifier, ompparser::HostFragmentRole::Declarator,
+                       OMP_EXPR_PARSE_openmp_syntax);
 }
 
-void OpenMPReductionClause::setUserDefinedModifier(const char *modifier) {
-  user_defined_modifier =
-      makeHostFragment(modifier, ompparser::HostFragmentRole::Declarator);
+void OpenMPReductionClause::setUserDefinedIdentifierSourceRange(
+    const ompparser::SourceRange &source_range) {
+  if (user_defined_identifier.spelling.empty() ||
+      source_range.end.offset <= source_range.begin.offset) {
+    throw std::invalid_argument(
+        "reduction identifier requires a nonempty exact source range");
+  }
+  user_defined_identifier.range = source_range;
 }
 
 void OpenMPIfClause::setUserDefinedModifier(const char *modifier) {
@@ -851,41 +1778,69 @@ void OpenMPIfClause::setUserDefinedModifier(const char *modifier) {
 
 void OpenMPInReductionClause::setUserDefinedIdentifier(const char *identifier) {
   user_defined_identifier =
-      makeHostFragment(identifier, ompparser::HostFragmentRole::Declarator);
+      makeHostFragment(identifier, ompparser::HostFragmentRole::Declarator,
+                       OMP_EXPR_PARSE_openmp_syntax);
 }
 
 void OpenMPTaskReductionClause::setUserDefinedIdentifier(
     const char *identifier) {
   user_defined_identifier =
-      makeHostFragment(identifier, ompparser::HostFragmentRole::Declarator);
+      makeHostFragment(identifier, ompparser::HostFragmentRole::Declarator,
+                       OMP_EXPR_PARSE_openmp_syntax);
 }
 
 void OpenMPAllocateClause::setUserDefinedAllocator(const char *_allocator) {
-  if (_allocator == nullptr) {
+  if (_allocator == nullptr || *_allocator == '\0' ||
+      !user_defined_allocator.spelling.empty()) {
+    construction_errors.push_back(
+        "allocate clause allocator is empty or was assigned twice");
     return;
   }
-  const std::string value(_allocator);
-  if (user_defined_allocator.spelling.empty()) {
-    user_defined_allocator =
-        makeHostFragment(_allocator, ompparser::HostFragmentRole::Expression);
-    return;
-  }
-  const auto existing = std::find_if(
-      extra_allocator_parameters.begin(), extra_allocator_parameters.end(),
-      [&value](const ompparser::HostFragment &parameter) {
-        return parameter.spelling == value;
-      });
-  if (value != user_defined_allocator.spelling &&
-      existing == extra_allocator_parameters.end()) {
-    addExtraAllocatorParameter(_allocator);
-  }
+  user_defined_allocator =
+      makeHostFragment(_allocator, ompparser::HostFragmentRole::Expression);
+  user_defined_allocator.clause_kind = kind;
 }
 
-void OpenMPAllocateClause::addExtraAllocatorParameter(const char *parameter) {
-  if (parameter != nullptr) {
-    extra_allocator_parameters.push_back(
-        makeHostFragment(parameter, ompparser::HostFragmentRole::Expression));
+void OpenMPAllocateClause::setAllocatorModifier(const char *allocator) {
+  if (allocator == nullptr || *allocator == '\0' ||
+      this->allocator != OMPC_ALLOCATE_ALLOCATOR_unspecified ||
+      !user_defined_allocator.spelling.empty() ||
+      (!modifier_order.empty() &&
+       std::find(modifier_order.begin(), modifier_order.end(),
+                 ModifierKind::Allocator) != modifier_order.end())) {
+    construction_errors.push_back(
+        "allocate clause has duplicate or mixed allocator syntax");
+    return;
   }
+  setUserDefinedAllocator(allocator);
+  if (user_defined_allocator.spelling.empty()) {
+    construction_errors.push_back(
+        "allocate allocator modifier has no typed allocator payload");
+    return;
+  }
+  this->allocator = OMPC_ALLOCATE_ALLOCATOR_user;
+  modifier_order.push_back(ModifierKind::Allocator);
+}
+
+void OpenMPAllocateClause::setAlignModifier(const char *value) {
+  const bool has_legacy_allocator =
+      allocator != OMPC_ALLOCATE_ALLOCATOR_unspecified &&
+      allocator != OMPC_ALLOCATE_ALLOCATOR_user;
+  if (value == nullptr || *value == '\0' || !alignment.spelling.empty() ||
+      has_legacy_allocator) {
+    construction_errors.push_back(
+        "allocate clause alignment is empty, was assigned twice, or was "
+        "combined with exclusive legacy allocator syntax");
+    return;
+  }
+  alignment = makeHostFragment(value, ompparser::HostFragmentRole::Expression);
+  alignment.clause_kind = kind;
+  modifier_order.push_back(ModifierKind::Align);
+}
+
+bool OpenMPAllocateClause::usesAllocatorModifierSyntax() const {
+  return std::find(modifier_order.begin(), modifier_order.end(),
+                   ModifierKind::Allocator) != modifier_order.end();
 }
 
 void OpenMPAllocatorClause::setUserDefinedAllocator(const char *allocator) {
@@ -922,7 +1877,8 @@ void OpenMPToClause::setMapperIdentifier(const char *_identifier) {
     return;
   }
   mapper_identifier =
-      makeHostFragment(_identifier, ompparser::HostFragmentRole::Declarator);
+      makeHostFragment(_identifier, ompparser::HostFragmentRole::Declarator,
+                       OMP_EXPR_PARSE_verbatim);
 }
 
 void OpenMPFromClause::setMapperIdentifier(const char *_identifier) {
@@ -931,7 +1887,18 @@ void OpenMPFromClause::setMapperIdentifier(const char *_identifier) {
     return;
   }
   mapper_identifier =
-      makeHostFragment(_identifier, ompparser::HostFragmentRole::Declarator);
+      makeHostFragment(_identifier, ompparser::HostFragmentRole::Declarator,
+                       OMP_EXPR_PARSE_verbatim);
+}
+
+void OpenMPMapClause::setMapperIdentifier(const char *_identifier) {
+  if (_identifier == nullptr) {
+    mapper_identifier = {};
+    return;
+  }
+  mapper_identifier =
+      makeHostFragment(_identifier, ompparser::HostFragmentRole::Declarator,
+                       OMP_EXPR_PARSE_verbatim);
 }
 
 void OpenMPDeclareReductionDirective::addTypenameList(
@@ -952,157 +1919,410 @@ void OpenMPInitializerClause::setUserDefinedPriv(const char *_priv) {
 void OpenMPDeclareMapperDirective::setUserDefinedIdentifier(
     const char *_user_defined_identifier) {
   user_defined_identifier = makeHostFragment(
-      _user_defined_identifier, ompparser::HostFragmentRole::Declarator);
+      _user_defined_identifier, ompparser::HostFragmentRole::Declarator,
+      OMP_EXPR_PARSE_openmp_declare_mapper_identifier);
 }
 
 void OpenMPDeclareMapperDirective::setDeclareMapperType(
     const char *_declare_mapper_type) {
   type =
-      makeHostFragment(_declare_mapper_type, ompparser::HostFragmentRole::Type);
+      makeHostFragment(_declare_mapper_type, ompparser::HostFragmentRole::Type,
+                       OMP_EXPR_PARSE_openmp_declare_mapper_type);
 }
 
 void OpenMPDeclareMapperDirective::setDeclareMapperVar(
     const char *_declare_mapper_variable) {
   var = makeHostFragment(_declare_mapper_variable,
-                         ompparser::HostFragmentRole::Variable);
+                         ompparser::HostFragmentRole::Variable,
+                         OMP_EXPR_PARSE_openmp_declare_mapper_variable);
 }
 
-void OpenMPVariantClause::setUserCondition(const char *score,
-                                           const char *condition_expression) {
-  ++user_condition_count;
-  user_condition_expression.score =
-      makeHostFragment(score, ompparser::HostFragmentRole::Expression);
-  user_condition_expression.expression = makeHostFragment(
-      condition_expression, ompparser::HostFragmentRole::Expression);
+bool OpenMPDeclareMapperDirective::setSpecification(
+    const char *specification, OpenMPBaseLang language,
+    OpenMPBaseLang &resolved_language, std::string &error) {
+  resolved_language = Lang_unknown;
+  error.clear();
+  if (specification == nullptr ||
+      identifier != OMPD_DECLARE_MAPPER_IDENTIFIER_unspecified ||
+      identifier_explicit || !user_defined_identifier.spelling.empty() ||
+      !type.spelling.empty() || !var.spelling.empty()) {
+    error = "declare mapper specification is null or was assigned twice";
+    return false;
+  }
+  const std::string source(specification);
+  const std::size_t text_begin = source.find_first_not_of(" \t\n\r\f\v");
+  const std::size_t text_end = source.find_last_not_of(" \t\n\r\f\v");
+  const std::string text =
+      text_begin == std::string::npos
+          ? std::string()
+          : source.substr(text_begin, text_end - text_begin + 1);
+  if (text.empty()) {
+    error = "declare mapper specification is empty";
+    return false;
+  }
+
+  const std::size_t mapper_colon = findTopLevelMapperColon(text, error);
+  if (!error.empty()) {
+    return false;
+  }
+  OpenMPDeclareMapperDirectiveIdentifier parsed_identifier =
+      OMPD_DECLARE_MAPPER_IDENTIFIER_default;
+  bool parsed_identifier_explicit = false;
+  std::string parsed_user_identifier;
+  std::string declaration = text;
+  std::size_t declaration_begin = 0;
+  std::size_t identifier_begin = std::string::npos;
+  if (mapper_colon != std::string::npos) {
+    parsed_identifier_explicit = true;
+    const std::string mapper_identifier = trimWhitespace(text, 0, mapper_colon);
+    declaration =
+        trimWhitespace(text, mapper_colon + 1, text.size() - mapper_colon - 1);
+    identifier_begin = text.find(mapper_identifier);
+    declaration_begin = text.find(declaration, mapper_colon + 1);
+    const bool is_default_identifier =
+        mapper_identifier == "default" ||
+        (language == Lang_Fortran &&
+         equalsIgnoringAsciiCase(mapper_identifier, "default"));
+    if (is_default_identifier) {
+      parsed_identifier = OMPD_DECLARE_MAPPER_IDENTIFIER_default;
+    } else if (isOpenMPIdentifierSpelling(mapper_identifier)) {
+      parsed_identifier = OMPD_DECLARE_MAPPER_IDENTIFIER_user;
+      parsed_user_identifier = mapper_identifier;
+    } else {
+      error = "declare mapper identifier is not one identifier";
+      return false;
+    }
+  }
+  if (declaration.empty()) {
+    error = "declare mapper type and variable are empty";
+    return false;
+  }
+
+  std::string parsed_type;
+  std::string parsed_variable;
+  bool parsed_type_var_space = false;
+  std::size_t parsed_type_begin = std::string::npos;
+  std::size_t parsed_variable_begin = std::string::npos;
+  if (language == Lang_Fortran) {
+    const std::size_t separator = declaration.find("::");
+    if (separator == std::string::npos ||
+        declaration.find("::", separator + 2) != std::string::npos) {
+      error = "Fortran declare mapper requires one 'type :: variable' "
+              "separator";
+      return false;
+    }
+    parsed_type = trimWhitespace(declaration, 0, separator);
+    parsed_variable = trimWhitespace(declaration, separator + 2,
+                                     declaration.size() - separator - 2);
+    parsed_type_begin = declaration.find(parsed_type);
+    parsed_variable_begin = declaration.find(parsed_variable, separator + 2);
+    parsed_type_var_space = true;
+  } else if (language == Lang_C || language == Lang_Cplusplus) {
+    std::size_t variable_end = declaration.size();
+    while (variable_end > 0 && std::isspace(static_cast<unsigned char>(
+                                   declaration[variable_end - 1]))) {
+      --variable_end;
+    }
+    std::size_t variable_begin = variable_end;
+    while (variable_begin > 0) {
+      const unsigned char character =
+          static_cast<unsigned char>(declaration[variable_begin - 1]);
+      if (!std::isalnum(character) && character != '_') {
+        break;
+      }
+      --variable_begin;
+    }
+    parsed_variable =
+        declaration.substr(variable_begin, variable_end - variable_begin);
+    parsed_type = trimWhitespace(declaration, 0, variable_begin);
+    parsed_type_begin = declaration.find(parsed_type);
+    parsed_variable_begin = variable_begin;
+    parsed_type_var_space =
+        variable_begin > 0 && std::isspace(static_cast<unsigned char>(
+                                  declaration[variable_begin - 1]));
+  } else {
+    error = "declare mapper has no exact base language";
+    return false;
+  }
+  if (parsed_type.empty() || !isOpenMPIdentifierSpelling(parsed_variable)) {
+    error = "declare mapper does not have an exact type and variable";
+    return false;
+  }
+  if ((mapper_colon != std::string::npos &&
+       (identifier_begin == std::string::npos ||
+        declaration_begin == std::string::npos)) ||
+      parsed_type_begin == std::string::npos ||
+      parsed_variable_begin == std::string::npos) {
+    error = "declare mapper fields are not source-faithful substrings";
+    return false;
+  }
+
+  identifier = parsed_identifier;
+  identifier_explicit = parsed_identifier_explicit;
+  ompparser::SourceRange source_range;
+  const bool has_source_range =
+      openmpGetLexemeSourceRange(specification, source_range);
+  if (!parsed_user_identifier.empty()) {
+    setUserDefinedIdentifier(parsed_user_identifier.c_str());
+    assignSubfragmentRange(
+        user_defined_identifier, source, text_begin + identifier_begin,
+        text_begin + identifier_begin + parsed_user_identifier.size(),
+        source_range, has_source_range);
+  }
+  setDeclareMapperType(parsed_type.c_str());
+  setDeclareMapperVar(parsed_variable.c_str());
+  assignSubfragmentRange(
+      type, source, text_begin + declaration_begin + parsed_type_begin,
+      text_begin + declaration_begin + parsed_type_begin + parsed_type.size(),
+      source_range, has_source_range);
+  assignSubfragmentRange(var, source,
+                         text_begin + declaration_begin + parsed_variable_begin,
+                         text_begin + declaration_begin +
+                             parsed_variable_begin + parsed_variable.size(),
+                         source_range, has_source_range);
+  type_var_has_space = parsed_type_var_space;
+  resolved_language = language;
+  return true;
 }
 
-void OpenMPVariantClause::addConstructDirectiveImpl(
-    const char *score, OpenMPDirective *construct_directive) {
-  ScoredConstruct construct;
-  construct.score =
-      makeHostFragment(score, ompparser::HostFragmentRole::Expression);
-  construct.directive = construct_directive;
-  construct_directives.push_back(std::move(construct));
+void OpenMPVariantClause::recordVariantError(const std::string &message) {
+  construction_errors.push_back(message);
 }
 
-void OpenMPVariantClause::setArchExpression(const char *score,
-                                            const char *expression) {
-  DeviceSelectorData &selector =
-      getDeviceSelectorData(is_target_device_selector);
-  ++selector.arch_expression_count;
-  selector.arch_expression.score =
-      makeHostFragment(score, ompparser::HostFragmentRole::Expression);
-  selector.arch_expression.expression =
-      makeHostFragment(expression, ompparser::HostFragmentRole::Verbatim);
+OpenMPVariantClause::TraitSetSelector *
+OpenMPVariantClause::activeTraitSet(const char *operation) {
+  if (!active_trait_set || *active_trait_set >= trait_sets.size()) {
+    recordVariantError(std::string(operation) +
+                       " requires an active context selector set");
+    return nullptr;
+  }
+  return &trait_sets[*active_trait_set];
 }
 
-void OpenMPVariantClause::setIsaExpression(const char *score,
-                                           const char *expression) {
-  DeviceSelectorData &selector =
-      getDeviceSelectorData(is_target_device_selector);
-  ++selector.isa_expression_count;
-  selector.isa_expression.score =
-      makeHostFragment(score, ompparser::HostFragmentRole::Expression);
-  selector.isa_expression.expression =
-      makeHostFragment(expression, ompparser::HostFragmentRole::Verbatim);
+OpenMPVariantClause::TraitSelector *
+OpenMPVariantClause::activeTraitSelector(const char *operation) {
+  TraitSetSelector *set = activeTraitSet(operation);
+  if (set == nullptr || !active_trait_selector ||
+      *active_trait_selector >= set->selectors.size()) {
+    recordVariantError(std::string(operation) +
+                       " requires an active trait selector");
+    return nullptr;
+  }
+  return &set->selectors[*active_trait_selector];
 }
 
-void OpenMPVariantClause::setContextKind(const char *score,
-                                         OpenMPClauseContextKind context_kind) {
-  DeviceSelectorData &selector =
-      getDeviceSelectorData(is_target_device_selector);
-  ++selector.context_kind_count;
-  selector.context_kind_name.score =
-      makeHostFragment(score, ompparser::HostFragmentRole::Expression);
-  selector.context_kind_name.kind = context_kind;
+void OpenMPVariantClause::beginTraitSet(
+    OpenMPContextSelectorSequenceKind kind) {
+  if (active_trait_set) {
+    recordVariantError("context selector sets cannot be nested");
+    return;
+  }
+  TraitSetSelector set;
+  set.kind = kind;
+  trait_sets.push_back(std::move(set));
+  active_trait_set = trait_sets.size() - 1;
+  active_trait_selector.reset();
 }
 
-void OpenMPVariantClause::setDeviceNumExpression(const char *score,
-                                                 const char *expression) {
-  DeviceSelectorData &selector =
-      getDeviceSelectorData(is_target_device_selector);
-  ++selector.device_num_expression_count;
-  selector.device_num_expression.score =
-      makeHostFragment(score, ompparser::HostFragmentRole::Expression);
-  selector.device_num_expression.expression =
-      makeHostFragment(expression, ompparser::HostFragmentRole::Expression);
+void OpenMPVariantClause::endTraitSet() {
+  if (!active_trait_set) {
+    recordVariantError("context selector set terminator has no matching set");
+    return;
+  }
+  if (active_trait_selector) {
+    recordVariantError("context selector set ended inside a trait selector");
+    active_trait_selector.reset();
+  }
+  active_trait_set.reset();
 }
 
-void OpenMPVariantClause::setExtensionExpression(const char *score,
-                                                 const char *expression) {
-  ++extension_expression_count;
-  extension_expression.score =
-      makeHostFragment(score, ompparser::HostFragmentRole::Expression);
-  extension_expression.expression =
-      makeHostFragment(expression, ompparser::HostFragmentRole::Verbatim);
+void OpenMPVariantClause::beginTraitSelector(
+    OpenMPContextTraitSelectorKind kind, const char *score,
+    const char *implementation_defined_name) {
+  TraitSetSelector *set = activeTraitSet("trait selector");
+  if (set == nullptr) {
+    return;
+  }
+  if (active_trait_selector) {
+    recordVariantError("trait selectors cannot be nested");
+    return;
+  }
+  TraitSelector selector;
+  selector.kind = kind;
+  selector.score =
+      makeHostFragment(score, ompparser::HostFragmentRole::Expression,
+                       OMP_EXPR_PARSE_constant_integer);
+  selector.score.clause_kind = getKind();
+  if (implementation_defined_name != nullptr) {
+    selector.implementation_defined_name =
+        trimWhitespace(implementation_defined_name);
+  }
+  set->selectors.push_back(std::move(selector));
+  active_trait_selector = set->selectors.size() - 1;
 }
 
-void OpenMPVariantClause::setImplementationKind(
-    const char *score, OpenMPClauseContextVendor context_vendor) {
-  ++implementation_kind_count;
-  context_vendor_name.score =
-      makeHostFragment(score, ompparser::HostFragmentRole::Expression);
-  context_vendor_name.vendor = context_vendor;
+void OpenMPVariantClause::addExpressionProperty(
+    const char *expression, OpenMPExprParseMode parse_mode) {
+  TraitSelector *selector = activeTraitSelector("trait property");
+  if (selector == nullptr || expression == nullptr) {
+    if (expression == nullptr) {
+      recordVariantError("trait expression property is null");
+    }
+    return;
+  }
+  TraitProperty property;
+  const ompparser::HostFragmentRole role =
+      parse_mode == OMP_EXPR_PARSE_verbatim
+          ? ompparser::HostFragmentRole::Verbatim
+          : ompparser::HostFragmentRole::Expression;
+  property.fragment = makeHostFragment(expression, role, parse_mode);
+  property.fragment.clause_kind = getKind();
+  selector->properties.push_back(std::move(property));
 }
 
-void OpenMPVariantClause::setImplementationRequiresExpression(
-    const char *score, const char *expression) {
-  ++implementation_expression_count;
-  implementation_user_defined_expression.kind = OMPC_IMPL_EXPR_requires;
-  implementation_user_defined_expression.score =
-      makeHostFragment(score, ompparser::HostFragmentRole::Expression);
-  implementation_user_defined_expression.expression =
-      makeHostFragment(expression, ompparser::HostFragmentRole::Verbatim);
+void OpenMPVariantClause::addContextKindProperty(OpenMPClauseContextKind kind) {
+  TraitSelector *selector = activeTraitSelector("kind property");
+  if (selector == nullptr) {
+    return;
+  }
+  TraitProperty property;
+  property.context_kind = kind;
+  selector->properties.push_back(std::move(property));
 }
 
-void OpenMPVariantClause::setImplementationUserExpression(
-    const char *score, const char *expression) {
-  ++implementation_expression_count;
-  implementation_user_defined_expression.kind = OMPC_IMPL_EXPR_user;
-  implementation_user_defined_expression.score =
-      makeHostFragment(score, ompparser::HostFragmentRole::Expression);
-  implementation_user_defined_expression.expression =
-      makeHostFragment(expression, ompparser::HostFragmentRole::Verbatim);
+void OpenMPVariantClause::addContextVendorProperty(
+    OpenMPClauseContextVendor vendor) {
+  TraitSelector *selector = activeTraitSelector("vendor property");
+  if (selector == nullptr) {
+    return;
+  }
+  TraitProperty property;
+  property.context_vendor = vendor;
+  selector->properties.push_back(std::move(property));
+}
+
+void OpenMPVariantClause::addAtomicDefaultMemOrderProperty(
+    OpenMPAtomicDefaultMemOrderClauseKind kind) {
+  requireAtomicDefaultMemOrder(kind);
+  TraitSelector *selector =
+      activeTraitSelector("atomic_default_mem_order property");
+  if (selector == nullptr) {
+    return;
+  }
+  TraitProperty property;
+  property.atomic_default_mem_order = kind;
+  selector->properties.push_back(std::move(property));
+}
+
+void OpenMPVariantClause::addRequiresProperty(OpenMPClauseKind kind,
+                                              const char *required_expression) {
+  TraitSelector *selector = activeTraitSelector("requires property");
+  if (selector == nullptr) {
+    return;
+  }
+
+  std::unique_ptr<OpenMPClause> requirement;
+  if (kind == OMPC_device_safesync) {
+    requirement = std::make_unique<OpenMPDeviceSafesyncClause>();
+  } else {
+    switch (kind) {
+    case OMPC_reverse_offload:
+    case OMPC_unified_address:
+    case OMPC_unified_shared_memory:
+    case OMPC_dynamic_allocators:
+    case OMPC_self_maps:
+      requirement = std::make_unique<OpenMPClause>(kind);
+      break;
+    default:
+      recordVariantError("requires property has an invalid clause kind");
+      return;
+    }
+  }
+  requirement->setDirectiveKind(OMPD_requires);
+  if (required_expression != nullptr) {
+    requirement->addLangExpr(required_expression, OMPC_CLAUSE_SEP_space, 0, 0,
+                             OMP_EXPR_PARSE_expression);
+  }
+
+  TraitProperty property;
+  property.requirement = std::move(requirement);
+  selector->properties.push_back(std::move(property));
+}
+
+void OpenMPVariantClause::addRequiresAtomicDefaultMemOrderProperty(
+    OpenMPAtomicDefaultMemOrderClauseKind kind) {
+  requireAtomicDefaultMemOrder(kind);
+  TraitSelector *selector = activeTraitSelector("requires property");
+  if (selector == nullptr) {
+    return;
+  }
+  TraitProperty property;
+  property.requirement =
+      std::make_unique<OpenMPAtomicDefaultMemOrderClause>(kind);
+  property.requirement->setDirectiveKind(OMPD_requires);
+  selector->properties.push_back(std::move(property));
+}
+
+void OpenMPVariantClause::addRequiresExtensionProperty(const char *identifier) {
+  TraitSelector *selector = activeTraitSelector("requires property");
+  if (selector == nullptr || identifier == nullptr) {
+    if (identifier == nullptr) {
+      recordVariantError("implementation-defined requires property is null");
+    }
+    return;
+  }
+  auto requirement =
+      std::make_unique<OpenMPExtImplementationDefinedRequirementClause>();
+  requirement->setDirectiveKind(OMPD_requires);
+  requirement->setImplementationDefinedRequirement(identifier);
+
+  TraitProperty property;
+  property.requirement = std::move(requirement);
+  selector->properties.push_back(std::move(property));
+}
+
+void OpenMPVariantClause::endTraitSelector() {
+  if (activeTraitSelector("trait selector terminator") == nullptr) {
+    return;
+  }
+  active_trait_selector.reset();
+}
+
+void OpenMPVariantClause::addConstructDirective(
+    const char *score, std::unique_ptr<OpenMPDirective> construct_directive) {
+  TraitSetSelector *set = activeTraitSet("construct selector");
+  if (set == nullptr) {
+    return;
+  }
+  TraitSelector selector;
+  selector.kind = OMPC_TRAIT_construct;
+  selector.score =
+      makeHostFragment(score, ompparser::HostFragmentRole::Expression,
+                       OMP_EXPR_PARSE_constant_integer);
+  selector.score.clause_kind = getKind();
+  selector.construct_directive = std::move(construct_directive);
+  set->selectors.push_back(std::move(selector));
 }
 
 void OpenMPVariantClause::visitHostFragments(
     const ompparser::HostFragmentVisitor &visitor) {
-  auto visit_scored_expression = [&visitor](ScoredExpression &expression) {
-    if (!expression.score.spelling.empty()) {
-      visitor(expression.score);
+  for (TraitSetSelector &set : trait_sets) {
+    for (TraitSelector &selector : set.selectors) {
+      if (!selector.score.spelling.empty()) {
+        visitOwnedHostFragment(visitor, selector.score);
+      }
+      for (TraitProperty &property : selector.properties) {
+        if (!property.fragment.spelling.empty()) {
+          visitOwnedHostFragment(visitor, property.fragment);
+        }
+        if (property.requirement != nullptr) {
+          property.requirement->visitHostFragments(visitor);
+        }
+      }
+      if (selector.construct_directive != nullptr) {
+        selector.construct_directive->visitHostFragments(visitor);
+      }
     }
-    if (!expression.expression.spelling.empty()) {
-      visitor(expression.expression);
-    }
-  };
-  visit_scored_expression(user_condition_expression);
-  for (ScoredConstruct &construct : construct_directives) {
-    if (!construct.score.spelling.empty()) {
-      visitor(construct.score);
-    }
-    if (construct.directive != nullptr) {
-      construct.directive->visitHostFragments(visitor);
-    }
-  }
-  auto visit_device_selector = [&](DeviceSelectorData &selector) {
-    visit_scored_expression(selector.arch_expression);
-    visit_scored_expression(selector.isa_expression);
-    if (!selector.context_kind_name.score.spelling.empty()) {
-      visitor(selector.context_kind_name.score);
-    }
-    visit_scored_expression(selector.device_num_expression);
-  };
-  visit_device_selector(device_selector);
-  visit_device_selector(target_device_selector);
-  visit_scored_expression(extension_expression);
-  if (!context_vendor_name.score.spelling.empty()) {
-    visitor(context_vendor_name.score);
-  }
-  if (!implementation_user_defined_expression.score.spelling.empty()) {
-    visitor(implementation_user_defined_expression.score);
-  }
-  if (!implementation_user_defined_expression.expression.spelling.empty()) {
-    visitor(implementation_user_defined_expression.expression);
   }
   OpenMPClause::visitHostFragments(visitor);
 }
@@ -1134,72 +2354,297 @@ void OpenMPDefaultClause::visitHostFragments(
 bool OpenMPVariantClause::validateSelectorInvariants(
     std::vector<std::string> &errors) const {
   const std::size_t initial_error_count = errors.size();
-  auto require_unique = [&errors](std::size_t count, const char *name) {
-    if (count > 1) {
-      errors.push_back(std::string("duplicate '") + name + "' trait selector");
-    }
-  };
-  require_unique(user_condition_count, "condition");
-  require_unique(extension_expression_count, "extension");
-  require_unique(implementation_kind_count, "vendor");
-  require_unique(implementation_expression_count, "implementation-defined");
-
-  std::vector<OpenMPContextSelectorSequenceKind> selector_sets;
-  for (OpenMPContextSelectorSequenceKind selector : selector_order) {
-    if (std::find(selector_sets.begin(), selector_sets.end(), selector) !=
-        selector_sets.end()) {
-      errors.push_back("duplicate trait-set selector");
-    } else {
-      selector_sets.push_back(selector);
-    }
+  if (active_trait_set || active_trait_selector) {
+    errors.push_back("context selector construction was not completed");
+  }
+  if (getKind() != OMPC_otherwise && trait_sets.empty()) {
+    errors.push_back("variant clause requires a context selector set");
   }
 
-  std::vector<OpenMPDirectiveKind> construct_kinds;
-  for (const ScoredConstruct &construct : construct_directives) {
-    if (!construct.score.spelling.empty()) {
-      errors.push_back(
-          "trait scores are not permitted in the construct selector set");
+  std::vector<OpenMPContextSelectorSequenceKind> seen_sets;
+  for (const TraitSetSelector &set : trait_sets) {
+    if (std::find(seen_sets.begin(), seen_sets.end(), set.kind) !=
+        seen_sets.end()) {
+      errors.push_back("duplicate trait-set selector");
     }
-    if (construct.directive == nullptr) {
-      errors.push_back("construct selector contains a null directive");
+    seen_sets.push_back(set.kind);
+    if (set.selectors.empty()) {
+      errors.push_back("trait-set selector is empty");
       continue;
     }
-    const OpenMPDirectiveKind kind = construct.directive->getKind();
-    if (std::find(construct_kinds.begin(), construct_kinds.end(), kind) !=
-        construct_kinds.end()) {
-      errors.push_back("duplicate construct trait selector");
-    } else {
-      construct_kinds.push_back(kind);
+
+    std::vector<std::pair<OpenMPContextTraitSelectorKind, std::string>>
+        seen_selectors;
+    bool set_contains_any = false;
+    for (const TraitSelector &selector : set.selectors) {
+      bool legal = false;
+      switch (selector.kind) {
+      case OMPC_TRAIT_condition:
+        legal = set.kind == OMPC_SELECTOR_user;
+        break;
+      case OMPC_TRAIT_construct:
+        legal = set.kind == OMPC_SELECTOR_construct;
+        break;
+      case OMPC_TRAIT_kind:
+      case OMPC_TRAIT_arch:
+      case OMPC_TRAIT_isa:
+        legal = set.kind == OMPC_SELECTOR_device ||
+                set.kind == OMPC_SELECTOR_target_device;
+        break;
+      case OMPC_TRAIT_device_num:
+      case OMPC_TRAIT_uid:
+        legal = set.kind == OMPC_SELECTOR_target_device;
+        break;
+      case OMPC_TRAIT_vendor:
+      case OMPC_TRAIT_extension:
+      case OMPC_TRAIT_requires:
+      case OMPC_TRAIT_atomic_default_mem_order:
+      case OMPC_TRAIT_implementation_user:
+        legal = set.kind == OMPC_SELECTOR_implementation;
+        break;
+      }
+      if (!legal) {
+        errors.push_back("trait selector is in the wrong selector set");
+      }
+
+      const std::string identity =
+          selector.kind == OMPC_TRAIT_construct
+              ? (selector.construct_directive
+                     ? std::to_string(selector.construct_directive->getKind())
+                     : std::string("null"))
+          : selector.kind == OMPC_TRAIT_implementation_user
+              ? selector.implementation_defined_name
+              : std::string();
+      const auto key = std::make_pair(selector.kind, identity);
+      if (std::find(seen_selectors.begin(), seen_selectors.end(), key) !=
+          seen_selectors.end()) {
+        errors.push_back("duplicate trait selector");
+      }
+      seen_selectors.push_back(key);
+
+      if ((set.kind == OMPC_SELECTOR_construct ||
+           set.kind == OMPC_SELECTOR_device ||
+           set.kind == OMPC_SELECTOR_target_device) &&
+          !selector.score.spelling.empty()) {
+        errors.push_back("trait score is prohibited in this selector set");
+      }
+      if (selector.kind == OMPC_TRAIT_implementation_user &&
+          selector.implementation_defined_name.empty()) {
+        errors.push_back("implementation-defined selector name is empty");
+      }
+
+      const std::size_t property_count = selector.properties.size();
+      const bool exactly_one =
+          selector.kind == OMPC_TRAIT_condition ||
+          selector.kind == OMPC_TRAIT_device_num ||
+          selector.kind == OMPC_TRAIT_uid ||
+          selector.kind == OMPC_TRAIT_atomic_default_mem_order;
+      const bool at_least_one = selector.kind == OMPC_TRAIT_kind ||
+                                selector.kind == OMPC_TRAIT_arch ||
+                                selector.kind == OMPC_TRAIT_isa ||
+                                selector.kind == OMPC_TRAIT_vendor ||
+                                selector.kind == OMPC_TRAIT_extension ||
+                                selector.kind == OMPC_TRAIT_requires;
+      if ((exactly_one && property_count != 1) ||
+          (at_least_one && property_count == 0) ||
+          (selector.kind == OMPC_TRAIT_construct && property_count != 0) ||
+          (selector.kind == OMPC_TRAIT_implementation_user &&
+           !selector.score.spelling.empty() && property_count == 0)) {
+        errors.push_back("trait selector has invalid property cardinality");
+      }
+      if (selector.kind == OMPC_TRAIT_construct &&
+          selector.construct_directive == nullptr) {
+        errors.push_back("construct selector contains a null directive");
+      }
+
+      std::vector<std::string> seen_properties;
+      for (const TraitProperty &property : selector.properties) {
+        const bool expression = !property.fragment.spelling.empty();
+        const bool context_kind = property.context_kind.has_value();
+        const bool context_vendor = property.context_vendor.has_value();
+        const bool atomic_order = property.atomic_default_mem_order.has_value();
+        const bool requirement = property.requirement != nullptr;
+        if (static_cast<int>(expression) + static_cast<int>(context_kind) +
+                static_cast<int>(context_vendor) +
+                static_cast<int>(atomic_order) +
+                static_cast<int>(requirement) !=
+            1) {
+          errors.push_back("trait property does not have one typed payload");
+          continue;
+        }
+
+        std::string property_identity;
+        if (expression) {
+          const OpenMPExprParseMode expected_mode =
+              selector.kind == OMPC_TRAIT_condition ||
+                      selector.kind == OMPC_TRAIT_device_num
+                  ? OMP_EXPR_PARSE_expression
+              : selector.kind == OMPC_TRAIT_kind ||
+                      selector.kind == OMPC_TRAIT_arch ||
+                      selector.kind == OMPC_TRAIT_isa ||
+                      selector.kind == OMPC_TRAIT_uid ||
+                      selector.kind == OMPC_TRAIT_vendor ||
+                      selector.kind == OMPC_TRAIT_extension
+                  ? OMP_EXPR_PARSE_openmp_context_name
+                  : OMP_EXPR_PARSE_verbatim;
+          if (property.fragment.parse_mode != expected_mode) {
+            errors.push_back("trait property has the wrong host parse mode");
+          }
+          const bool name_list_property = selector.kind == OMPC_TRAIT_kind ||
+                                          selector.kind == OMPC_TRAIT_arch ||
+                                          selector.kind == OMPC_TRAIT_isa ||
+                                          selector.kind == OMPC_TRAIT_uid ||
+                                          selector.kind == OMPC_TRAIT_vendor ||
+                                          selector.kind == OMPC_TRAIT_extension;
+          if (name_list_property) {
+            const std::optional<std::string> identity =
+                normalizeOpenMPNamePropertyIdentity(property.fragment.spelling,
+                                                    getBaseLang());
+            if (!identity) {
+              errors.push_back(
+                  "name-list trait property is not an identifier or literal");
+              continue;
+            }
+            property_identity = *identity;
+            if (selector.kind == OMPC_TRAIT_kind) {
+              if (!isKnownContextKindIdentity(property_identity)) {
+                errors.push_back("kind trait property is not a defined kind");
+              }
+              set_contains_any = set_contains_any || property_identity == "any";
+            } else if (selector.kind == OMPC_TRAIT_vendor &&
+                       !isKnownContextVendorIdentity(property_identity)) {
+              errors.push_back("vendor trait property is not a defined vendor");
+            }
+          } else {
+            property_identity = property.fragment.spelling;
+          }
+        } else if (context_kind) {
+          if (selector.kind != OMPC_TRAIT_kind) {
+            errors.push_back("context kind is attached to the wrong selector");
+          }
+          const char *identity = contextKindIdentity(*property.context_kind);
+          if (identity == nullptr) {
+            errors.push_back("context kind property has an invalid value");
+            continue;
+          }
+          property_identity = identity;
+          set_contains_any = set_contains_any ||
+                             *property.context_kind == OMPC_CONTEXT_KIND_any;
+        } else if (context_vendor) {
+          if (selector.kind != OMPC_TRAIT_vendor) {
+            errors.push_back("vendor is attached to the wrong selector");
+          }
+          const char *identity =
+              contextVendorIdentity(*property.context_vendor);
+          if (identity == nullptr) {
+            errors.push_back("vendor property has an invalid value");
+            continue;
+          }
+          property_identity = identity;
+        } else if (atomic_order) {
+          property_identity =
+              "order:" + std::to_string(*property.atomic_default_mem_order);
+          if (selector.kind != OMPC_TRAIT_atomic_default_mem_order) {
+            errors.push_back(
+                "atomic memory order is attached to the wrong selector");
+          }
+        } else {
+          if (selector.kind != OMPC_TRAIT_requires) {
+            errors.push_back("requirement is attached to the wrong selector");
+          }
+          const OpenMPClauseKind requirement_kind =
+              property.requirement->OpenMPClause::getKind();
+          switch (requirement_kind) {
+          case OMPC_reverse_offload:
+          case OMPC_unified_address:
+          case OMPC_unified_shared_memory:
+          case OMPC_dynamic_allocators:
+          case OMPC_self_maps:
+          case OMPC_device_safesync:
+          case OMPC_atomic_default_mem_order:
+          case OMPC_ext_implementation_defined_requirement:
+            break;
+          default:
+            errors.push_back("requires property has an invalid clause kind");
+          }
+          if (property.requirement->getDirectiveKind() != OMPD_requires) {
+            errors.push_back(
+                "requires property has the wrong directive ownership");
+          }
+          errors.insert(errors.end(),
+                        property.requirement->getConstructionErrors().begin(),
+                        property.requirement->getConstructionErrors().end());
+
+          const auto &requirement_expressions =
+              property.requirement->getExpressionItems();
+          if (requirement_kind == OMPC_atomic_default_mem_order) {
+            const auto *atomic =
+                dynamic_cast<const OpenMPAtomicDefaultMemOrderClause *>(
+                    property.requirement.get());
+            if (atomic == nullptr || !requirement_expressions.empty()) {
+              errors.push_back(
+                  "atomic_default_mem_order requirement is malformed");
+            } else {
+              switch (atomic->getKind()) {
+              case OMPC_ATOMIC_DEFAULT_MEM_ORDER_seq_cst:
+              case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acq_rel:
+              case OMPC_ATOMIC_DEFAULT_MEM_ORDER_acquire:
+              case OMPC_ATOMIC_DEFAULT_MEM_ORDER_release:
+              case OMPC_ATOMIC_DEFAULT_MEM_ORDER_relaxed:
+                break;
+              default:
+                errors.push_back(
+                    "atomic_default_mem_order requirement has an invalid "
+                    "memory order");
+              }
+            }
+          } else if (requirement_kind ==
+                     OMPC_ext_implementation_defined_requirement) {
+            const auto *extension = dynamic_cast<
+                const OpenMPExtImplementationDefinedRequirementClause *>(
+                property.requirement.get());
+            if (extension == nullptr ||
+                extension->getImplementationDefinedRequirement().empty() ||
+                !requirement_expressions.empty()) {
+              errors.push_back(
+                  "implementation-defined requirement is malformed");
+            }
+          } else {
+            if (requirement_expressions.size() > 1) {
+              errors.push_back(
+                  "requirement has more than one required expression");
+            }
+            for (const OpenMPExpressionItem &item : requirement_expressions) {
+              if (item.fragment.spelling.empty() ||
+                  item.fragment.parse_mode != OMP_EXPR_PARSE_expression) {
+                errors.push_back(
+                    "requirement has an invalid required expression");
+              }
+            }
+          }
+          property_identity = "requirement:" + std::to_string(requirement_kind);
+          if (requirement_kind == OMPC_ext_implementation_defined_requirement) {
+            const auto *extension = dynamic_cast<
+                const OpenMPExtImplementationDefinedRequirementClause *>(
+                property.requirement.get());
+            if (extension != nullptr) {
+              property_identity +=
+                  ":" + extension->getImplementationDefinedRequirement();
+            }
+          }
+        }
+        if (std::find(seen_properties.begin(), seen_properties.end(),
+                      property_identity) != seen_properties.end()) {
+          errors.push_back("duplicate trait property");
+        }
+        seen_properties.push_back(std::move(property_identity));
+      }
+    }
+    if (set_contains_any && (set.selectors.size() != 1 ||
+                             set.selectors.front().properties.size() != 1)) {
+      errors.push_back("kind(any) excludes all other selector properties");
     }
   }
-
-  auto validate_device_selector = [&](const DeviceSelectorData &selector,
-                                      bool is_target_device) {
-    require_unique(selector.arch_expression_count, "arch");
-    require_unique(selector.isa_expression_count, "isa");
-    require_unique(selector.context_kind_count, "kind");
-    require_unique(selector.device_num_expression_count, "device_num");
-    if (!selector.arch_expression.score.spelling.empty() ||
-        !selector.isa_expression.score.spelling.empty() ||
-        !selector.context_kind_name.score.spelling.empty() ||
-        !selector.device_num_expression.score.spelling.empty()) {
-      errors.push_back(
-          "trait scores are not permitted in device selector sets");
-    }
-    if (selector.context_kind_name.kind == OMPC_CONTEXT_KIND_any &&
-        (!selector.arch_expression.expression.spelling.empty() ||
-         !selector.isa_expression.expression.spelling.empty() ||
-         !selector.device_num_expression.expression.spelling.empty())) {
-      errors.push_back(
-          "kind(any) excludes other properties in the same selector set");
-    }
-    if (!is_target_device && selector.device_num_expression_count != 0) {
-      errors.push_back(
-          "device_num is only permitted in the target_device selector set");
-    }
-  };
-  validate_device_selector(device_selector, false);
-  validate_device_selector(target_device_selector, true);
   return errors.size() == initial_error_count;
 }
 
@@ -1207,20 +2652,33 @@ void OpenMPClause::addLangExpr(const char *expression,
                                OpenMPClauseSeparator sep, int line, int col,
                                OpenMPExprParseMode parse_mode) {
   if (expression == nullptr) {
-    return;
+    throw std::invalid_argument("cannot add a null host expression");
   }
   std::string spelling(expression);
   const OpenMPExprParseMode effective_parse_mode =
       resolveClauseExpressionParseMode(this->kind, parse_mode, spelling);
   expressions.emplace_back(spelling, sep, effective_parse_mode);
   OpenMPExpressionItem &item = expressions.back();
+  item.fragment.clause_kind = kind;
+  item.fragment.parse_mode = effective_parse_mode;
   switch (effective_parse_mode) {
+  case OMP_EXPR_PARSE_constant_integer:
+  case OMP_EXPR_PARSE_openmp_iterator_type:
+  case OMP_EXPR_PARSE_openmp_iterator_name:
+  case OMP_EXPR_PARSE_openmp_declare_mapper_identifier:
+  case OMP_EXPR_PARSE_openmp_declare_mapper_type:
+  case OMP_EXPR_PARSE_openmp_declare_mapper_variable:
+  case OMP_EXPR_PARSE_openmp_context_name:
+    item.fragment.role = ompparser::HostFragmentRole::Expression;
+    break;
   case OMP_EXPR_PARSE_variable_list:
     item.fragment.role = ompparser::HostFragmentRole::Variable;
     break;
   case OMP_EXPR_PARSE_array_section:
     item.fragment.role = ompparser::HostFragmentRole::Locator;
     break;
+  case OMP_EXPR_PARSE_openmp_source:
+  case OMP_EXPR_PARSE_openmp_syntax:
   case OMP_EXPR_PARSE_verbatim:
     item.fragment.role = ompparser::HostFragmentRole::Verbatim;
     break;
@@ -1240,24 +2698,6 @@ void OpenMPClause::addLangExpr(const char *expression,
         static_cast<uint32_t>(item.fragment.spelling.size());
   }
 };
-
-std::vector<const char *> *OpenMPClause::getExpressions() {
-  legacy_expression_view.clear();
-  legacy_expression_view.reserve(expressions.size());
-  for (const OpenMPExpressionItem &item : expressions) {
-    legacy_expression_view.push_back(item.fragment.spelling.c_str());
-  }
-  return &legacy_expression_view;
-}
-
-const std::vector<const char *> *OpenMPClause::getExpressions() const {
-  legacy_expression_view.clear();
-  legacy_expression_view.reserve(expressions.size());
-  for (const OpenMPExpressionItem &item : expressions) {
-    legacy_expression_view.push_back(item.fragment.spelling.c_str());
-  }
-  return &legacy_expression_view;
-}
 
 void OpenMPInductionClause::addStepExpression(const char *expression) {
   if (expression == nullptr) {
@@ -1283,7 +2723,8 @@ void OpenMPInductionClause::addBinding(const char *label,
   Binding binding;
   if (label != nullptr) {
     binding.label =
-        makeHostFragment(label, ompparser::HostFragmentRole::Declarator);
+        makeHostFragment(label, ompparser::HostFragmentRole::Verbatim,
+                         OMP_EXPR_PARSE_openmp_syntax);
   }
   binding.expression =
       makeHostFragment(expression, ompparser::HostFragmentRole::Expression);
@@ -1298,6 +2739,74 @@ void OpenMPInductionClause::addPassthroughItem(const char *expression) {
   passthrough_items.push_back(
       makeHostFragment(expression, ompparser::HostFragmentRole::Expression));
   sequence.push_back({ItemPassthrough, passthrough_items.size() - 1});
+}
+
+void OpenMPInductionClause::visitSpecificationItems(
+    const SpecificationItemVisitor &visitor) const {
+  if (!visitor) {
+    throw std::invalid_argument(
+        "induction specification visitor must be callable");
+  }
+  for (const ItemRef &item : sequence) {
+    switch (item.kind) {
+    case ItemStep:
+      if (item.index != 0 || step_expression.spelling.empty()) {
+        throw std::logic_error("invalid induction step sequence reference");
+      }
+      visitor(SpecificationItemKind::Step, nullptr, step_expression);
+      break;
+    case ItemBinding:
+      if (item.index >= bindings.size() ||
+          bindings[item.index].label.spelling.empty() ||
+          bindings[item.index].expression.spelling.empty()) {
+        throw std::logic_error("invalid induction binding sequence reference");
+      }
+      visitor(SpecificationItemKind::Binding, &bindings[item.index].label,
+              bindings[item.index].expression);
+      break;
+    case ItemPassthrough:
+      if (item.index >= passthrough_items.size() ||
+          passthrough_items[item.index].spelling.empty()) {
+        throw std::logic_error(
+            "invalid induction expression sequence reference");
+      }
+      visitor(SpecificationItemKind::Expression, nullptr,
+              passthrough_items[item.index]);
+      break;
+    }
+  }
+}
+
+void OpenMPInductionClause::visitHostFragments(
+    const ompparser::HostFragmentVisitor &visitor) {
+  for (const ItemRef &item : sequence) {
+    switch (item.kind) {
+    case ItemStep:
+      if (item.index != 0 || step_expression.spelling.empty()) {
+        throw std::logic_error("invalid induction step sequence reference");
+      }
+      visitOwnedHostFragment(visitor, step_expression);
+      break;
+    case ItemBinding:
+      if (item.index >= bindings.size() ||
+          bindings[item.index].label.spelling.empty() ||
+          bindings[item.index].expression.spelling.empty()) {
+        throw std::logic_error("invalid induction binding sequence reference");
+      }
+      visitOwnedHostFragment(visitor, bindings[item.index].label);
+      visitOwnedHostFragment(visitor, bindings[item.index].expression);
+      break;
+    case ItemPassthrough:
+      if (item.index >= passthrough_items.size() ||
+          passthrough_items[item.index].spelling.empty()) {
+        throw std::logic_error(
+            "invalid induction expression sequence reference");
+      }
+      visitOwnedHostFragment(visitor, passthrough_items[item.index]);
+      break;
+    }
+  }
+  OpenMPClause::visitHostFragments(visitor);
 }
 
 void OpenMPMapClause::addItem(const char *expr, OpenMPClauseSeparator sep) {
@@ -1520,7 +3029,8 @@ void OpenMPInitModifierList::addPreferType(const char *specification) {
   OpenMPInitModifier modifier;
   modifier.category = OpenMPInitModifierCategory::PreferType;
   modifier.argument =
-      makeHostFragment(specification, ompparser::HostFragmentRole::Verbatim);
+      makeHostFragment(specification, ompparser::HostFragmentRole::Verbatim,
+                       OMP_EXPR_PARSE_openmp_source);
   modifiers.push_back(std::move(modifier));
 }
 
@@ -1529,6 +3039,7 @@ void OpenMPInitModifierList::addPreferType(const std::string &specification) {
   modifier.category = OpenMPInitModifierCategory::PreferType;
   modifier.argument.spelling = specification;
   modifier.argument.role = ompparser::HostFragmentRole::Verbatim;
+  modifier.argument.parse_mode = OMP_EXPR_PARSE_openmp_source;
   modifiers.push_back(std::move(modifier));
 }
 
@@ -1549,6 +3060,7 @@ void OpenMPInitModifierList::addDepinfo(OpenMPDependClauseType type,
   modifier.dependence_type = type;
   modifier.argument.spelling = locator;
   modifier.argument.role = ompparser::HostFragmentRole::Locator;
+  modifier.argument.parse_mode = OMP_EXPR_PARSE_array_section;
   modifiers.push_back(std::move(modifier));
 }
 
@@ -1560,6 +3072,7 @@ void OpenMPInitClause::setOperand(const std::string &value) {
   operand = {};
   operand.spelling = value;
   operand.role = ompparser::HostFragmentRole::Variable;
+  operand.parse_mode = OMP_EXPR_PARSE_variable_list;
 }
 
 std::string OpenMPInitModifierList::toString() const {
@@ -1640,34 +3153,258 @@ std::string OpenMPInitClause::toString() {
  */
 OpenMPClause *OpenMPDirective::addOpenMPClauseWithArguments(
     OpenMPClauseKind kind, const std::vector<ClauseArgument> &arguments) {
+  enum class ExpectedArgument { Integer, String };
+  std::vector<ExpectedArgument> expected_arguments;
+  expected_arguments.reserve(6);
+  auto requirePreflightInteger = [&](std::size_t index) -> int {
+    if (index >= arguments.size()) {
+      throw std::invalid_argument(
+          "missing integer clause-construction argument");
+    }
+    const int *value = std::get_if<int>(&arguments[index]);
+    if (value == nullptr) {
+      throw std::invalid_argument(
+          "mistyped integer clause-construction argument");
+    }
+    return *value;
+  };
+
+  switch (kind) {
+  case OMPC_private:
+  case OMPC_firstprivate:
+  case OMPC_shared:
+  case OMPC_num_teams:
+  case OMPC_thread_limit:
+  case OMPC_copyin:
+  case OMPC_align:
+  case OMPC_collapse:
+  case OMPC_ordered:
+  case OMPC_partial:
+  case OMPC_nowait:
+  case OMPC_full:
+  case OMPC_safelen:
+  case OMPC_simdlen:
+  case OMPC_nontemporal:
+  case OMPC_uniform:
+  case OMPC_inbranch:
+  case OMPC_notinbranch:
+  case OMPC_copyprivate:
+  case OMPC_parallel:
+  case OMPC_sections:
+  case OMPC_for:
+  case OMPC_do:
+  case OMPC_taskgroup:
+  case OMPC_inclusive:
+  case OMPC_exclusive:
+  case OMPC_use_device_ptr:
+  case OMPC_use_device_addr:
+  case OMPC_nogroup:
+  case OMPC_final:
+  case OMPC_untied:
+  case OMPC_mergeable:
+  case OMPC_priority:
+  case OMPC_detach:
+  case OMPC_reverse_offload:
+  case OMPC_unified_address:
+  case OMPC_unified_shared_memory:
+  case OMPC_dynamic_allocators:
+  case OMPC_self_maps:
+  case OMPC_is_device_ptr:
+  case OMPC_has_device_addr:
+  case OMPC_link:
+  case OMPC_enter:
+  case OMPC_threads:
+  case OMPC_simd:
+  case OMPC_acq_rel:
+  case OMPC_seq_cst:
+  case OMPC_release:
+  case OMPC_acquire:
+  case OMPC_relaxed:
+  case OMPC_read:
+  case OMPC_write:
+  case OMPC_update:
+  case OMPC_capture:
+  case OMPC_compare:
+  case OMPC_weak:
+  case OMPC_hint:
+  case OMPC_destroy:
+  case OMPC_sizes:
+  case OMPC_filter:
+  case OMPC_message:
+  case OMPC_absent:
+  case OMPC_contains:
+  case OMPC_holds:
+  case OMPC_looprange:
+  case OMPC_permutation:
+  case OMPC_counts:
+  case OMPC_apply:
+  case OMPC_induction:
+  case OMPC_inductor:
+  case OMPC_collector:
+  case OMPC_combiner:
+  case OMPC_adjust_args:
+  case OMPC_append_args:
+  case OMPC_nocontext:
+  case OMPC_novariants:
+  case OMPC_no_openmp:
+  case OMPC_no_openmp_constructs:
+  case OMPC_no_openmp_routines:
+  case OMPC_no_parallelism:
+  case OMPC_graph_id:
+  case OMPC_graph_reset:
+  case OMPC_replayable:
+  case OMPC_indirect:
+  case OMPC_transparent:
+  case OMPC_threadset:
+  case OMPC_safesync:
+  case OMPC_device_safesync:
+  case OMPC_memscope:
+  case OMPC_local:
+  case OMPC_init:
+  case OMPC_init_complete:
+  case OMPC_use:
+  case OMPC_interop:
+  case OMPC_ext_implementation_defined_requirement:
+  case OMPC_match:
+  case OMPC_uses_allocators:
+  case OMPC_aligned:
+  case OMPC_num_threads:
+  case OMPC_when:
+  case OMPC_otherwise:
+    break;
+  case OMPC_fail:
+  case OMPC_severity:
+  case OMPC_at:
+  case OMPC_order:
+  case OMPC_proc_bind:
+  case OMPC_bind:
+  case OMPC_lastprivate:
+  case OMPC_linear:
+  case OMPC_dist_schedule:
+  case OMPC_device:
+  case OMPC_atomic_default_mem_order:
+  case OMPC_depobj_update:
+  case OMPC_doacross:
+  case OMPC_affinity:
+  case OMPC_grainsize:
+  case OMPC_num_tasks:
+  case OMPC_to:
+  case OMPC_from:
+  case OMPC_device_type:
+    expected_arguments = {ExpectedArgument::Integer};
+    break;
+  case OMPC_default:
+    expected_arguments = {ExpectedArgument::Integer};
+    if (arguments.size() == 2) {
+      expected_arguments.push_back(ExpectedArgument::Integer);
+    }
+    break;
+  case OMPC_if:
+    expected_arguments = {ExpectedArgument::Integer};
+    if (requirePreflightInteger(0) == OMPC_IF_MODIFIER_user) {
+      expected_arguments.push_back(ExpectedArgument::String);
+    }
+    break;
+  case OMPC_schedule:
+    expected_arguments = {ExpectedArgument::Integer, ExpectedArgument::Integer,
+                          ExpectedArgument::Integer};
+    if (requirePreflightInteger(2) == OMPC_SCHEDULE_KIND_user) {
+      expected_arguments.push_back(ExpectedArgument::String);
+    }
+    break;
+  case OMPC_initializer:
+    expected_arguments = {ExpectedArgument::Integer};
+    if (requirePreflightInteger(0) == OMPC_INITIALIZER_PRIV_user) {
+      expected_arguments.push_back(ExpectedArgument::String);
+    }
+    break;
+  case OMPC_allocate:
+    expected_arguments = {ExpectedArgument::Integer};
+    if (requirePreflightInteger(0) == OMPC_ALLOCATE_ALLOCATOR_user) {
+      expected_arguments.push_back(ExpectedArgument::String);
+    }
+    break;
+  case OMPC_allocator:
+    expected_arguments = {ExpectedArgument::Integer};
+    if (requirePreflightInteger(0) == OMPC_ALLOCATOR_ALLOCATOR_user) {
+      expected_arguments.push_back(ExpectedArgument::String);
+    }
+    break;
+  case OMPC_in_reduction:
+    expected_arguments = {ExpectedArgument::Integer};
+    if (requirePreflightInteger(0) == OMPC_IN_REDUCTION_IDENTIFIER_user) {
+      expected_arguments.push_back(ExpectedArgument::String);
+    }
+    break;
+  case OMPC_task_reduction:
+    expected_arguments = {ExpectedArgument::Integer};
+    if (requirePreflightInteger(0) == OMPC_TASK_REDUCTION_IDENTIFIER_user) {
+      expected_arguments.push_back(ExpectedArgument::String);
+    }
+    break;
+  case OMPC_depend:
+  case OMPC_defaultmap:
+    expected_arguments = {ExpectedArgument::Integer, ExpectedArgument::Integer};
+    break;
+  case OMPC_reduction:
+    expected_arguments = {ExpectedArgument::Integer, ExpectedArgument::Integer};
+    if (requirePreflightInteger(1) == OMPC_REDUCTION_IDENTIFIER_user) {
+      expected_arguments.push_back(ExpectedArgument::String);
+    }
+    break;
+  case OMPC_map:
+    expected_arguments = {ExpectedArgument::Integer, ExpectedArgument::Integer,
+                          ExpectedArgument::Integer, ExpectedArgument::Integer,
+                          ExpectedArgument::Integer};
+    break;
+  default:
+    throw std::invalid_argument("unsupported OpenMP clause kind");
+  }
+
+  if (arguments.size() != expected_arguments.size()) {
+    throw std::invalid_argument(arguments.size() < expected_arguments.size()
+                                    ? "missing clause-construction arguments"
+                                    : "too many clause-construction arguments");
+  }
+  for (std::size_t index = 0; index < expected_arguments.size(); ++index) {
+    const bool valid =
+        expected_arguments[index] == ExpectedArgument::Integer
+            ? std::holds_alternative<int>(arguments[index])
+            : std::holds_alternative<std::string>(arguments[index]);
+    if (!valid) {
+      throw std::invalid_argument("mistyped clause-construction argument");
+    }
+  }
+
   std::vector<OpenMPClause *> *current_clauses = getClauses(kind);
   OpenMPClause *new_clause = NULL;
   std::size_t argument_index = 0;
 
   auto nextIntegerArgument = [&]() {
-    if (argument_index < arguments.size()) {
-      if (const int *value = std::get_if<int>(&arguments[argument_index++])) {
-        return *value;
-      }
-    } else {
-      ++argument_index;
+    if (argument_index >= arguments.size()) {
+      throw std::invalid_argument(
+          "missing integer clause-construction argument");
     }
-    construction_errors.push_back(
-        "missing or mistyped integer clause-construction argument");
-    return 0;
+    const ClauseArgument &argument = arguments[argument_index++];
+    const int *value = std::get_if<int>(&argument);
+    if (value == nullptr) {
+      throw std::invalid_argument(
+          "mistyped integer clause-construction argument");
+    }
+    return *value;
   };
   auto nextStringArgument = [&]() -> const char * {
-    if (argument_index < arguments.size()) {
-      if (const std::string *value =
-              std::get_if<std::string>(&arguments[argument_index++])) {
-        return value->empty() ? nullptr : value->c_str();
-      }
-    } else {
-      ++argument_index;
+    if (argument_index >= arguments.size()) {
+      throw std::invalid_argument(
+          "missing string clause-construction argument");
     }
-    construction_errors.push_back(
-        "missing or mistyped string clause-construction argument");
-    return nullptr;
+    const ClauseArgument &argument = arguments[argument_index++];
+    const std::string *value = std::get_if<std::string>(&argument);
+    if (value == nullptr) {
+      throw std::invalid_argument(
+          "mistyped string clause-construction argument");
+    }
+    return value->empty() ? nullptr : value->c_str();
   };
 
   auto makeClause =
@@ -1878,6 +3615,9 @@ OpenMPClause *OpenMPDirective::addOpenMPClauseWithArguments(
   case OMPC_interop:
 
   {
+    if (!arguments.empty()) {
+      throw std::invalid_argument("too many clause-construction arguments");
+    }
     new_clause = registerClause(makeClause(kind));
     current_clauses->push_back(new_clause);
     break;
@@ -1949,11 +3689,12 @@ OpenMPClause *OpenMPDirective::addOpenMPClauseWithArguments(
         (OpenMPReductionClauseModifier)nextIntegerArgument();
     OpenMPReductionClauseIdentifier identifier =
         (OpenMPReductionClauseIdentifier)nextIntegerArgument();
-    const char *user_defined_modifier = nextStringArgument();
-    const char *user_defined_identifier = nextStringArgument();
+    const char *user_defined_identifier = nullptr;
+    if (identifier == OMPC_REDUCTION_IDENTIFIER_user) {
+      user_defined_identifier = nextStringArgument();
+    }
     new_clause = OpenMPReductionClause::addReductionClause(
-        this, modifier, identifier, user_defined_modifier,
-        user_defined_identifier);
+        this, modifier, identifier, user_defined_identifier);
     break;
   }
   case OMPC_proc_bind: {
@@ -2163,12 +3904,8 @@ OpenMPClause *OpenMPDirective::addOpenMPClauseWithArguments(
     OpenMPMapClauseType type = (OpenMPMapClauseType)nextIntegerArgument();
     OpenMPMapClauseRefModifier ref_modifier =
         (OpenMPMapClauseRefModifier)nextIntegerArgument();
-    const char *mapper_argument = nextStringArgument();
-    std::string mapper_identifier =
-        mapper_argument != nullptr ? mapper_argument : "";
-    new_clause =
-        OpenMPMapClause::addMapClause(this, modifier1, modifier2, modifier3,
-                                      type, ref_modifier, mapper_identifier);
+    new_clause = OpenMPMapClause::addMapClause(this, modifier1, modifier2,
+                                               modifier3, type, ref_modifier);
     break;
   }
   case OMPC_num_threads: {
@@ -2185,9 +3922,13 @@ OpenMPClause *OpenMPDirective::addOpenMPClauseWithArguments(
     break;
   }
   default: {
-    ;
+    throw std::invalid_argument("unsupported OpenMP clause kind");
   }
   };
+
+  if (argument_index != arguments.size()) {
+    throw std::invalid_argument("too many clause-construction arguments");
+  }
 
   if (new_clause != NULL) {
     if (clause_separator_comma) {
@@ -2209,21 +3950,18 @@ OpenMPClause *OpenMPDirective::addOpenMPClauseWithArguments(
 OpenMPClause *OpenMPMapClause::addMapClause(
     OpenMPDirective *directive, OpenMPMapClauseModifier modifier1,
     OpenMPMapClauseModifier modifier2, OpenMPMapClauseModifier modifier3,
-    OpenMPMapClauseType type, OpenMPMapClauseRefModifier ref_modifier,
-    std::string mapper_identifier) {
+    OpenMPMapClauseType type, OpenMPMapClauseRefModifier ref_modifier) {
 
   std::vector<OpenMPClause *> *current_clauses =
       directive->getClauses(OMPC_map);
   OpenMPClause *new_clause = NULL;
   if (current_clauses->size() == 0) {
-    new_clause = directive->registerClause(
-        std::make_unique<OpenMPMapClause>(modifier1, modifier2, modifier3, type,
-                                          ref_modifier, mapper_identifier));
+    new_clause = directive->registerClause(std::make_unique<OpenMPMapClause>(
+        modifier1, modifier2, modifier3, type, ref_modifier));
     current_clauses->push_back(new_clause);
   } else {
-    new_clause = directive->registerClause(
-        std::make_unique<OpenMPMapClause>(modifier1, modifier2, modifier3, type,
-                                          ref_modifier, mapper_identifier));
+    new_clause = directive->registerClause(std::make_unique<OpenMPMapClause>(
+        modifier1, modifier2, modifier3, type, ref_modifier));
     current_clauses->push_back(new_clause);
   }
   return new_clause;
@@ -2353,7 +4091,7 @@ OpenMPClause *OpenMPExtImplementationDefinedRequirementClause::
 OpenMPClause *OpenMPReductionClause::addReductionClause(
     OpenMPDirective *directive, OpenMPReductionClauseModifier modifier,
     OpenMPReductionClauseIdentifier identifier,
-    const char *user_defined_modifier, const char *user_defined_identifier) {
+    const char *user_defined_identifier) {
 
   std::vector<OpenMPClause *> *current_clauses =
       directive->getClauses(OMPC_reduction);
@@ -2362,8 +4100,6 @@ OpenMPClause *OpenMPReductionClause::addReductionClause(
   if (current_clauses->size() == 0) {
     new_clause = directive->registerClause(
         std::make_unique<OpenMPReductionClause>(modifier, identifier));
-    ((OpenMPReductionClause *)new_clause)
-        ->setUserDefinedModifier(user_defined_modifier);
     if (identifier == OMPC_REDUCTION_IDENTIFIER_user &&
         user_defined_identifier) {
       ((OpenMPReductionClause *)new_clause)
@@ -2373,8 +4109,6 @@ OpenMPClause *OpenMPReductionClause::addReductionClause(
   } else {
     new_clause = directive->registerClause(
         std::make_unique<OpenMPReductionClause>(modifier, identifier));
-    ((OpenMPReductionClause *)new_clause)
-        ->setUserDefinedModifier(user_defined_modifier);
     if (identifier == OMPC_REDUCTION_IDENTIFIER_user)
       ((OpenMPReductionClause *)new_clause)
           ->setUserDefinedIdentifier(user_defined_identifier);

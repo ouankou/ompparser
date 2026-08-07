@@ -152,14 +152,14 @@ bool checkMapClauseFirstExpressionContains(
     return false;
   }
 
-  std::vector<const char *> *expressions = map_clause->getExpressions();
-  if (expressions == nullptr || expressions->empty() ||
-      (*expressions)[0] == nullptr) {
+  const std::vector<OpenMPExpressionItem> &expressions =
+      map_clause->getExpressionItems();
+  if (expressions.empty()) {
     std::cerr << "[" << label << "] map clause has no expressions\n";
     return false;
   }
 
-  const std::string first_expression((*expressions)[0]);
+  const std::string &first_expression = expressions[0].fragment.spelling;
   if (first_expression.find(expected_fragment) == std::string::npos) {
     std::cerr << "[" << label
               << "] map expression mismatch: expected to contain '"

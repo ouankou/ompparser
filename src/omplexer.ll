@@ -8,7 +8,6 @@
 
 %option prefix="openmp_"
 %option stack
-%option noyy_top_state
 %option caseless
 %option reentrant
 %option bison-bridge
@@ -33,6 +32,7 @@
 %x ATOMIC_DEFAULT_MEM_ORDER_STATE
 %x BIND_STATE
 %x COLLAPSE_STATE
+%x PARTIAL_STATE
 %x SIZES_STATE
 %x GRAINSIZE_STATE
 %x NUM_TASKS_STATE
@@ -65,6 +65,7 @@
 %x FINAL_STATE
 %x FIRSTPRIVATE_STATE
 %x FROM_MAPPER_STATE
+%x FROM_ITERATOR_STATE
 %x FROM_STATE
 %x ID_EXPR_STATE
 %x IF_STATE
@@ -91,6 +92,8 @@
 %x PRIVATE_STATE
 %x PROC_BIND_STATE
 %x REDUCTION_STATE
+%x REQUIREMENT_CLAUSE_STATE
+%x REQUIRES_TRAIT_STATE
 %x SAFELEN_STATE
 %x SCHEDULE_STATE
 %x SCORE_STATE
@@ -125,7 +128,6 @@
 
 /* Moved from Makefile.am to the source file to work with --with-pch Liao
    12/10/2009 */
-#define YY_NO_TOP_STATE
 #define YY_NO_POP_STATE
 
 /* Forward declaration - actual token values will be available after parser header */
@@ -152,14 +154,28 @@ static thread_local char current_char;
 static thread_local bool compact_parallel_do = false;
 static thread_local bool declare_target_underscore = false;
 static thread_local bool compact_enddo = false;
+static thread_local bool implementation_selector_parenthesis_pending = false;
+static thread_local int requires_trait_parenthesis_depth = 0;
+static thread_local bool requires_trait_atomic_argument_pending = false;
+static thread_local bool requires_trait_expression_pending = false;
 
 static thread_local std::vector<int> apply_paren_depth;
 static thread_local int induction_spec_paren_depth = 0;
 static thread_local bool induction_step_waiting = false;
 static thread_local int if_paren_depth = 0;
+static thread_local int partial_paren_depth = 0;
+static thread_local int sizes_paren_depth = 0;
 static thread_local int uses_allocators_paren_depth = 0;
 static thread_local int init_parenthesis_depth = 0;
 static thread_local int append_args_parenthesis_depth = 0;
+static thread_local int allocate_modifier_token = 0;
+static thread_local std::vector<char> allocate_modifier_delimiters;
+static thread_local char allocate_modifier_quote = '\0';
+static thread_local bool allocate_modifier_escape = false;
+static thread_local bool allocate_modifier_raw_string = false;
+static thread_local bool allocate_modifier_raw_string_body_started = false;
+static thread_local std::string allocate_modifier_raw_string_delimiter;
+static thread_local std::string allocate_modifier_raw_string_terminator;
 static thread_local std::vector<std::unique_ptr<char[]>> lexeme_storage;
 struct StoredLexemeRange {
   const char *lexeme = nullptr;
@@ -315,6 +331,14 @@ static inline void tracked_unput(int ch, void *scanner);
 static const char *store_lexeme(
     const std::string &text,
     std::size_t explicit_end_offset = InvalidOffset) {
+  if (expression_begin_offset == InvalidOffset) {
+    std::fprintf(stderr,
+                 "OMPPARSER_LEXER[source-range]: lexeme '%s' has no tracked "
+                 "source start at %d:%d\n",
+                 text.c_str(), openmpGetCurrentTokenLine(),
+                 openmpGetCurrentTokenColumn());
+    std::abort();
+  }
   std::string spelling = text;
   std::size_t begin_offset = expression_begin_offset;
   std::size_t end_offset = InvalidOffset;
@@ -384,13 +408,27 @@ extern "C" void openmp_reset_lexer_flags() {
   compact_parallel_do = false;
   declare_target_underscore = false;
   compact_enddo = false;
+  implementation_selector_parenthesis_pending = false;
+  requires_trait_parenthesis_depth = 0;
+  requires_trait_atomic_argument_pending = false;
+  requires_trait_expression_pending = false;
   apply_paren_depth.clear();
   induction_spec_paren_depth = 0;
   induction_step_waiting = false;
   if_paren_depth = 0;
+  partial_paren_depth = 0;
+  sizes_paren_depth = 0;
   uses_allocators_paren_depth = 0;
   init_parenthesis_depth = 0;
   append_args_parenthesis_depth = 0;
+  allocate_modifier_token = 0;
+  allocate_modifier_delimiters.clear();
+  allocate_modifier_quote = '\0';
+  allocate_modifier_escape = false;
+  allocate_modifier_raw_string = false;
+  allocate_modifier_raw_string_body_started = false;
+  allocate_modifier_raw_string_delimiter.clear();
+  allocate_modifier_raw_string_terminator.clear();
   current_string.clear();
   parenthesis_local_count = 0;
   parenthesis_global_count = 1;
@@ -511,6 +549,112 @@ static inline void prepare_expression_capture_str(const char* initial_str) {
   clear_expression_buffer();
   expression_begin_offset = lexer_location_state.last_token_offset;
   current_string = initial_str;
+}
+
+static inline void start_expression_at_current_token_if_needed(char character) {
+  if (expression_begin_offset != InvalidOffset || !current_string.empty() ||
+      std::isspace(static_cast<unsigned char>(character)) || character == ')' ||
+      character == ']' || character == '}' || character == ',' ||
+      character == ':') {
+    return;
+  }
+  expression_begin_offset = lexer_location_state.last_token_offset;
+}
+
+static inline bool allocateDelimitersMatch(char opening, char closing) {
+  return (opening == '(' && closing == ')') ||
+         (opening == '[' && closing == ']') ||
+         (opening == '{' && closing == '}');
+}
+
+static inline void beginAllocateModifierCapture(int token) {
+  prepare_expression_capture();
+  allocate_modifier_token = token;
+  allocate_modifier_delimiters = {'('};
+  allocate_modifier_quote = '\0';
+  allocate_modifier_escape = false;
+  allocate_modifier_raw_string = false;
+  allocate_modifier_raw_string_body_started = false;
+  allocate_modifier_raw_string_delimiter.clear();
+  allocate_modifier_raw_string_terminator.clear();
+}
+
+static inline int consumeAllocateModifierCharacter(
+    char character, OPENMP_STYPE *semantic_value) {
+  if (allocate_modifier_quote != '\0') {
+    current_string.push_back(character);
+    if (allocate_modifier_raw_string) {
+      if (!allocate_modifier_raw_string_body_started) {
+        if (character == '(') {
+          allocate_modifier_raw_string_body_started = true;
+          allocate_modifier_raw_string_terminator =
+              ")" + allocate_modifier_raw_string_delimiter + "\"";
+        } else {
+          allocate_modifier_raw_string_delimiter.push_back(character);
+        }
+      } else if (current_string.size() >=
+                     allocate_modifier_raw_string_terminator.size() &&
+                 current_string.compare(
+                     current_string.size() -
+                         allocate_modifier_raw_string_terminator.size(),
+                     allocate_modifier_raw_string_terminator.size(),
+                     allocate_modifier_raw_string_terminator) == 0) {
+        allocate_modifier_quote = '\0';
+        allocate_modifier_raw_string = false;
+        allocate_modifier_raw_string_body_started = false;
+        allocate_modifier_raw_string_delimiter.clear();
+        allocate_modifier_raw_string_terminator.clear();
+      }
+    } else if (allocate_modifier_escape) {
+      allocate_modifier_escape = false;
+    } else if (character == '\\') {
+      allocate_modifier_escape = true;
+    } else if (character == allocate_modifier_quote) {
+      allocate_modifier_quote = '\0';
+    }
+    return 0;
+  }
+  if (character == '\'' || character == '"') {
+    allocate_modifier_quote = character;
+    allocate_modifier_raw_string =
+        character == '"' && !current_string.empty() &&
+        current_string.back() == 'R';
+    allocate_modifier_raw_string_body_started = false;
+    allocate_modifier_raw_string_delimiter.clear();
+    allocate_modifier_raw_string_terminator.clear();
+    current_string.push_back(character);
+    return 0;
+  }
+  if (character == '(' || character == '[' || character == '{') {
+    allocate_modifier_delimiters.push_back(character);
+    current_string.push_back(character);
+    return 0;
+  }
+  if (character == ')' || character == ']' || character == '}') {
+    if (allocate_modifier_delimiters.empty() ||
+        !allocateDelimitersMatch(allocate_modifier_delimiters.back(),
+                                 character)) {
+      return -1;
+    }
+    allocate_modifier_delimiters.pop_back();
+    if (allocate_modifier_delimiters.empty()) {
+      if (current_string.empty() || semantic_value == nullptr ||
+          (allocate_modifier_token != ALLOCATOR_MODIFIER &&
+           allocate_modifier_token != ALIGN_MODIFIER)) {
+        return -1;
+      }
+      semantic_value->stype = store_lexeme(
+          current_string, lexer_location_state.last_token_offset);
+      const int token = allocate_modifier_token;
+      allocate_modifier_token = 0;
+      current_string.clear();
+      return token;
+    }
+    current_string.push_back(character);
+    return 0;
+  }
+  current_string.push_back(character);
+  return 0;
 }
 
 static inline bool is_firstprivate_blank(char ch) {
@@ -671,6 +815,8 @@ blank           [[:blank:]]
 newline         [\n]
 comment         [\/\/].*
 id_char         [a-zA-Z0-9_]
+identifier      [a-zA-Z_][a-zA-Z0-9_]*
+allocator_designator ("::"{blank}*)?{identifier}({blank}*("::"|"%"){blank}*{identifier})*
 
 %%
 
@@ -717,6 +863,7 @@ schedule        { yy_push_state(SCHEDULE_STATE, yyscanner); return SCHEDULE; }
 collapse        { yy_push_state(COLLAPSE_STATE, yyscanner); return COLLAPSE; }
 ordered/{blank}*\( { yy_push_state(ORDERED_STATE, yyscanner); return ORDERED; }
 ordered         { return ORDERED; }
+partial/{blank}*\( { partial_paren_depth = 0; yy_push_state(PARTIAL_STATE, yyscanner); return PARTIAL; }
 partial         { return PARTIAL; }
 nowait          { return NOWAIT; }
 full            { return FULL; }
@@ -799,7 +946,8 @@ end             { compact_enddo = false; return END; }
 score           { return SCORE; }
 condition       { yy_push_state(CONDITION_STATE, yyscanner); return CONDITION; }
 kind            { return KIND; }
-device_num/"("  { return DEVICE_NUM; }
+device_num/{blank}*\( { return DEVICE_NUM; }
+uid/{blank}*\(        { return UID; }
 host{id_char}+  { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
 host/{blank}    { return HOST; }
 host/"("        { return HOST; }
@@ -837,11 +985,16 @@ num_tasks/"("           { yy_push_state(NUM_TASKS_STATE, yyscanner); return NUM_
 nogroup         { return NOGROUP; }
 
 requires                  { return REQUIRES; } 
+reverse_offload/{blank}*\( { yy_push_state(REQUIREMENT_CLAUSE_STATE, yyscanner); return REVERSE_OFFLOAD; }
 reverse_offload           { return REVERSE_OFFLOAD; }
+unified_address/{blank}*\( { yy_push_state(REQUIREMENT_CLAUSE_STATE, yyscanner); return UNIFIED_ADDRESS; }
 unified_address           { return UNIFIED_ADDRESS; }
+unified_shared_memory/{blank}*\( { yy_push_state(REQUIREMENT_CLAUSE_STATE, yyscanner); return UNIFIED_SHARED_MEMORY; }
 unified_shared_memory     { return UNIFIED_SHARED_MEMORY; }
 atomic_default_mem_order  { yy_push_state(ATOMIC_DEFAULT_MEM_ORDER_STATE, yyscanner); return ATOMIC_DEFAULT_MEM_ORDER; }
+dynamic_allocators/{blank}*\( { yy_push_state(REQUIREMENT_CLAUSE_STATE, yyscanner); return DYNAMIC_ALLOCATORS; }
 dynamic_allocators        { return DYNAMIC_ALLOCATORS; }
+self_maps/{blank}*\(      { yy_push_state(REQUIREMENT_CLAUSE_STATE, yyscanner); return SELF_MAPS; }
 self_maps                 { return SELF_MAPS; }
 seq_cst                   { return SEQ_CST; }
 acq_rel                   { return ACQ_REL; }
@@ -900,7 +1053,7 @@ critical                  { return CRITICAL; }
 depobj                    { return DEPOBJ; }
 destroy                   { return DESTROY; }
 threads                   { return THREADS; }
-sizes                     { yy_push_state(SIZES_STATE, yyscanner); return SIZES; }
+sizes                     { sizes_paren_depth = 0; yy_push_state(SIZES_STATE, yyscanner); return SIZES; }
 
 filter                    { return FILTER; }
 compare                   { return COMPARE; }
@@ -935,6 +1088,7 @@ init/"("                  { yy_push_state(INIT_STATE, yyscanner); return INIT; }
 init_complete/"("         { yy_push_state(OPTIONAL_EXPR_STATE, yyscanner); return INIT_COMPLETE; }
 init_complete             { return INIT_COMPLETE; }
 safesync                  { return SAFESYNC; }
+device_safesync/{blank}*\( { yy_push_state(REQUIREMENT_CLAUSE_STATE, yyscanner); return DEVICE_SAFESYNC; }
 device_safesync           { return DEVICE_SAFESYNC; }
 target_data/{blank}       { return TARGET_DATA_COMPOSITE; }  /* OpenMP 6.0 task-generating construct */
 target_/enter_data{blank} { return TARGET; }
@@ -970,26 +1124,57 @@ all                       { return ALL; }
 cgroup                    { return CGROUP; }
 
 
-<RAW_EXPR_STATE>"("                        { parenthesis_local_count++; parenthesis_global_count++; current_string.push_back('('); }
-<RAW_EXPR_STATE>")"                        {
-                                             parenthesis_local_count--;
-                                             parenthesis_global_count--;
-                                             if (parenthesis_global_count == 0) {
-                                               yy_pop_state(yyscanner);
-                                               if (!current_string.empty()) {
-                                                 return emit_expr_string_and_unput(')', yylval, yyscanner);
-                                               }
+<RAW_EXPR_STATE>{newline}+                 { current_string.append(yytext, yyleng); }
+<RAW_EXPR_STATE>.                          {
+                                             current_char = yytext[0];
+                                             if (consume_quoted_character(current_char)) {
+                                               /* Quoted host text is opaque to OpenMP delimiters. */
                                              } else {
-                                               current_string.push_back(')');
+                                               switch (current_char) {
+                                               case '(':
+                                                 ++parenthesis_local_count;
+                                                 ++parenthesis_global_count;
+                                                 current_string.push_back(current_char);
+                                                 break;
+                                               case ')':
+                                                 --parenthesis_local_count;
+                                                 --parenthesis_global_count;
+                                                 if (parenthesis_global_count == 0) {
+                                                   yy_pop_state(yyscanner);
+                                                   if (!current_string.empty()) {
+                                                     return emit_expr_string_and_unput(
+                                                         current_char, yylval, yyscanner);
+                                                   }
+                                                 } else {
+                                                   current_string.push_back(current_char);
+                                                 }
+                                                 break;
+                                               case '{':
+                                                 ++brace_count;
+                                                 current_string.push_back(current_char);
+                                                 break;
+                                               case '}':
+                                                 --brace_count;
+                                                 current_string.push_back(current_char);
+                                                 break;
+                                               case '[':
+                                                 ++bracket_count;
+                                                 current_string.push_back(current_char);
+                                                 break;
+                                               case ']':
+                                                 --bracket_count;
+                                                 current_string.push_back(current_char);
+                                                 break;
+                                               case '"':
+                                               case '\'':
+                                                 begin_quoted_fragment(current_char);
+                                                 break;
+                                               default:
+                                                 current_string.push_back(current_char);
+                                                 break;
+                                               }
                                              }
                                            }
-<RAW_EXPR_STATE>"{"                        { brace_count++; current_string.push_back('{'); }
-<RAW_EXPR_STATE>"}"                        { brace_count--; current_string.push_back('}'); }
-<RAW_EXPR_STATE>"["                        { bracket_count++; current_string.push_back('['); }
-<RAW_EXPR_STATE>"]"                        { bracket_count--; current_string.push_back(']'); }
-<RAW_EXPR_STATE>"\""                       { inside_quotes = !inside_quotes; current_string.push_back('"'); }
-<RAW_EXPR_STATE>{newline}+                 { current_string.push_back('\n'); }
-<RAW_EXPR_STATE>.                          { current_string.push_back(yytext[0]); }
 
 "("             { return '('; }
 ")"             { return ')'; }
@@ -1015,15 +1200,13 @@ cgroup                    { return CGROUP; }
 <ALLOCATE_STATE>omp_pteam_mem_alloc/{blank}*:         { return PTEAM_MEM_ALLOC; }
 <ALLOCATE_STATE>omp_thread_mem_alloc/{blank}*:        { return THREAD_MEM_ALLOC; }
 <ALLOCATE_STATE>allocator{blank}*\( {
-                                              prepare_expression_capture_str(yytext);
-                                              parenthesis_local_count = 1;
-                                              parenthesis_global_count = 1;
+                                              beginAllocateModifierCapture(
+                                                  ALLOCATOR_MODIFIER);
                                               yy_push_state(ALLOCATOR_CALL_STATE, yyscanner);
                                             }
 <ALLOCATE_STATE>align{blank}*\( {
-                                              prepare_expression_capture_str(yytext);
-                                              parenthesis_local_count = 1;
-                                              parenthesis_global_count = 1;
+                                              beginAllocateModifierCapture(
+                                                  ALIGN_MODIFIER);
                                               yy_push_state(ALLOCATOR_CALL_STATE, yyscanner);
                                             }
 <ALLOCATE_STATE>[A-Za-z_][A-Za-z0-9_]*{blank}*/":" {
@@ -1033,8 +1216,12 @@ cgroup                    { return CGROUP; }
                                                 len--;
                                               }
                                               std::string allocator(yytext, len);
+                                              expression_begin_offset =
+                                                  lexer_location_state.last_token_offset;
                                               yylval->stype =
-                                                  store_lexeme(allocator);
+                                                  store_lexeme(
+                                                      allocator,
+                                                      lexer_location_state.last_token_offset + len);
                                               return ALLOCATOR_IDENTIFIER;
                                             }
 <ALLOCATE_STATE>"("                                   { return '('; }
@@ -1044,34 +1231,23 @@ cgroup                    { return CGROUP; }
 <ALLOCATE_STATE>{blank}*                              { ; }
 <ALLOCATE_STATE>.                                     { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
-<ALLOCATOR_CALL_STATE>"(" {
-                                              parenthesis_local_count++;
-                                              parenthesis_global_count++;
-                                              current_string.push_back('(');
-                                            }
-<ALLOCATOR_CALL_STATE>")" {
-                                              current_string.push_back(')');
-                                              parenthesis_local_count--;
-                                              parenthesis_global_count--;
-                                              if (parenthesis_global_count == 0) {
-                                                std::string allocator_expr = current_string;
-                                                clear_expression_buffer();
+<ALLOCATOR_CALL_STATE>{newline}+ {
+                                              int token =
+                                                  consumeAllocateModifierCharacter(
+                                                      yytext[0], yylval);
+                                              if (token != 0) {
                                                 yy_pop_state(yyscanner);
-                                                yylval->stype =
-                                                    store_lexeme(
-                                                        allocator_expr,
-                                                        lexer_location_state.offset);
-                                                return ALLOCATOR_IDENTIFIER;
+                                                return token;
                                               }
                                             }
-<ALLOCATOR_CALL_STATE>{blank}+ {
-                                              current_string.append(yytext, yyleng);
-                                            }
-<ALLOCATOR_CALL_STATE>{newline}+ {
-                                              current_string.append(yytext, yyleng);
-                                            }
 <ALLOCATOR_CALL_STATE>. {
-                                              current_string.push_back(yytext[0]);
+                                              int token =
+                                                  consumeAllocateModifierCharacter(
+                                                      yytext[0], yylval);
+                                              if (token != 0) {
+                                                yy_pop_state(yyscanner);
+                                                return token;
+                                              }
                                             }
 
 <IF_STATE>parallel{blank}*/:                { return PARALLEL; }
@@ -1162,9 +1338,11 @@ cgroup                    { return CGROUP; }
 <REDUCTION_STATE>inscan/{blank}*,           { return MODIFIER_INSCAN; }
 <REDUCTION_STATE>task/{blank}*,             { return MODIFIER_TASK; }
 <REDUCTION_STATE>default/{blank}*,          { return MODIFIER_DEFAULT; }
+<REDUCTION_STATE>original{blank}*\({blank}*private{blank}*\) { return MODIFIER_ORIGINAL_PRIVATE; }
 <REDUCTION_STATE>"("                        { return '('; }
 <REDUCTION_STATE>")"                        { yy_pop_state(yyscanner); return ')'; }
 <REDUCTION_STATE>","                        { return ','; }
+<REDUCTION_STATE>"::"                       { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
 <REDUCTION_STATE>":"                        { return ':'; }
 <REDUCTION_STATE>"+"                        { return '+'; }
 <REDUCTION_STATE>"-"                        { return '-'; }
@@ -1174,6 +1352,10 @@ cgroup                    { return CGROUP; }
 <REDUCTION_STATE>"^"                        { return '^'; }
 <REDUCTION_STATE>"&&"                       { return LOGAND; }
 <REDUCTION_STATE>"||"                       { return LOGOR; }
+<REDUCTION_STATE>".and."                    { return FORTRAN_LOGAND; }
+<REDUCTION_STATE>".or."                     { return FORTRAN_LOGOR; }
+<REDUCTION_STATE>".eqv."                    { return EQV; }
+<REDUCTION_STATE>".neqv."                   { return NEQV; }
 <REDUCTION_STATE>min/{blank}*:              { return MIN; }
 <REDUCTION_STATE>max/{blank}*:              { return MAX; }
 <REDUCTION_STATE>{blank}*                   { ; }
@@ -1264,8 +1446,21 @@ cgroup                    { return CGROUP; }
 <COLLAPSE_STATE>{blank}*                    { ; }
 <COLLAPSE_STATE>.                           { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
-<SIZES_STATE>"("                            { return '('; }
-<SIZES_STATE>")"                            { yy_pop_state(yyscanner); return ')'; }
+<SIZES_STATE>"("                            {
+                                              if (sizes_paren_depth == 0) {
+                                                sizes_paren_depth = 1;
+                                                return '(';
+                                              }
+                                              yy_push_state(EXPR_STATE, yyscanner);
+                                              prepare_expression_capture('(');
+                                              parenthesis_local_count++;
+                                              parenthesis_global_count++;
+                                            }
+<SIZES_STATE>")"                            {
+                                              sizes_paren_depth = 0;
+                                              yy_pop_state(yyscanner);
+                                              return ')';
+                                            }
 <SIZES_STATE>","                            { return ','; }
 <SIZES_STATE>{blank}*                       { ; }
 <SIZES_STATE>.                              { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
@@ -1341,6 +1536,7 @@ cgroup                    { return CGROUP; }
 <APPLY_STATE>unroll/partial                 { return UNROLL; }
 <APPLY_STATE>unroll/full                    { return UNROLL; }
 <APPLY_STATE>unroll                         { return UNROLL; }
+<APPLY_STATE>partial/{blank}*\(             { partial_paren_depth = 0; yy_push_state(PARTIAL_STATE, yyscanner); return PARTIAL; }
 <APPLY_STATE>partial                        { return PARTIAL; }
 <APPLY_STATE>full                           { return FULL; }
 <APPLY_STATE>reverse                        { return REVERSE; }
@@ -1406,6 +1602,24 @@ cgroup                    { return CGROUP; }
 <SAFELEN_STATE>")"                          { yy_pop_state(yyscanner); return ')'; }
 <SAFELEN_STATE>{blank}*                     { ; }
 <SAFELEN_STATE>.                            { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
+
+<PARTIAL_STATE>"("                          {
+                                              if (partial_paren_depth == 0) {
+                                                partial_paren_depth = 1;
+                                                return '(';
+                                              }
+                                              yy_push_state(EXPR_STATE, yyscanner);
+                                              prepare_expression_capture('(');
+                                              parenthesis_local_count++;
+                                              parenthesis_global_count++;
+                                            }
+<PARTIAL_STATE>")"                          {
+                                              partial_paren_depth = 0;
+                                              yy_pop_state(yyscanner);
+                                              return ')';
+                                            }
+<PARTIAL_STATE>{blank}*                     { ; }
+<PARTIAL_STATE>.                            { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
 <NONTEMPORAL_STATE>"("                      { return '('; }
 <NONTEMPORAL_STATE>")"                      { yy_pop_state(yyscanner); return ')'; }
@@ -1479,14 +1693,10 @@ cgroup                    { return CGROUP; }
 <INITIALIZER_STATE>")"                      { yy_pop_state(yyscanner); return ')'; }
 <INITIALIZER_STATE>.                        { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
-<MAPPER_STATE>default                       { return IDENTIFIER_DEFAULT; }
-<MAPPER_STATE>"::"                          { return DOUBLE_COLON; }
-<MAPPER_STATE>":"                           { yy_push_state(ID_EXPR_STATE, yyscanner); return ':'; }
-<MAPPER_STATE>map                           { yy_pop_state(yyscanner); yy_push_state(MAP_STATE, yyscanner); return MAP; }
 <MAPPER_STATE>{blank}*                      { ; }
-<MAPPER_STATE>"("                           { return '('; }
+<MAPPER_STATE>"("                           { prepare_expression_capture(); yy_push_state(RAW_EXPR_STATE, yyscanner); return '('; }
 <MAPPER_STATE>")"                           { yy_pop_state(yyscanner); return ')'; }
-<MAPPER_STATE>.                             { yy_push_state(ID_EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
+<MAPPER_STATE>.                             { return -1; }
 
 <TYPE_STR_STATE>"::"                        { current_string.append("::"); }
 <TYPE_STR_STATE>.                           { current_char = yytext[0];
@@ -1547,7 +1757,7 @@ cgroup                    { return CGROUP; }
 <WHEN_STATE>"="                             { return '='; }
 <WHEN_STATE>"{"                             { yy_push_state(INITIAL, yyscanner); return '{'; } /* now parsrsing enters to pass a full construct, directive, condition, etc */
 <WHEN_STATE>"}"                             { return '}'; }
-<WHEN_STATE>","                             { ; }
+<WHEN_STATE>","                             { return ','; }
 <WHEN_STATE>user                            { return USER; }
 <WHEN_STATE>construct                       { return CONSTRUCT; }
 <WHEN_STATE>device                          { return DEVICE; }
@@ -1556,17 +1766,129 @@ cgroup                    { return CGROUP; }
 <WHEN_STATE>{blank}*                        { ; }
 <WHEN_STATE>.                               { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
-<IMPLEMENTATION_STATE>"("                            { return '('; }
-<IMPLEMENTATION_STATE>","                            { return ','; }
+<IMPLEMENTATION_STATE>"("                            {
+                                                        if (implementation_selector_parenthesis_pending) {
+                                                          implementation_selector_parenthesis_pending = false;
+                                                          yy_push_state(EXTENSION_STATE, yyscanner);
+                                                        }
+                                                        return '(';
+                                                      }
+<IMPLEMENTATION_STATE>","                            {
+                                                        implementation_selector_parenthesis_pending = false;
+                                                        return ',';
+                                                      }
 <IMPLEMENTATION_STATE>")"                            { return ')'; }
 <IMPLEMENTATION_STATE>"="                            { return '='; }
 <IMPLEMENTATION_STATE>"{"                            { brace_count++; return '{'; }
-<IMPLEMENTATION_STATE>"}"                            { yy_pop_state(yyscanner); return '}'; }
+<IMPLEMENTATION_STATE>"}"                            {
+                                                        implementation_selector_parenthesis_pending = false;
+                                                        yy_pop_state(yyscanner);
+                                                        return '}';
+                                                      }
 <IMPLEMENTATION_STATE>vendor/{blank}*\(              { yy_push_state(VENDOR_STATE, yyscanner); return VENDOR; }
 <IMPLEMENTATION_STATE>extension/{blank}*\(           { yy_push_state(EXTENSION_STATE, yyscanner); return EXTENSION; }
-<IMPLEMENTATION_STATE>requires/{blank}*\(            { return REQUIRES; }
+<IMPLEMENTATION_STATE>requires/{blank}*\(            {
+                                                        requires_trait_parenthesis_depth = 0;
+                                                        requires_trait_atomic_argument_pending = false;
+                                                        requires_trait_expression_pending = false;
+                                                        yy_push_state(REQUIRES_TRAIT_STATE, yyscanner);
+                                                        return REQUIRES;
+                                                      }
+<IMPLEMENTATION_STATE>atomic_default_mem_order/{blank}*\( {
+                                                        yy_push_state(ATOMIC_DEFAULT_MEM_ORDER_STATE, yyscanner);
+                                                        return ATOMIC_DEFAULT_MEM_ORDER;
+                                                      }
 <IMPLEMENTATION_STATE>{blank}*                       { ; }
-<IMPLEMENTATION_STATE>.                              { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
+<IMPLEMENTATION_STATE>{identifier}                  {
+                                                        implementation_selector_parenthesis_pending = true;
+                                                        expression_begin_offset =
+                                                            lexer_location_state.last_token_offset;
+                                                        yylval->stype = store_lexeme(
+                                                            std::string(yytext, yyleng),
+                                                            lexer_location_state.offset);
+                                                        return EXPR_STRING;
+                                                      }
+<IMPLEMENTATION_STATE>.                              {
+                                                        return INVALID_TOKEN;
+                                                      }
+
+<REQUIREMENT_CLAUSE_STATE>{blank}+                  { ; }
+<REQUIREMENT_CLAUSE_STATE>"("                       {
+                                                        prepare_expression_capture();
+                                                        yy_push_state(RAW_EXPR_STATE, yyscanner);
+                                                        return '(';
+                                                      }
+<REQUIREMENT_CLAUSE_STATE>")"                       { yy_pop_state(yyscanner); return ')'; }
+<REQUIREMENT_CLAUSE_STATE>.                          {
+                                                        return INVALID_TOKEN;
+                                                      }
+
+<REQUIRES_TRAIT_STATE>{blank}+                       { ; }
+<REQUIRES_TRAIT_STATE>score/{blank}*\(               { yy_push_state(SCORE_STATE, yyscanner); return SCORE; }
+<REQUIRES_TRAIT_STATE>reverse_offload                { requires_trait_expression_pending = true; return REVERSE_OFFLOAD; }
+<REQUIRES_TRAIT_STATE>unified_address                { requires_trait_expression_pending = true; return UNIFIED_ADDRESS; }
+<REQUIRES_TRAIT_STATE>unified_shared_memory          { requires_trait_expression_pending = true; return UNIFIED_SHARED_MEMORY; }
+<REQUIRES_TRAIT_STATE>dynamic_allocators             { requires_trait_expression_pending = true; return DYNAMIC_ALLOCATORS; }
+<REQUIRES_TRAIT_STATE>self_maps                      { requires_trait_expression_pending = true; return SELF_MAPS; }
+<REQUIRES_TRAIT_STATE>device_safesync                { requires_trait_expression_pending = true; return DEVICE_SAFESYNC; }
+<REQUIRES_TRAIT_STATE>atomic_default_mem_order       {
+                                                        requires_trait_atomic_argument_pending = true;
+                                                        requires_trait_expression_pending = false;
+                                                        return ATOMIC_DEFAULT_MEM_ORDER;
+                                                      }
+<REQUIRES_TRAIT_STATE>seq_cst                        { return SEQ_CST; }
+<REQUIRES_TRAIT_STATE>acq_rel                        { return ACQ_REL; }
+<REQUIRES_TRAIT_STATE>acquire                        { return ACQUIRE; }
+<REQUIRES_TRAIT_STATE>release                        { return RELEASE; }
+<REQUIRES_TRAIT_STATE>relaxed                        { return RELAXED; }
+<REQUIRES_TRAIT_STATE>ext_/{identifier}              {
+                                                        requires_trait_expression_pending = false;
+                                                        return EXT_;
+                                                      }
+<REQUIRES_TRAIT_STATE>{identifier}                   {
+                                                        expression_begin_offset =
+                                                            lexer_location_state.last_token_offset;
+                                                        yylval->stype = store_lexeme(
+                                                            std::string(yytext, yyleng),
+                                                            lexer_location_state.offset);
+                                                        return EXPR_STRING;
+                                                      }
+<REQUIRES_TRAIT_STATE>"("                            {
+                                                        if (requires_trait_parenthesis_depth == 0) {
+                                                          requires_trait_parenthesis_depth = 1;
+                                                        } else if (requires_trait_atomic_argument_pending) {
+                                                          ++requires_trait_parenthesis_depth;
+                                                          requires_trait_atomic_argument_pending = false;
+                                                        } else if (requires_trait_expression_pending) {
+                                                          ++requires_trait_parenthesis_depth;
+                                                          requires_trait_expression_pending = false;
+                                                          prepare_expression_capture();
+                                                          yy_push_state(RAW_EXPR_STATE, yyscanner);
+                                                        } else {
+                                                          return INVALID_TOKEN;
+                                                        }
+                                                        return '(';
+                                                      }
+<REQUIRES_TRAIT_STATE>")"                            {
+                                                        if (requires_trait_parenthesis_depth <= 0) {
+                                                          return INVALID_TOKEN;
+                                                        }
+                                                        --requires_trait_parenthesis_depth;
+                                                        requires_trait_atomic_argument_pending = false;
+                                                        requires_trait_expression_pending = false;
+                                                        if (requires_trait_parenthesis_depth == 0) {
+                                                          yy_pop_state(yyscanner);
+                                                        }
+                                                        return ')';
+                                                      }
+<REQUIRES_TRAIT_STATE>","                            {
+                                                        requires_trait_atomic_argument_pending = false;
+                                                        requires_trait_expression_pending = false;
+                                                        return ',';
+                                                      }
+<REQUIRES_TRAIT_STATE>.                              {
+                                                        return INVALID_TOKEN;
+                                                      }
 
 <MATCH_STATE>"("                            { return '('; }
 <MATCH_STATE>":"                            { yy_push_state(INITIAL, yyscanner); return ':'; }
@@ -1610,31 +1932,36 @@ cgroup                    { return CGROUP; }
 <CONDITION_STATE>.                          { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
 <VENDOR_STATE>"("                           { return '('; }
+<VENDOR_STATE>","                           { return ','; }
 <VENDOR_STATE>")"                           { yy_pop_state(yyscanner); return ')'; }
 <VENDOR_STATE>{blank}*                      { ; }
-<VENDOR_STATE>amd/{blank}*\)                { return AMD; }
-<VENDOR_STATE>arm/{blank}*\)                { return ARM; }
-<VENDOR_STATE>bsc/{blank}*\)                { return BSC; }
-<VENDOR_STATE>cray/{blank}*\)               { return CRAY; }
-<VENDOR_STATE>fujitsu/{blank}*\)            { return FUJITSU; }
-<VENDOR_STATE>gnu/{blank}*\)                { return GNU; }
-<VENDOR_STATE>ibm/{blank}*\)                { return IBM; }
-<VENDOR_STATE>intel/{blank}*\)              { return INTEL; }
-<VENDOR_STATE>llvm/{blank}*\)               { return LLVM; }
-<VENDOR_STATE>nvidia/{blank}*\)             { return NVIDIA; }
-<VENDOR_STATE>pgi/{blank}*\)                { return PGI; }
-<VENDOR_STATE>ti/{blank}*\)                 { return TI; }
-<VENDOR_STATE>unknown/{blank}*\)            { return UNKNOWN; }
+<VENDOR_STATE>amd/{blank}*[,)]               { return AMD; }
+<VENDOR_STATE>arm/{blank}*[,)]               { return ARM; }
+<VENDOR_STATE>bsc/{blank}*[,)]               { return BSC; }
+<VENDOR_STATE>cray/{blank}*[,)]              { return CRAY; }
+<VENDOR_STATE>fujitsu/{blank}*[,)]           { return FUJITSU; }
+<VENDOR_STATE>gnu/{blank}*[,)]               { return GNU; }
+<VENDOR_STATE>ibm/{blank}*[,)]               { return IBM; }
+<VENDOR_STATE>intel/{blank}*[,)]             { return INTEL; }
+<VENDOR_STATE>llvm/{blank}*[,)]              { return LLVM; }
+<VENDOR_STATE>nvidia/{blank}*[,)]            { return NVIDIA; }
+<VENDOR_STATE>pgi/{blank}*[,)]               { return PGI; }
+<VENDOR_STATE>ti/{blank}*[,)]                { return TI; }
+<VENDOR_STATE>user/{blank}*[,)]              { return USER; }
+<VENDOR_STATE>unknown/{blank}*[,)]           { return UNKNOWN; }
 <VENDOR_STATE>score/{blank}*\(              { yy_push_state(SCORE_STATE, yyscanner); return SCORE; }
+<VENDOR_STATE>.                              { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
 <EXTENSION_STATE>"("                        { return '('; }
 <EXTENSION_STATE>")"                        { yy_pop_state(yyscanner); return ')'; }
 <EXTENSION_STATE>{blank}*                   { ; }
+<EXTENSION_STATE>score/{blank}*\(           { yy_push_state(SCORE_STATE, yyscanner); return SCORE; }
 <EXTENSION_STATE>.                          { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
 <IN_REDUCTION_STATE>"("                     { return '('; }
 <IN_REDUCTION_STATE>")"                     { yy_pop_state(yyscanner); return ')'; }
 <IN_REDUCTION_STATE>","                     { return ','; }
+<IN_REDUCTION_STATE>"::"                    { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
 <IN_REDUCTION_STATE>":"                     { return ':'; }
 <IN_REDUCTION_STATE>"+"                     { return '+'; }
 <IN_REDUCTION_STATE>"-"                     { return '-'; }
@@ -1644,6 +1971,10 @@ cgroup                    { return CGROUP; }
 <IN_REDUCTION_STATE>"^"                     { return '^'; }
 <IN_REDUCTION_STATE>"&&"                    { return LOGAND; }
 <IN_REDUCTION_STATE>"||"                    { return LOGOR; }
+<IN_REDUCTION_STATE>".and."                 { return FORTRAN_LOGAND; }
+<IN_REDUCTION_STATE>".or."                  { return FORTRAN_LOGOR; }
+<IN_REDUCTION_STATE>".eqv."                 { return EQV; }
+<IN_REDUCTION_STATE>".neqv."                { return NEQV; }
 <IN_REDUCTION_STATE>min/{blank}*:           { return MIN; }
 <IN_REDUCTION_STATE>max/{blank}*:           { return MAX; }
 <IN_REDUCTION_STATE>{blank}*                { ; }
@@ -1675,7 +2006,7 @@ cgroup                    { return CGROUP; }
 <DOACROSS_STATE>{blank}*                    { ; }
 <DOACROSS_STATE>.                           { yy_push_state(EXPR_STATE, yyscanner); tracked_unput(yytext[0], yyscanner); }
 
-<DEPEND_ITERATOR_STATE>"("                  { return '('; }
+<DEPEND_ITERATOR_STATE>"("                  { prepare_expression_capture(); yy_push_state(RAW_EXPR_STATE, yyscanner); return '('; }
 <DEPEND_ITERATOR_STATE>"="                  { return '='; }
 <DEPEND_ITERATOR_STATE>","                  { return ','; }
 <DEPEND_ITERATOR_STATE>":"                  { return ':'; }
@@ -1707,7 +2038,7 @@ cgroup                    { return CGROUP; }
 <AFFINITY_EXPR_STATE>":"                    { yy_pop_state(yyscanner); return emit_expr_string_and_unput(':', yylval, yyscanner); }
 <AFFINITY_EXPR_STATE>.                      { current_string.push_back(yytext[0]); }
 
-<AFFINITY_ITERATOR_STATE>"("                { return '('; }
+<AFFINITY_ITERATOR_STATE>"("                { prepare_expression_capture(); yy_push_state(RAW_EXPR_STATE, yyscanner); return '('; }
 <AFFINITY_ITERATOR_STATE>"="                { return '='; }
 <AFFINITY_ITERATOR_STATE>":"                { return ':'; }
 <AFFINITY_ITERATOR_STATE>","                { return ','; }
@@ -1722,9 +2053,12 @@ cgroup                    { return CGROUP; }
 
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>seq_cst     { return SEQ_CST; }
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>acq_rel     { return ACQ_REL; }
+<ATOMIC_DEFAULT_MEM_ORDER_STATE>acquire     { return ACQUIRE; }
+<ATOMIC_DEFAULT_MEM_ORDER_STATE>release     { return RELEASE; }
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>relaxed     { return RELAXED; }
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>"("         { return '('; }
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>")"         { yy_pop_state(yyscanner); return ')'; }
+<ATOMIC_DEFAULT_MEM_ORDER_STATE>score/{blank}*\( { yy_push_state(SCORE_STATE, yyscanner); return SCORE; }
 <ATOMIC_DEFAULT_MEM_ORDER_STATE>{blank}*    { ; }
 
 <DEVICE_STATE>ancestor/{blank}*:            { return ANCESTOR; }
@@ -1776,7 +2110,7 @@ cgroup                    { return CGROUP; }
 <TO_MAPPER_STATE>")"                        { yy_pop_state(yyscanner); return ')'; }
 <TO_MAPPER_STATE>.                          { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
-<TO_ITERATOR_STATE>"("                      { return '('; }
+<TO_ITERATOR_STATE>"("                      { prepare_expression_capture(); yy_push_state(RAW_EXPR_STATE, yyscanner); return '('; }
 <TO_ITERATOR_STATE>"="                      { return '='; }
 <TO_ITERATOR_STATE>","                      { return ','; }
 <TO_ITERATOR_STATE>":"                      { return ':'; }
@@ -1804,6 +2138,7 @@ cgroup                    { return CGROUP; }
 <FROM_STATE>")"                             { b_within_variable_list = false; yy_pop_state(yyscanner); return ')'; }
 <FROM_STATE>","                             { return ','; }
 <FROM_STATE>":"                             { return ':'; }
+<FROM_STATE>iterator/{blank}*"("            { yy_push_state(FROM_ITERATOR_STATE, yyscanner); return FROM_ITERATOR; }
 <FROM_STATE>mapper/{blank}*"("              { yy_push_state(FROM_MAPPER_STATE, yyscanner); return FROM_MAPPER; }
 <FROM_STATE>present                         { return PRESENT; }
 <FROM_STATE>{blank}*                        { ; }
@@ -1812,6 +2147,10 @@ cgroup                    { return CGROUP; }
 <FROM_MAPPER_STATE>"("                      { return '('; }
 <FROM_MAPPER_STATE>")"                      { yy_pop_state(yyscanner); return ')'; }
 <FROM_MAPPER_STATE>.                        { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
+
+<FROM_ITERATOR_STATE>"("                    { prepare_expression_capture(); yy_push_state(RAW_EXPR_STATE, yyscanner); return '('; }
+<FROM_ITERATOR_STATE>")"                    { yy_pop_state(yyscanner); return ')'; }
+<FROM_ITERATOR_STATE>{blank}*               { ; }
 
 <ENTER_STATE>"("                            {
                                                if (!b_within_variable_list) {
@@ -1845,8 +2184,16 @@ cgroup                    { return CGROUP; }
 <THREAD_LIMIT_STATE>{blank}*                { ; }
 <THREAD_LIMIT_STATE>.                       { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
-<USES_ALLOCATORS_STATE>"("                                     { uses_allocators_paren_depth++; return '('; }
+<USES_ALLOCATORS_STATE>"("                                     {
+                                                                    if (uses_allocators_paren_depth > 0) {
+                                                                      prepare_expression_capture();
+                                                                      yy_push_state(ALLOC_EXPR_STATE, yyscanner);
+                                                                    }
+                                                                    uses_allocators_paren_depth++;
+                                                                    return '(';
+                                                                  }
 <USES_ALLOCATORS_STATE>","                                     { return ','; }
+<USES_ALLOCATORS_STATE>":"                                     { return ':'; }
 <USES_ALLOCATORS_STATE>")"                                     { if (uses_allocators_paren_depth > 0) { uses_allocators_paren_depth--; } if (uses_allocators_paren_depth == 0) { yy_pop_state(yyscanner); } return ')'; }
 <USES_ALLOCATORS_STATE>omp_default_mem_alloc/{blank}*"("       { yy_push_state(ALLOC_EXPR_STATE, yyscanner); return DEFAULT_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>omp_large_cap_mem_alloc/{blank}*"("     { yy_push_state(ALLOC_EXPR_STATE, yyscanner); return LARGE_CAP_MEM_ALLOC; }
@@ -1866,7 +2213,15 @@ cgroup                    { return CGROUP; }
 <USES_ALLOCATORS_STATE>omp_thread_mem_alloc        { return THREAD_MEM_ALLOC; }
 <USES_ALLOCATORS_STATE>traits                      { return TRAITS; }
 <USES_ALLOCATORS_STATE>{blank}*                                { ; }
-<USES_ALLOCATORS_STATE>.                                       { yy_push_state(EXPR_STATE, yyscanner); tracked_unput(yytext[0], yyscanner); }
+<USES_ALLOCATORS_STATE>{allocator_designator}                 {
+                                                                    expression_begin_offset =
+                                                                        lexer_location_state.last_token_offset;
+                                                                    yylval->stype = store_lexeme(
+                                                                        std::string(yytext, yyleng),
+                                                                        lexer_location_state.offset);
+                                                                    return EXPR_STRING;
+                                                                  }
+<USES_ALLOCATORS_STATE>.                                       { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
 <ALLOC_EXPR_STATE>"("                        { uses_allocators_paren_depth++; prepare_expression_capture(); return '('; }
 <ALLOC_EXPR_STATE>")"                        { yy_pop_state(yyscanner); return emit_expr_string_and_unput(')', yylval, yyscanner); }
@@ -1933,7 +2288,7 @@ cgroup                    { return CGROUP; }
 <MAP_MAPPER_STATE>")"                        { yy_pop_state(yyscanner); return ')'; }
 <MAP_MAPPER_STATE>.                          { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture(yytext[0]); }
 
-<MAP_ITERATOR_STATE>"("                      { return '('; }
+<MAP_ITERATOR_STATE>"("                      { prepare_expression_capture(); yy_push_state(RAW_EXPR_STATE, yyscanner); return '('; }
 <MAP_ITERATOR_STATE>"="                      { return '='; }
 <MAP_ITERATOR_STATE>","                      { return ','; }
 <MAP_ITERATOR_STATE>":"                      { return ':'; }
@@ -1952,6 +2307,7 @@ cgroup                    { return CGROUP; }
 <TASK_REDUCTION_STATE>"("                     { return '('; }
 <TASK_REDUCTION_STATE>")"                     { yy_pop_state(yyscanner); return ')'; }
 <TASK_REDUCTION_STATE>","                     { return ','; }
+<TASK_REDUCTION_STATE>"::"                    { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
 <TASK_REDUCTION_STATE>":"                     { return ':'; }
 <TASK_REDUCTION_STATE>"+"                     { return '+'; }
 <TASK_REDUCTION_STATE>"-"                     { return '-'; }
@@ -1961,6 +2317,10 @@ cgroup                    { return CGROUP; }
 <TASK_REDUCTION_STATE>"^"                     { return '^'; }
 <TASK_REDUCTION_STATE>"&&"                    { return LOGAND; }
 <TASK_REDUCTION_STATE>"||"                    { return LOGOR; }
+<TASK_REDUCTION_STATE>".and."                 { return FORTRAN_LOGAND; }
+<TASK_REDUCTION_STATE>".or."                  { return FORTRAN_LOGOR; }
+<TASK_REDUCTION_STATE>".eqv."                 { return EQV; }
+<TASK_REDUCTION_STATE>".neqv."                { return NEQV; }
 <TASK_REDUCTION_STATE>min/{blank}*:           { return MIN; }
 <TASK_REDUCTION_STATE>max/{blank}*:           { return MAX; }
 <TASK_REDUCTION_STATE>{blank}*                { ; }
@@ -1978,7 +2338,13 @@ cgroup                    { return CGROUP; }
 <UPDATE_STATE>{blank}*                        { ; }
 <UPDATE_STATE>.                               { yy_pop_state(yyscanner); tracked_unput(yytext[0], yyscanner); }
 
+<EXPR_STATE>"::"                        {
+                                            start_expression_at_current_token_if_needed(':');
+                                            current_string.append(yytext, yyleng);
+                                        }
 <EXPR_STATE>.                           { current_char = yytext[0];
+                                            start_expression_at_current_token_if_needed(
+                                                current_char);
                                             if (consume_quoted_character(current_char)) {
                                               /* Host-language delimiters inside a literal
                                                  never terminate an OpenMP operand. */
@@ -2026,6 +2392,9 @@ cgroup                    { return CGROUP; }
                                                         if (parenthesis_local_count == 0 && brace_count == 0 &&
                                                             bracket_count == 0 && open_paren == close_paren &&
                                                             open_brace == close_brace && open_bracket == close_bracket) {
+                                                        if (yy_top_state(yyscanner) == INDUCTION_STATE) {
+                                                            yy_pop_state(yyscanner);
+                                                        }
                                                         return emit_expr_string_and_unput(',', yylval, yyscanner);
                                                         }
                                                         current_string.push_back(current_char);
@@ -2109,6 +2478,8 @@ cgroup                    { return CGROUP; }
                                             }
                                         }
 <ID_EXPR_STATE>.                           { current_char = yytext[0];
+                                            start_expression_at_current_token_if_needed(
+                                                current_char);
                                             if (consume_quoted_character(current_char)) {
                                               /* Keep quoted declarator text opaque. */
                                             } else {
