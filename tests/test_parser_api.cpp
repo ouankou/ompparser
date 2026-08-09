@@ -1261,6 +1261,10 @@ int main() {
                   "!$omp end single copyprivate(value)", fortran_options,
                   "!$omp end single copyprivate(value)") &&
        ok;
+  ok = expectText("cxx_single_copyprivate",
+                  "#pragma omp single copyprivate(value)", cxx_options,
+                  "#pragma omp single copyprivate(value)") &&
+       ok;
   ok = expectText("end_single_nowait", "!$omp end single nowait",
                   fortran_options, "!$omp end single nowait") &&
        ok;

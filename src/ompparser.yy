@@ -6657,7 +6657,14 @@ copyprivate_clause : COPYPRIVATE {
                    }
                    ;
 fortran_copyprivate_clause : COPYPRIVATE {
-                                 if (user_set_lang == Lang_C || auto_lang == Lang_C) {current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_copyprivate);} else {reportParserError("Single does not support copyprivate_clause in Fortran."); YYABORT;}
+                                 if (user_set_lang == Lang_C || user_set_lang == Lang_Cplusplus ||
+                                     auto_lang == Lang_C || auto_lang == Lang_Cplusplus) {
+                                     current_clause = addClauseAt(current_directive, @1.first_line,
+                                                                  @1.first_column, OMPC_copyprivate);
+                                 } else {
+                                     reportParserError("Single does not support copyprivate_clause in Fortran.");
+                                     YYABORT;
+                                 }
                                } '(' var_list ')' {
                            }
                            ;
