@@ -822,7 +822,7 @@ allocator_designator ("::"{blank}*)?{identifier}({blank}*("::"|"%"){blank}*{iden
 
 [!c*]$ompx      { return OMPX; }
 [!c*]$omp       { ; }
-#pragma         { ; }
+"#"{blank}*pragma { ; }
 omp/{blank}     { ; }
 parallel/do     { compact_parallel_do = true; return PARALLEL; }
 parallel        { compact_parallel_do = false; return PARALLEL; }
