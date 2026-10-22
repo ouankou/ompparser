@@ -6815,9 +6815,6 @@ dist_schedule_clause : DIST_SCHEDULE '(' dist_schedule_parameter ')' {}
 dist_schedule_parameter : STATIC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_dist_schedule,OMPC_DIST_SCHEDULE_KIND_static); }
                         | STATIC { current_clause = addClauseAt(current_directive, @1.first_line, @1.first_column, OMPC_dist_schedule,OMPC_DIST_SCHEDULE_KIND_static); } ',' EXPR_STRING {
                             ((OpenMPDistScheduleClause*)current_clause)->setChunkSize($4);
-                            current_clause->addLangExpr($4, OMPC_CLAUSE_SEP_space,
-                                                        0, 0,
-                                                        OMP_EXPR_PARSE_expression);
                           }
                         ;
 schedule_clause : SCHEDULE {
@@ -6838,9 +6835,6 @@ schedule_parameter : schedule_kind {}
 schedule_kind : schedule_enum_kind { }
               | schedule_enum_kind ','  EXPR_STRING {
                   ((OpenMPScheduleClause*)current_clause)->setChunkSize($3);
-                  current_clause->addLangExpr($3, OMPC_CLAUSE_SEP_space,
-                                              0, 0,
-                                              OMP_EXPR_PARSE_expression);
                 }
               ;
 

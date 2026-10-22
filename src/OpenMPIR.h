@@ -19,6 +19,7 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <stdexcept>
 #include <stdio.h>
 #include <string.h>
 #include <string>
@@ -1199,7 +1200,6 @@ class OpenMPDistScheduleClause : public OpenMPClause {
 protected:
   OpenMPDistScheduleClauseKind dist_schedule_kind =
       OMPC_DIST_SCHEDULE_KIND_unknown; // kind
-  ompparser::HostFragment chunk_size;
 
 public:
   OpenMPDistScheduleClause() : OpenMPClause(OMPC_dist_schedule) {}
@@ -1212,13 +1212,11 @@ public:
 
   void setChunkSize(const char *_chunk_size);
 
-  const std::string &getChunkSize() const { return chunk_size.spelling; };
-  void
-  visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
-    if (!chunk_size.spelling.empty()) {
-      visitOwnedHostFragment(visitor, chunk_size);
-    }
-    OpenMPClause::visitHostFragments(visitor);
+  const std::string &getChunkSize() const {
+    if (expressions.size() > 1)
+      throw std::logic_error("dist_schedule has multiple chunk expressions");
+    static const std::string absent;
+    return expressions.empty() ? absent : expressions.front().fragment.spelling;
   }
 
   static OpenMPClause *addDistScheduleClause(OpenMPDirective *,
@@ -1240,7 +1238,6 @@ protected:
   OpenMPScheduleClauseKind schedulekind =
       OMPC_SCHEDULE_KIND_unspecified; // identifier
   ompparser::HostFragment user_defined_kind;
-  ompparser::HostFragment chunk_size;
 
 public:
   OpenMPScheduleClause() : OpenMPClause(OMPC_schedule) {}
@@ -1269,14 +1266,16 @@ public:
 
   void setChunkSize(const char *_step);
 
-  const std::string &getChunkSize() const { return chunk_size.spelling; };
+  const std::string &getChunkSize() const {
+    if (expressions.size() > 1)
+      throw std::logic_error("schedule has multiple chunk expressions");
+    static const std::string absent;
+    return expressions.empty() ? absent : expressions.front().fragment.spelling;
+  }
   void
   visitHostFragments(const ompparser::HostFragmentVisitor &visitor) override {
     if (!user_defined_kind.spelling.empty()) {
       visitOwnedHostFragment(visitor, user_defined_kind);
-    }
-    if (!chunk_size.spelling.empty()) {
-      visitOwnedHostFragment(visitor, chunk_size);
     }
     OpenMPClause::visitHostFragments(visitor);
   }
@@ -1513,7 +1512,14 @@ public:
                       OpenMPDefaultmapClauseCategory _category =
                           OMPC_DEFAULTMAP_CATEGORY_unspecified)
       : OpenMPClause(OMPC_default), default_kind(_default_kind),
-        category(_category) {};
+        category(_category) {
+    if (default_kind < OMPC_DEFAULT_private ||
+        default_kind >= OMPC_DEFAULT_unknown ||
+        category < OMPC_DEFAULTMAP_CATEGORY_unspecified ||
+        category >= OMPC_DEFAULTMAP_CATEGORY_unknown)
+      throw std::invalid_argument(
+          "default clause has an invalid kind or category");
+  }
 
   OpenMPDefaultClauseKind getDefaultClauseKind() const { return default_kind; };
   OpenMPDefaultmapClauseCategory getCategory() const { return category; }
@@ -1767,13 +1773,14 @@ public:
 class OpenMPDoacrossClause : public OpenMPClause {
 
 protected:
-  OpenMPDoacrossClauseType type = OMPC_DOACROSS_TYPE_unknown; // source or sink
+  const OpenMPDoacrossClauseType type;
 
 public:
-  OpenMPDoacrossClause() : OpenMPClause(OMPC_doacross) {}
-
   OpenMPDoacrossClause(OpenMPDoacrossClauseType _type)
-      : OpenMPClause(OMPC_doacross), type(_type) {};
+      : OpenMPClause(OMPC_doacross), type(_type) {
+    if (type != OMPC_DOACROSS_TYPE_source && type != OMPC_DOACROSS_TYPE_sink)
+      throw std::invalid_argument("doacross clause requires source or sink");
+  }
 
   OpenMPDoacrossClauseType getType() const { return type; };
   void setSourceExpression(const std::string &expr,
@@ -1797,7 +1804,6 @@ public:
   const std::vector<OpenMPExpressionItem> &getSinkArgs() const {
     return expressions;
   }
-  void clearSinkArgs() { expressions.clear(); }
 
   std::string toString() override;
 };
