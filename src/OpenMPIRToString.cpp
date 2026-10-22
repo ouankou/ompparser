@@ -99,8 +99,10 @@ getVariableCategorySpelling(OpenMPDefaultmapClauseCategory category) {
     return "all";
   case OMPC_DEFAULTMAP_CATEGORY_allocatable:
     return "allocatable";
-  default:
+  case OMPC_DEFAULTMAP_CATEGORY_unspecified:
     return std::string();
+  default:
+    throw std::logic_error("default clause has an invalid category");
   }
 }
 } // namespace
@@ -693,34 +695,24 @@ std::string OpenMPDependClause::toString() {
 std::string OpenMPDoacrossClause::toString() {
   std::string result = "doacross (";
 
-  OpenMPDoacrossClauseType type = this->getType();
-  switch (type) {
+  switch (getType()) {
   case OMPC_DOACROSS_TYPE_source:
     result += "source:";
+    if (hasSourceExpression())
+      result += " " + getSourceExpression().fragment.spelling;
     break;
-  case OMPC_DOACROSS_TYPE_sink:
+  case OMPC_DOACROSS_TYPE_sink: {
     result += "sink:";
-    break;
-  default:
-    result += "unknown:";
-  }
-
-  if (type == OMPC_DOACROSS_TYPE_source && this->hasSourceExpression()) {
-    result += " " + this->getSourceExpression().fragment.spelling;
-  } else if (type == OMPC_DOACROSS_TYPE_sink) {
-    const auto &args = this->getSinkArgs();
+    const auto &args = getSinkArgs();
     for (size_t idx = 0; idx < args.size(); ++idx) {
-      if (idx > 0) {
+      if (idx > 0)
         result += (args[idx].separator == OMPC_CLAUSE_SEP_comma) ? ", " : " ";
-      }
       result += args[idx].fragment.spelling;
     }
-  } else {
-    // Fallback to legacy expression list if present
-    std::string expr_string = this->expressionToString();
-    if (!expr_string.empty()) {
-      result += " " + expr_string;
-    }
+    break;
+  }
+  default:
+    throw std::logic_error("doacross clause has an invalid kind");
   }
 
   result += ") ";
@@ -2151,23 +2143,21 @@ std::string OpenMPDefaultClause::toString() {
     parameter_string = "none";
     break;
   case OMPC_DEFAULT_variant:
-    parameter_string = this->getVariantDirective()->generatePragmaString("");
+    if (getVariantDirective() == nullptr)
+      throw std::logic_error("default variant has no directive");
+    parameter_string = getVariantDirective()->generatePragmaString("");
     break;
   default:
-    break;
+    throw std::logic_error("default clause has an invalid kind");
   };
 
-  if (parameter_string.size() > 0) {
-    result += parameter_string;
-    const std::string category =
-        getVariableCategorySpelling(this->getCategory());
-    if (!category.empty()) {
-      result += ": " + category;
-    }
-    result += ") ";
-  } else {
-    return std::string();
-  }
+  if (parameter_string.empty())
+    throw std::logic_error("default clause has no printable kind");
+  result += parameter_string;
+  const std::string category = getVariableCategorySpelling(getCategory());
+  if (!category.empty())
+    result += ": " + category;
+  result += ") ";
 
   return result;
 };

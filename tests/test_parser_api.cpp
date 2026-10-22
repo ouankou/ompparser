@@ -222,6 +222,16 @@ int main() {
   registered_fragment_options.extensions =
       ompparser::ExtensionPolicy::AllowRegistered;
   ok = expectHostFragments(
+           "schedule_chunk_single_host_fragment",
+           "#pragma omp for schedule(guided,chunk)", c_options,
+           {{"chunk", OMPC_schedule, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
+           "dist_schedule_chunk_single_host_fragment",
+           "#pragma omp distribute dist_schedule(static,chunk)", c_options,
+           {{"chunk", OMPC_dist_schedule, OMP_EXPR_PARSE_expression}}) &&
+       ok;
+  ok = expectHostFragments(
            "allocate_host_fragment_modes", "#pragma omp allocate(a,b)",
            c_options,
            {{"a", OMPC_unknown, OMP_EXPR_PARSE_variable_list},

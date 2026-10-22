@@ -54,20 +54,6 @@ find_package(FLEX REQUIRED)
 
 configure_file(src/ompparser_config.h.cmake "ompparser_config.h" @ONLY)
 
-# Not used, but keep this for the purpose to keep track of the original source files
-set(OMPPARSER_SOURCE_FILES
-    src/omplexer.ll
-    src/ompparser.yy
-    src/OpenMPIR.h
-    src/OpenMPParser.h
-    src/OpenMPParser.cpp
-    src/OpenMPSchema.h
-    src/OpenMPSchema.def
-    src/OpenMPSchema.cpp
-    src/OpenMPIRToDOT.cpp
-    src/OpenMPIRToString.cpp
-    src/OpenMPIR.cpp)
-
 # OpenMPIR source files
 set(OMPIR_SOURCE_FILES
     src/OpenMPParser.cpp

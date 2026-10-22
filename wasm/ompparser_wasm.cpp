@@ -12,6 +12,7 @@
 #include <emscripten/bind.h>
 #include <regex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -35,7 +36,7 @@ bool IsFortranDirective(const std::string &line) {
 }
 
 OpenMPBaseLang ResolveLang(int lang_mode, int lang_hint) {
-  auto to_base_lang = [](int value, OpenMPBaseLang fallback) {
+  auto to_base_lang = [](int value) -> OpenMPBaseLang {
     switch (value) {
     case LangMode_C:
       return Lang_C;
@@ -44,15 +45,15 @@ OpenMPBaseLang ResolveLang(int lang_mode, int lang_hint) {
     case LangMode_Fortran:
       return Lang_Fortran;
     default:
-      return fallback;
+      throw std::invalid_argument("invalid OpenMP parser language mode");
     }
   };
 
   if (lang_mode == LangMode_Auto) {
-    return to_base_lang(lang_hint, Lang_C);
+    return to_base_lang(lang_hint);
   }
 
-  return to_base_lang(lang_mode, Lang_C);
+  return to_base_lang(lang_mode);
 }
 
 void StripTrailingCarriageReturn(std::string &line) {
