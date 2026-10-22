@@ -218,6 +218,14 @@ int main() {
   c_options.language = ompparser::BaseLanguage::C;
   ompparser::ParseOptions cxx_options;
   cxx_options.language = ompparser::BaseLanguage::CXX;
+  for (const auto &options : {c_options, cxx_options}) {
+    for (const char *prefix : {"#pragma", "# pragma", "#\tpragma"}) {
+      ok = expectText("pragma_prefix_whitespace",
+                      std::string(prefix) + " omp parallel for private(value)",
+                      options, "#pragma omp parallel for private(value)") &&
+           ok;
+    }
+  }
   ompparser::ParseOptions registered_fragment_options = c_options;
   registered_fragment_options.extensions =
       ompparser::ExtensionPolicy::AllowRegistered;
