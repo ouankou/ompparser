@@ -22,6 +22,14 @@ namespace {
 
 class TestSemanticNode final : public ompparser::HostSemanticNode {};
 
+class ClauseConstructionProbe final : public OpenMPDirective {
+public:
+  using OpenMPDirective::addOpenMPClauseWithArguments;
+  using OpenMPDirective::ClauseArgument;
+
+  ClauseConstructionProbe() : OpenMPDirective(OMPD_parallel) {}
+};
+
 class RecordingHooks final : public ompparser::HostLanguageHooks {
 public:
   mutable std::vector<ompparser::HostFragment> fragments;
@@ -69,6 +77,7 @@ struct ExpectedHostFragment {
   const char *spelling;
   OpenMPClauseKind clause_kind;
   OpenMPExprParseMode parse_mode;
+  std::size_t begin_offset = std::string::npos;
 };
 
 template <typename ResultT>
@@ -179,6 +188,8 @@ bool expectHostFragments(const char *label, const std::string &input,
     if (actual.spelling != wanted.spelling ||
         actual.clause_kind != wanted.clause_kind ||
         actual.parse_mode != wanted.parse_mode ||
+        (wanted.begin_offset != std::string::npos &&
+         actual.range.begin.offset != wanted.begin_offset) ||
         !hasSourceFaithfulRange(actual, input)) {
       std::cerr << label << ": host-fragment mismatch at " << index
                 << ": got ('" << actual.spelling << "', "
@@ -207,6 +218,102 @@ bool expectHostFragments(const char *label, const std::string &input,
     return false;
   }
   return true;
+}
+
+bool expectOwnedClauseConstructionArguments() {
+  const std::string expected = "rex_programmatic_allocator_owned_spelling";
+  std::vector<ClauseConstructionProbe::ClauseArgument> arguments;
+  arguments.emplace_back(static_cast<int>(OMPC_ALLOCATE_ALLOCATOR_user));
+  {
+    std::string buffer = expected;
+    arguments.emplace_back(buffer.c_str());
+    if (!std::holds_alternative<std::string>(arguments.back())) {
+      std::cerr << "stored clause string argument does not own its spelling\n";
+      return false;
+    }
+    buffer.assign(buffer.size(), 'x');
+  }
+  ClauseConstructionProbe directive;
+  auto *clause = dynamic_cast<OpenMPAllocateClause *>(
+      directive.addOpenMPClauseWithArguments(OMPC_allocate, arguments));
+  if (clause == nullptr || clause->getUserDefinedAllocator() != expected) {
+    std::cerr << "stored clause string argument lost its owned spelling\n";
+    return false;
+  }
+  return true;
+}
+
+bool expectClauseConstructionSourceRanges(
+    const ompparser::ParseOptions &options) {
+  const bool fortran = options.language == ompparser::BaseLanguage::Fortran;
+  const std::string prefix = fortran ? "!$omp " : "#pragma omp ";
+  bool ok = true;
+  for (const char *allocator : {"user_modi", "ReX_UsEr_AlLoCaToR"}) {
+    for (const char *syntax : {"legacy", "modifier", "mixed"}) {
+      const bool first_modifier = std::string(syntax) == "modifier";
+      const bool second_modifier = std::string(syntax) != "legacy";
+      const auto operand = [&](bool modifier) {
+        return modifier ? std::string("allocator(") + allocator + ")"
+                        : std::string(allocator);
+      };
+      const std::string input = prefix + "parallel allocate (" +
+                                operand(first_modifier) + " :a,b) allocate(" +
+                                operand(second_modifier) +
+                                ":a,c) private(a,b,c)";
+      const std::size_t first = input.find(allocator);
+      const std::size_t second = input.find(allocator, first + 1);
+      const std::string label = std::string(fortran ? "fortran_" : "c_") +
+                                syntax + "_allocator_occurrence_ranges";
+      ok = expectHostFragments(
+               label.c_str(), input, options,
+               {{allocator, OMPC_allocate, OMP_EXPR_PARSE_expression, first},
+                {"a", OMPC_allocate, OMP_EXPR_PARSE_variable_list},
+                {"b", OMPC_allocate, OMP_EXPR_PARSE_variable_list},
+                {allocator, OMPC_allocate, OMP_EXPR_PARSE_expression, second},
+                {"a", OMPC_allocate, OMP_EXPR_PARSE_variable_list},
+                {"c", OMPC_allocate, OMP_EXPR_PARSE_variable_list},
+                {"a", OMPC_private, OMP_EXPR_PARSE_variable_list},
+                {"b", OMPC_private, OMP_EXPR_PARSE_variable_list},
+                {"c", OMPC_private, OMP_EXPR_PARSE_variable_list}}) &&
+           ok;
+    }
+    const std::string input =
+        prefix + "allocate(value) allocator(" + allocator + ")";
+    ok = expectHostFragments(
+             "allocator_clause_construction_range", input, options,
+             {{"value", OMPC_unknown, OMP_EXPR_PARSE_variable_list},
+              {allocator, OMPC_allocator, OMP_EXPR_PARSE_expression,
+               input.find(allocator)}}) &&
+         ok;
+  }
+  for (const bool taskgroup : {false, true}) {
+    const char *clause = taskgroup ? "task_reduction" : "in_reduction";
+    const OpenMPClauseKind kind =
+        taskgroup ? OMPC_task_reduction : OMPC_in_reduction;
+    const std::string input = prefix + (taskgroup ? "taskgroup " : "task ") +
+                              clause + "(rex_sum:a) " + clause + "(rex_sum:b)";
+    const std::size_t first = input.find("rex_sum");
+    const std::size_t second = input.find("rex_sum", first + 1);
+    ok = expectHostFragments(
+             "reduction_clause_identifier_occurrence_ranges", input, options,
+             {{"rex_sum", kind, OMP_EXPR_PARSE_openmp_syntax, first},
+              {"a", kind, OMP_EXPR_PARSE_variable_list},
+              {"rex_sum", kind, OMP_EXPR_PARSE_openmp_syntax, second},
+              {"b", kind, OMP_EXPR_PARSE_variable_list}}) &&
+         ok;
+  }
+  const char *type = fortran ? "integer" : "int";
+  const std::string declaration =
+      prefix + "declare reduction(rex_sum:" + type +
+      ":omp_out = omp_in) initializer(omp_priv = omp_orig)";
+  ok = expectHostFragments(
+           "initializer_clause_construction_range", declaration, options,
+           {{type, OMPC_unknown, OMP_EXPR_PARSE_expression},
+            {"omp_out = omp_in", OMPC_unknown, OMP_EXPR_PARSE_expression},
+            {"omp_priv = omp_orig", OMPC_initializer, OMP_EXPR_PARSE_expression,
+             declaration.find("omp_priv = omp_orig")}}) &&
+       ok;
+  return ok;
 }
 
 bool expectParenthesizedClauseOperands(const ompparser::ParseOptions &options) {
@@ -377,6 +484,8 @@ int main() {
 
   ompparser::ParseOptions c_options;
   c_options.language = ompparser::BaseLanguage::C;
+  ok = expectOwnedClauseConstructionArguments() && ok;
+  ok = expectClauseConstructionSourceRanges(c_options) && ok;
   ok = expectParenthesizedClauseOperands(c_options) && ok;
   ompparser::ParseOptions cxx_options;
   cxx_options.language = ompparser::BaseLanguage::CXX;
@@ -1217,6 +1326,7 @@ int main() {
 
   ompparser::ParseOptions fortran_options;
   fortran_options.language = ompparser::BaseLanguage::Fortran;
+  ok = expectClauseConstructionSourceRanges(fortran_options) && ok;
   ok = expectParenthesizedClauseOperands(fortran_options) && ok;
   ok =
       expectHostFragments(

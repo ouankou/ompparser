@@ -261,7 +261,15 @@ protected:
 
   // Checked compatibility entry point used by the legacy grammar actions.
   OpenMPClause *addOpenMPClause(OpenMPClauseKind kind, int *parameters);
-  using ClauseArgument = std::variant<int, std::string>;
+  // Immediate construction must preserve lexer-owned token identity until
+  // the clause materializes its owned spelling and source range. An explicit
+  // tag keeps direct ClauseArgument{char_pointer} construction owning.
+  struct ClauseLexemeArgument {
+    const char *spelling;
+
+    explicit ClauseLexemeArgument(const char *spelling) : spelling(spelling) {}
+  };
+  using ClauseArgument = std::variant<int, std::string, ClauseLexemeArgument>;
   OpenMPClause *
   addOpenMPClauseWithArguments(OpenMPClauseKind kind,
                                const std::vector<ClauseArgument> &arguments);
@@ -321,8 +329,7 @@ public:
                                      std::remove_pointer_t<Argument>>,
                                  char>) {
           const char *value = raw_argument;
-          arguments.emplace_back(value != nullptr ? std::string(value)
-                                                  : std::string());
+          arguments.emplace_back(ClauseLexemeArgument(value));
         } else if constexpr (std::is_enum_v<Argument> ||
                              std::is_integral_v<Argument>) {
           arguments.emplace_back(static_cast<int>(raw_argument));

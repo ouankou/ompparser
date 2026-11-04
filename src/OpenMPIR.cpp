@@ -3377,7 +3377,9 @@ OpenMPClause *OpenMPDirective::addOpenMPClauseWithArguments(
     const bool valid =
         expected_arguments[index] == ExpectedArgument::Integer
             ? std::holds_alternative<int>(arguments[index])
-            : std::holds_alternative<std::string>(arguments[index]);
+            : std::holds_alternative<std::string>(arguments[index]) ||
+                  std::holds_alternative<ClauseLexemeArgument>(
+                      arguments[index]);
     if (!valid) {
       throw std::invalid_argument("mistyped clause-construction argument");
     }
@@ -3406,6 +3408,11 @@ OpenMPClause *OpenMPDirective::addOpenMPClauseWithArguments(
           "missing string clause-construction argument");
     }
     const ClauseArgument &argument = arguments[argument_index++];
+    if (const auto *lexeme = std::get_if<ClauseLexemeArgument>(&argument)) {
+      return lexeme->spelling != nullptr && *lexeme->spelling != '\0'
+                 ? lexeme->spelling
+                 : nullptr;
+    }
     const std::string *value = std::get_if<std::string>(&argument);
     if (value == nullptr) {
       throw std::invalid_argument(
