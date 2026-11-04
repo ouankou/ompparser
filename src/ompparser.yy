@@ -76,6 +76,12 @@ static thread_local const char *pending_map_mapper_identifier = nullptr;
 static thread_local std::vector<OpenMPIterator> pending_iterator_definitions;
 static thread_local std::vector<OpenMPIterator> map_iterator_args;
 static void reportParserError(const char *message);
+static void addKeywordVariable(const char *spelling) {
+  current_clause->addLangExpr(spelling, current_expr_separator, 0, 0,
+                             OMP_EXPR_PARSE_verbatim);
+  current_expr_separator = OMPC_CLAUSE_SEP_space;
+}
+
 static inline bool hasMapIteratorModifier() {
   return firstParameter == OMPC_MAP_MODIFIER_iterator ||
          secondParameter == OMPC_MAP_MODIFIER_iterator ||
@@ -545,38 +551,38 @@ variable :   EXPR_STRING {
                 }
                 current_expr_separator = OMPC_CLAUSE_SEP_space;
              } /* we use expression for variable so far */
-           | UPDATE { current_clause->addLangExpr("update", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | DEVICE { current_clause->addLangExpr("device", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | HOST { current_clause->addLangExpr("host", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | NOHOST { current_clause->addLangExpr("nohost", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | TARGET { current_clause->addLangExpr("target", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | DISPATCH { current_clause->addLangExpr("dispatch", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | USER { current_clause->addLangExpr("user", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | CONSTRUCT { current_clause->addLangExpr("construct", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | IMPLEMENTATION { current_clause->addLangExpr("implementation", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | DEVICE_TYPE { current_clause->addLangExpr("device_type", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | KIND { current_clause->addLangExpr("kind", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | ARCH { current_clause->addLangExpr("arch", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | ISA { current_clause->addLangExpr("isa", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | CONDITION { current_clause->addLangExpr("condition", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | DYNAMIC_ALLOCATORS { current_clause->addLangExpr("dynamic_allocators", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | REVERSE_OFFLOAD { current_clause->addLangExpr("reverse_offload", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | SELF_MAPS { current_clause->addLangExpr("self_maps", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | ATOMIC_DEFAULT_MEM_ORDER { current_clause->addLangExpr("atomic_default_mem_order", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | ALLOCATOR { current_clause->addLangExpr("allocator", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | USES_ALLOCATORS { current_clause->addLangExpr("uses_allocators", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | DATA { current_clause->addLangExpr("data", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | ANY { current_clause->addLangExpr("any", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | MAP { current_clause->addLangExpr("map", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | TO { current_clause->addLangExpr("to", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | FROM { current_clause->addLangExpr("from", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | LINK { current_clause->addLangExpr("link", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | ENTER { current_clause->addLangExpr("enter", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | PRIVATE { current_clause->addLangExpr("private", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | SHARED { current_clause->addLangExpr("shared", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | REDUCTION { current_clause->addLangExpr("reduction", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | ALL { current_clause->addLangExpr("all", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
-           | CGROUP { current_clause->addLangExpr("cgroup", OMPC_CLAUSE_SEP_space, 0, 0, OMP_EXPR_PARSE_verbatim); }
+           | UPDATE { addKeywordVariable("update"); }
+           | DEVICE { addKeywordVariable("device"); }
+           | HOST { addKeywordVariable("host"); }
+           | NOHOST { addKeywordVariable("nohost"); }
+           | TARGET { addKeywordVariable("target"); }
+           | DISPATCH { addKeywordVariable("dispatch"); }
+           | USER { addKeywordVariable("user"); }
+           | CONSTRUCT { addKeywordVariable("construct"); }
+           | IMPLEMENTATION { addKeywordVariable("implementation"); }
+           | DEVICE_TYPE { addKeywordVariable("device_type"); }
+           | KIND { addKeywordVariable("kind"); }
+           | ARCH { addKeywordVariable("arch"); }
+           | ISA { addKeywordVariable("isa"); }
+           | CONDITION { addKeywordVariable("condition"); }
+           | DYNAMIC_ALLOCATORS { addKeywordVariable("dynamic_allocators"); }
+           | REVERSE_OFFLOAD { addKeywordVariable("reverse_offload"); }
+           | SELF_MAPS { addKeywordVariable("self_maps"); }
+           | ATOMIC_DEFAULT_MEM_ORDER { addKeywordVariable("atomic_default_mem_order"); }
+           | ALLOCATOR { addKeywordVariable("allocator"); }
+           | USES_ALLOCATORS { addKeywordVariable("uses_allocators"); }
+           | DATA { addKeywordVariable("data"); }
+           | ANY { addKeywordVariable("any"); }
+           | MAP { addKeywordVariable("map"); }
+           | TO { addKeywordVariable("to"); }
+           | FROM { addKeywordVariable("from"); }
+           | LINK { addKeywordVariable("link"); }
+           | ENTER { addKeywordVariable("enter"); }
+           | PRIVATE { addKeywordVariable("private"); }
+           | SHARED { addKeywordVariable("shared"); }
+           | REDUCTION { addKeywordVariable("reduction"); }
+           | ALL { addKeywordVariable("all"); }
+           | CGROUP { addKeywordVariable("cgroup"); }
 
 /* For absent/contains clauses that take directive names as arguments */
 directive_name : PARALLEL { $$ = OMPD_parallel; }
