@@ -209,6 +209,167 @@ bool expectHostFragments(const char *label, const std::string &input,
   return true;
 }
 
+bool expectParenthesizedClauseOperands(const ompparser::ParseOptions &options) {
+  const bool fortran = options.language == ompparser::BaseLanguage::Fortran;
+  const std::string prefix = fortran ? "!$omp " : "#pragma omp ";
+  struct OperandCase {
+    const char *label;
+    const char *c_directive;
+    const char *fortran_directive;
+    std::vector<ExpectedHostFragment> fragments;
+  };
+  const OperandCase cases[] = {
+      {"num_threads_parenthesized_literal",
+       "parallel num_threads((1)) private(total)",
+       nullptr,
+       {{"(1)", OMPC_num_threads, OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"num_threads_strict_parenthesized_list",
+       "parallel num_threads(strict: (2), ((3 + choose_count(4,5)))) "
+       "private(total)",
+       nullptr,
+       {{"(2)", OMPC_num_threads, OMP_EXPR_PARSE_expression},
+        {"((3 + choose_count(4,5)))", OMPC_num_threads,
+         OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"teams_parenthesized_operands",
+       "teams num_teams(((2))) thread_limit((4)) private(total)",
+       nullptr,
+       {{"((2))", OMPC_num_teams, OMP_EXPR_PARSE_expression},
+        {"(4)", OMPC_thread_limit, OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"loop_parenthesized_operands",
+       "for collapse((2)) ordered((3)) private(total)",
+       "do collapse((2)) ordered((3)) private(total)",
+       {{"(2)", OMPC_collapse, OMP_EXPR_PARSE_expression},
+        {"(3)", OMPC_ordered, OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"simd_parenthesized_operands",
+       "simd safelen((8)) simdlen(((4))) collapse((2)) private(total)",
+       nullptr,
+       {{"(8)", OMPC_safelen, OMP_EXPR_PARSE_expression},
+        {"((4))", OMPC_simdlen, OMP_EXPR_PARSE_expression},
+        {"(2)", OMPC_collapse, OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"schedule_parenthesized_chunk",
+       "for schedule(monotonic:dynamic, ((4))) private(total)",
+       "do schedule(monotonic:dynamic, ((4))) private(total)",
+       {{"((4))", OMPC_schedule, OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"dist_schedule_parenthesized_chunk",
+       "distribute dist_schedule(static, ((8))) private(total)",
+       nullptr,
+       {{"((8))", OMPC_dist_schedule, OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"aligned_parenthesized_alignment",
+       "simd aligned(values: (16)) private(total)",
+       nullptr,
+       {{"(16)", OMPC_aligned, OMP_EXPR_PARSE_expression},
+        {"values", OMPC_aligned, OMP_EXPR_PARSE_variable_list},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"grainsize_strict_parenthesized_operand",
+       "taskloop grainsize(strict: ((2))) private(total)",
+       nullptr,
+       {{"((2))", OMPC_grainsize, OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"num_tasks_strict_parenthesized_operand",
+       "taskloop num_tasks(strict: ((3))) private(total)",
+       nullptr,
+       {{"((3))", OMPC_num_tasks, OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"looprange_parenthesized_list",
+       "fuse looprange((1), ((2)))",
+       nullptr,
+       {{"(1)", OMPC_looprange, OMP_EXPR_PARSE_expression},
+        {"((2))", OMPC_looprange, OMP_EXPR_PARSE_expression}}},
+      {"device_modified_parenthesized_operand",
+       "target device(ancestor: ((1))) thread_limit((4)) private(total)",
+       nullptr,
+       {{"((1))", OMPC_device, OMP_EXPR_PARSE_expression},
+        {"(4)", OMPC_thread_limit, OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"device_whitespace_before_parenthesized_operand",
+       "target device \t ((2)) private(total)",
+       nullptr,
+       {{"(2)", OMPC_device, OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"logical_parenthesized_operands",
+       "task final((ready)) untied((can_migrate)) mergeable((can_merge)) "
+       "replayable((repeat)) private(total)",
+       nullptr,
+       {{"(ready)", OMPC_final, OMP_EXPR_PARSE_expression},
+        {"(can_migrate)", OMPC_untied, OMP_EXPR_PARSE_expression},
+        {"(can_merge)", OMPC_mergeable, OMP_EXPR_PARSE_expression},
+        {"(repeat)", OMPC_replayable, OMP_EXPR_PARSE_expression},
+        {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}},
+      {"dispatch_modified_parenthesized_operands",
+       "dispatch nocontext(dispatch: (local)) novariants(dispatch: ((skip)))",
+       nullptr,
+       {{"(local)", OMPC_nocontext, OMP_EXPR_PARSE_expression},
+        {"((skip))", OMPC_novariants, OMP_EXPR_PARSE_expression}}},
+      {"init_complete_parenthesized_operand",
+       "scan init_complete((done))",
+       nullptr,
+       {{"(done)", OMPC_init_complete, OMP_EXPR_PARSE_expression}}},
+  };
+
+  bool ok = true;
+  for (const OperandCase &test : cases) {
+    const std::string label =
+        std::string(fortran ? "fortran_" : "c_") + test.label;
+    const std::string input =
+        prefix + (fortran && test.fortran_directive ? test.fortran_directive
+                                                    : test.c_directive);
+    ok = expectHostFragments(label.c_str(), input, options, test.fragments) &&
+         ok;
+  }
+
+  // DEVICE also denotes an enumerator and a variable-list item. These roles
+  // must not enter the operand scanner for a device(...) clause.
+  struct BareDeviceCase {
+    const char *input;
+    const char *expected;
+  };
+  const BareDeviceCase bare_device_cases[] = {
+      {"atomic memscope(device)", "atomic memscope(device)"},
+      {"atomic memscope(device \t )", "atomic memscope(device)"},
+      {"interchange permutation(device)", "interchange permutation(device)"},
+      {"interchange permutation(device , host)",
+       "interchange permutation(device, host)"},
+      {"interchange permutation(host, device )",
+       "interchange permutation(host, device)"},
+      {"interchange permutation(all, host, device, target)",
+       "interchange permutation(all, host, device, target)"},
+      {"interchange permutation(host, device, slot)",
+       "interchange permutation(host, device, slot)"},
+  };
+  for (const BareDeviceCase &test : bare_device_cases) {
+    ok = expectText("bare_device_context", prefix + test.input, options,
+                    prefix + test.expected) &&
+         ok;
+  }
+
+  // An error with the opening-delimiter state still stacked must not affect
+  // the next parse, nor may an unfinished operand leak its nesting counters.
+  for (const char *invalid :
+       {"parallel num_threads", "parallel num_threads(((1)"}) {
+    ompparser::ParseResult rejected =
+        ompparser::parseDirective(prefix + invalid, options);
+    if (rejected.success() ||
+        !hasDiagnostic(rejected, ompparser::DiagnosticCode::SyntaxError)) {
+      std::cerr << "incomplete expression clause was not rejected\n";
+      ok = false;
+    }
+    ok = expectHostFragments(
+             "parenthesized_operand_after_failed_parse",
+             prefix + "parallel num_threads((4)) private(total)", options,
+             {{"(4)", OMPC_num_threads, OMP_EXPR_PARSE_expression},
+              {"total", OMPC_private, OMP_EXPR_PARSE_variable_list}}) &&
+         ok;
+  }
+  return ok;
+}
+
 } // namespace
 
 int main() {
@@ -216,6 +377,7 @@ int main() {
 
   ompparser::ParseOptions c_options;
   c_options.language = ompparser::BaseLanguage::C;
+  ok = expectParenthesizedClauseOperands(c_options) && ok;
   ompparser::ParseOptions cxx_options;
   cxx_options.language = ompparser::BaseLanguage::CXX;
   for (const auto &options : {c_options, cxx_options}) {
@@ -1055,6 +1217,7 @@ int main() {
 
   ompparser::ParseOptions fortran_options;
   fortran_options.language = ompparser::BaseLanguage::Fortran;
+  ok = expectParenthesizedClauseOperands(fortran_options) && ok;
   ok =
       expectHostFragments(
           "uses_allocators_fortran_component_allocator_is_one_fragment",
