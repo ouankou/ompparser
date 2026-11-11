@@ -112,6 +112,7 @@
 %x USES_ALLOCATORS_STATE
 %x VENDOR_STATE
 %x WHEN_STATE
+%s FORTRAN_KEYWORD_STATE
 
 %{
 
@@ -159,6 +160,21 @@ static thread_local bool implementation_selector_parenthesis_pending = false;
 static thread_local int requires_trait_parenthesis_depth = 0;
 static thread_local bool requires_trait_atomic_argument_pending = false;
 static thread_local bool requires_trait_expression_pending = false;
+
+/* Fortran directives arrive blank-free from fixed-form source, where blanks
+   are insignificant ("!$omp targetmap(a)"), so adjacent keywords form one
+   identifier-like run. Fortran directive and clause names, including those of
+   nested directive variants, are therefore scanned in FORTRAN_KEYWORD_STATE:
+   INITIAL without the rules that claim keyword-prefixed identifiers
+   (target_function, data1) as expression text, so longest match splits the
+   run into keywords, plus rules that end an underscore directive name
+   (target_enter_data) where a blank would. Argument parentheses opened there
+   are scanned in INITIAL until they close. */
+static thread_local bool fortran_keyword_runs = false;
+/* Argument parentheses opened from FORTRAN_KEYWORD_STATE still open. */
+static thread_local int argument_paren_depth = 0;
+/* The next '(' encloses a nested directive variant, not arguments. */
+static thread_local bool nested_directive_paren_pending = false;
 
 static thread_local std::vector<int> apply_paren_depth;
 static thread_local int induction_spec_paren_depth = 0;
@@ -406,6 +422,7 @@ static inline void pop_apply_state(void *yyscanner);
 static inline int &current_apply_paren_depth();
 static inline void push_expression_clause_state(int state, void *yyscanner);
 static inline void begin_parenthesized_expression(void *yyscanner);
+static inline void push_directive_scan_state(void *yyscanner);
 
 extern "C" void openmp_reset_lexer_flags() {
   compact_parallel_do = false;
@@ -446,6 +463,8 @@ extern "C" void openmp_reset_lexer_flags() {
   raw_string_delimiter.clear();
   raw_string_terminator.clear();
   current_char = '\0';
+  argument_paren_depth = 0;
+  nested_directive_paren_pending = false;
 }
 
 extern "C" bool openmp_consume_compact_parallel_do() {
@@ -951,7 +970,7 @@ condition       { yy_push_state(CONDITION_STATE, yyscanner); return CONDITION; }
 kind            { return KIND; }
 device_num/{blank}*\( { return DEVICE_NUM; }
 uid/{blank}*\(        { return UID; }
-host{id_char}+  { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
+<INITIAL>host{id_char}+ { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
 host/{blank}    { return HOST; }
 host/"("        { return HOST; }
 host/","        { return HOST; }
@@ -1021,8 +1040,10 @@ data                      { return DATA; }
 device/({blank}|{newline})*\( { push_expression_clause_state(DEVICE_STATE, yyscanner); return DEVICE; }
 device                    { return DEVICE; }
 enter_/data{blank}         { yy_push_state(ENTER_STATE, yyscanner); return ENTER; }
+<FORTRAN_KEYWORD_STATE>enter_/data{id_char} { yy_push_state(ENTER_STATE, yyscanner); return ENTER; }
 enter                     { yy_push_state(ENTER_STATE, yyscanner); return ENTER; }
 exit_/data{blank}          { return EXIT; }
+<FORTRAN_KEYWORD_STATE>exit_/data{id_char} { return EXIT; }
 exit                      { return EXIT; }
 is_device_ptr             { return IS_DEVICE_PTR; }
 has_device_addr           { return HAS_DEVICE_ADDR; }
@@ -1069,6 +1090,7 @@ absent                    { return ABSENT; }
 present                   { return PRESENT; }
 contains                  { return CONTAINS; }
 holds                     { return HOLDS; }
+otherwise/{blank}*"("     { nested_directive_paren_pending = true; return OTHERWISE; }
 otherwise                 { return OTHERWISE; }
 
 graph_id                  { return GRAPH_ID; }
@@ -1091,11 +1113,14 @@ device_safesync           { return DEVICE_SAFESYNC; }
 target_data/{blank}       { return TARGET_DATA_COMPOSITE; }  /* OpenMP 6.0 task-generating construct */
 target_/enter_data{blank} { return TARGET; }
 target_/exit_data{blank}  { return TARGET; }
-target{id_char}+          { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
-data{id_char}+            { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
-device{id_char}+          { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
-all{id_char}+             { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
-cgroup{id_char}+          { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
+<INITIAL>target{id_char}+ { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
+<INITIAL>data{id_char}+   { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
+<INITIAL>device{id_char}+ { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
+<INITIAL>all{id_char}+    { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
+<INITIAL>cgroup{id_char}+ { yy_push_state(EXPR_STATE, yyscanner); prepare_expression_capture_str(yytext); }
+<FORTRAN_KEYWORD_STATE>target_data/{id_char} { return TARGET_DATA_COMPOSITE; }
+<FORTRAN_KEYWORD_STATE>target_/enter_data{id_char} { return TARGET; }
+<FORTRAN_KEYWORD_STATE>target_/exit_data{id_char} { return TARGET; }
 memscope                  { return MEMSCOPE; }
 looprange                 { push_expression_clause_state(LOOPRANGE_STATE, yyscanner); return LOOPRANGE; }
 permutation               { return PERMUTATION; }
@@ -1174,8 +1199,23 @@ cgroup                    { return CGROUP; }
                                              }
                                            }
 
-"("             { return '('; }
-")"             { return ')'; }
+"("             {
+                  if (nested_directive_paren_pending) {
+                    nested_directive_paren_pending = false;
+                  } else if (YY_START == FORTRAN_KEYWORD_STATE) {
+                    argument_paren_depth = 1;
+                    BEGIN(INITIAL);
+                  } else if (argument_paren_depth > 0) {
+                    ++argument_paren_depth;
+                  }
+                  return '(';
+                }
+")"             {
+                  if (argument_paren_depth > 0 && --argument_paren_depth == 0) {
+                    BEGIN(FORTRAN_KEYWORD_STATE);
+                  }
+                  return ')';
+                }
 ":"             { return ':'; }
 "}"             { yy_pop_state(yyscanner); return '}'; }
 ","             { return ','; }
@@ -1326,7 +1366,7 @@ cgroup                    { return CGROUP; }
 <DEFAULT_STATE>")"                          { yy_pop_state(yyscanner); return ')'; }
 <DEFAULT_STATE>":"                          { return ':'; }
 <DEFAULT_STATE>{blank}*                     { ; }
-<DEFAULT_STATE>.                            { yy_push_state(INITIAL, yyscanner); tracked_unput(yytext[0], yyscanner); } /* So far, only for default in metadirective meaning that a new directive is coming up. */
+<DEFAULT_STATE>.                            { push_directive_scan_state(yyscanner); tracked_unput(yytext[0], yyscanner); } /* So far, only for default in metadirective meaning that a new directive is coming up. */
 
 <ORDER_STATE>reproducible                   { return REPRODUCIBLE; }
 <ORDER_STATE>unconstrained                  { return UNCONSTRAINED; }
@@ -1754,10 +1794,10 @@ cgroup                    { return CGROUP; }
                                         }
 
 <WHEN_STATE>"("                             { return '('; }
-<WHEN_STATE>":"                             { yy_push_state(INITIAL, yyscanner); return ':'; }
+<WHEN_STATE>":"                             { push_directive_scan_state(yyscanner); return ':'; }
 <WHEN_STATE>")"                             { yy_pop_state(yyscanner); return ')'; }
 <WHEN_STATE>"="                             { return '='; }
-<WHEN_STATE>"{"                             { yy_push_state(INITIAL, yyscanner); return '{'; } /* now parsrsing enters to pass a full construct, directive, condition, etc */
+<WHEN_STATE>"{"                             { push_directive_scan_state(yyscanner); return '{'; } /* now parsrsing enters to pass a full construct, directive, condition, etc */
 <WHEN_STATE>"}"                             { return '}'; }
 <WHEN_STATE>","                             { return ','; }
 <WHEN_STATE>user                            { return USER; }
@@ -1893,10 +1933,10 @@ cgroup                    { return CGROUP; }
                                                       }
 
 <MATCH_STATE>"("                            { return '('; }
-<MATCH_STATE>":"                            { yy_push_state(INITIAL, yyscanner); return ':'; }
+<MATCH_STATE>":"                            { push_directive_scan_state(yyscanner); return ':'; }
 <MATCH_STATE>")"                            { yy_pop_state(yyscanner); return ')'; }
 <MATCH_STATE>"="                            { return '='; }
-<MATCH_STATE>"{"                            { yy_push_state(INITIAL, yyscanner); return '{'; } /* now parsing enters to pass a full construct, directive, condition, etc */
+<MATCH_STATE>"{"                            { push_directive_scan_state(yyscanner); return '{'; } /* now parsing enters to pass a full construct, directive, condition, etc */
 <MATCH_STATE>"}"                            { return '}'; }
 <MATCH_STATE>","                            { return ','; }
 <MATCH_STATE>user                           { return USER; }
@@ -2581,6 +2621,13 @@ static inline void push_expression_clause_state(int state, void *yyscanner) {
   yy_push_state(EXPR_CLAUSE_START_STATE, yyscanner);
 }
 
+// A nested directive variant or context selector starts at a keyword
+// position.
+static inline void push_directive_scan_state(void *yyscanner) {
+  yy_push_state(fortran_keyword_runs ? FORTRAN_KEYWORD_STATE : INITIAL,
+                yyscanner);
+}
+
 static inline void begin_parenthesized_expression(void *yyscanner) {
   yy_push_state(EXPR_STATE, yyscanner);
   prepare_expression_capture('(');
@@ -2659,11 +2706,14 @@ extern void openmp_begin_raw_expression(void *yyscanner) {
 }
 
 /* Standalone ompparser */
-void start_lexer(const char *input, void *yyscanner) {
+void start_lexer(const char *input, bool fortran, void *yyscanner) {
+  struct yyguts_t *yyg = static_cast<struct yyguts_t *>(yyscanner);
   lexer_location_state.tracking_enabled = true;
   reset_lexer_location_state();
+  fortran_keyword_runs = fortran;
   original_input = input != nullptr ? input : "";
   yy_scan_string(input, yyscanner);
+  BEGIN(fortran ? FORTRAN_KEYWORD_STATE : INITIAL);
 }
 
 void end_lexer(void *yyscanner) {
@@ -2676,6 +2726,7 @@ void end_lexer(void *yyscanner) {
   };
   openmp_reset_lexer_flags();
   lexer_location_state.tracking_enabled = false;
+  fortran_keyword_runs = false;
   yy_delete_buffer(YY_CURRENT_BUFFER, yyscanner);
   lexeme_storage.clear();
   lexeme_ranges.clear();

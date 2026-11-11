@@ -238,6 +238,37 @@ int main() {
                  OMPD_end, 1, 7, {{OMPC_nowait, 1, 13}}) &&
        ok;
 
+  ok = checkCase("fortran_fixed_form_target_teams_distribute",
+                 "!$omp targetteamsdistributeprivate(a)shared(b)", Lang_Fortran,
+                 OMPD_target_teams_distribute, 1, 7,
+                 {{OMPC_private, 1, 28}, {OMPC_shared, 1, 38}}) &&
+       ok;
+
+  ok = checkInvalidCase("c_keyword_run_stays_identifier",
+                        "#pragma omp targetmap(to: a)", Lang_C) &&
+       ok;
+
+  ok = checkCase("fortran_fixed_form_target_enter_data",
+                 "!$omp targetenterdatamap(to:a)nowait", Lang_Fortran,
+                 OMPD_target_enter_data, 1, 7, {{OMPC_nowait, 1, 31}}) &&
+       ok;
+
+  ok = checkCase("fortran_fixed_form_target_enter_data_underscore",
+                 "!$omp target_enter_datamap(to:a)nowait", Lang_Fortran,
+                 OMPD_target_enter_data, 1, 7, {{OMPC_nowait, 1, 33}}) &&
+       ok;
+
+  ok = checkCase("fortran_fixed_form_declare_target",
+                 "!$omp declaretargetenter(f)", Lang_Fortran,
+                 OMPD_declare_target, 1, 7, {{OMPC_enter, 1, 20}}) &&
+       ok;
+
+  ok = checkCase("fortran_fixed_form_keyword_prefixed_identifier",
+                 "!$omp targetfirstprivate(target_x)nowait", Lang_Fortran,
+                 OMPD_target, 1, 7,
+                 {{OMPC_firstprivate, 1, 13}, {OMPC_nowait, 1, 35}}) &&
+       ok;
+
   ok = checkCase("c_target_enter_data_underscore",
                  "#pragma omp target_enter_data map(to: EnterMap) nowait",
                  Lang_C, OMPD_target_enter_data, 1, 13,

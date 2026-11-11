@@ -1,0 +1,84 @@
+/*
+ * Copyright (c) 2018-2026, High Performance Computing Architecture and System
+ * research laboratory at University of North Carolina at Charlotte (HPCAS@UNCC)
+ * and Lawrence Livermore National Security, LLC.
+ *
+ * SPDX-License-Identifier: (BSD-3-Clause)
+ */
+
+//Fixed-form source drops every blank in a directive line, so adjacent
+//keywords arrive as one run. Each case must parse like its blank-separated
+//spelling, while keyword-prefixed identifiers inside parentheses stay
+//identifiers.
+
+!$omp targetmap(tofrom:a,b)
+PASS: !$omp target map(tofrom : a, b)
+
+!$omp targetmap(a,b)
+PASS: !$omp target map(a, b)
+
+!$omp targetteamsdistributeparalleldosimd
+PASS: !$omp target teams distribute parallel do simd
+
+!$omp targetdatamap(to:a)
+PASS: !$omp target data map(to : a)
+
+!$omp targetenterdatamap(to:a)
+PASS: !$omp target enter data map(to : a)
+
+!$omp targetexitdatamap(from:a)
+PASS: !$omp target exit data map(from : a)
+
+!$omp targetupdateto(a)
+PASS: !$omp target update to (a)
+
+!$omp endtargetdata
+PASS: !$omp end target data
+
+!$omp endtargetteamsdistribute
+PASS: !$omp end target teams distribute
+
+!$omp targetdevice(1)map(to:a)
+PASS: !$omp target device (1) map(to : a)
+
+!$omp targetdatause_device_ptr(p)if(targetdata:c)
+PASS: !$omp target data use_device_ptr(p) if (target data: c)
+
+!$omp declaretargetenter(f)device_type(nohost)
+PASS: !$omp declare target enter(f) device_type (nohost)
+
+!$omp allocatorsallocate(allocator(omp_high_bw_mem_alloc):a)
+PASS: !$omp allocators allocate (allocator(omp_high_bw_mem_alloc): a)
+
+!$omp allocate(x)allocator(omp_default_mem_alloc)
+PASS: !$omp allocate (x) allocator (omp_default_mem_alloc)
+
+!$omp target_datamap(to:a)
+PASS: !$omp target_data map(to : a)
+
+!$omp target_enter_datamap(to:a)
+PASS: !$omp target enter data map(to : a)
+
+!$omp target_exit_datamap(from:a)
+PASS: !$omp target exit data map(from : a)
+
+!$omp metadirectivewhen(user={condition(n>10)}:targetmap(to:a))otherwise(targetteamsdistribute)
+PASS: !$omp metadirective when (user = {condition(n>10)} : target map(to : a)) otherwise (target teams distribute)
+
+!$omp targetmap(to:target_function,data1,device_compute,cgroup_alloc,all_x,host_x)
+PASS: !$omp target map(to : target_function, data1, device_compute, cgroup_alloc, all_x, host_x)
+
+!$omp targetfirstprivate(target_x)is_device_ptr(data1)
+PASS: !$omp target firstprivate(target_x) is_device_ptr(data1)
+
+!$omp flush(target_x,data1)
+PASS: !$omp flush (target_x,data1)
+
+!$omp declaretarget(target_function,data1)
+PASS: !$omp declare target (target_function,data1)
+
+!$omp critical(data1)
+PASS: !$omp critical (data1)
+
+!$omp endcritical(data1)
+PASS: !$omp end critical (data1)

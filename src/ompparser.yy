@@ -41,7 +41,7 @@ int openmp_lex(OPENMP_STYPE *semantic_value,
 /* Standalone ompparser */
 extern int openmp_lex_init(void **scanner);
 extern int openmp_lex_destroy(void *scanner);
-extern void start_lexer(const char *input, void *scanner);
+extern void start_lexer(const char *input, bool fortran, void *scanner);
 extern void end_lexer(void *scanner);
 extern "C" void openmp_reset_lexer_flags();
 extern "C" bool openmp_consume_compact_parallel_do();
@@ -7120,7 +7120,7 @@ OpenMPDirective* parseOpenMP(const char* _input) {
         return nullptr;
     }
     openmp_reset_lexer_flags();
-    start_lexer(input, scanner);
+    start_lexer(input, base_lang == Lang_Fortran, scanner);
     const int parse_result = yyparse(scanner);
     end_lexer(scanner);
     openmp_lex_destroy(scanner);

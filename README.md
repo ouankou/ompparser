@@ -52,6 +52,7 @@ The 1.0 API intentionally preserves each source clause occurrence. It does not m
 1. Structured parse, validation, unparse, and in-memory DOT APIs
 1. Syntax, typed-schema, extension-policy, and AST-invariant checking
 1. Source-faithful clause occurrences and host-language fragment spellings
+1. Fortran directive and clause names written without separating blanks, as fixed-form source delivers them (`!$omp targetmap(to:a)`)
 1. Reentrant per-call Flex/Bison scanner contexts and thread-safe parsing
 1. Optional host-frontend hooks for C, C++, and Fortran semantic nodes
 1. Testing driver and test cases for OpenMP constructs
