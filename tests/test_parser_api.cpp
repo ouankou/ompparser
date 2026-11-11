@@ -2482,7 +2482,29 @@ int main() {
       {"compact unroll full",
        "#pragma omp tile sizes(1) apply(unrollfull, LoopLabel: reverse)",
        ompparser::BaseLanguage::C,
-       {"1", "LoopLabel"}}};
+       {"1", "LoopLabel"}},
+      {"fixed-form target map keyword run",
+       "!$omp targetmap(to:MapValue)device(DeviceValue)",
+       ompparser::BaseLanguage::Fortran,
+       {"MapValue", "DeviceValue"}},
+      {"fixed-form target enter data keyword run",
+       "!$omp targetenterdatamap(to:EnterMap)if(EnterValue)",
+       ompparser::BaseLanguage::Fortran,
+       {"EnterMap", "EnterValue"}},
+      {"fixed-form underscore target data keyword run",
+       "!$omp target_datamap(to:DataMap)if(DataValue)",
+       ompparser::BaseLanguage::Fortran,
+       {"DataMap", "DataValue"}},
+      {"fixed-form keyword-prefixed identifiers",
+       "!$omp targetmap(to:target_function,data1,device_compute,"
+       "cgroup_alloc)",
+       ompparser::BaseLanguage::Fortran,
+       {"target_function", "data1", "device_compute", "cgroup_alloc"}},
+      {"fixed-form metadirective variants",
+       "!$omp metadirectivewhen(user={condition(WhenValue)}:targetmap("
+       "to:WhenMap))otherwise(targetteamsdistributeif(OtherValue))",
+       ompparser::BaseLanguage::Fortran,
+       {"WhenValue", "WhenMap", "OtherValue"}}};
   for (const SplitRangeCase &test : split_range_cases) {
     RecordingHooks range_hooks;
     ompparser::ParseOptions options;
